@@ -1,0 +1,98 @@
+# config.yaml
+image_directory: "static/img"
+log_directory: "logs"
+episode_duration: 90
+
+cookers: ["grill", "oven", "skillet", "pot"]
+
+recipes:
+  0: Gilded Shore Risotto
+  1: Farmstead Feast Roast
+  2: Woodland Mushroom Risotto
+  3: Braised Venison Stew
+  4: Hearty Custard Pie
+  5: Paleleaf Meat Roll
+  6: Saltbaked Shrimp
+  7: Hearthroast Chicken
+  8: Simple Seared Scallops
+  9: Wild Herb Tomahawk
+
+ingredients:
+  - hearthspice
+  - acacia_honey
+  - midsummer_onion
+  - sunkissed_lemon
+  - fleur_de_sel
+  - buttermilk_cream
+  - elderberry_liqueur
+  - pliant_pasta
+  - creamfield_rice
+  - clearwater_fish
+  - prime_cut_beef
+  - farmstead_pork
+  - whiteshore_scallop
+  - wild_mushroom
+  - roasting_chicken
+  - golden_crab_roe
+  - succulent_cut
+  - shoreline_shrimp
+  - forest_venison
+  - blanquette_fig
+  - hearty_egg
+  - deepwater_tentacle
+  - vining_marjoram
+  - paleleaf_laurel
+
+screen:
+  resolution: [1920, 1080]
+  save_screenshots: False
+  assembly_station_position: [1375, 865]
+
+  raw_ingredients_positions:
+    - [115, 930]
+    - [265, 930]
+    - [150, 780]
+    - [300, 780]
+    - [200, 670]
+    - [350, 670]
+    - [255, 570]
+    - [390. 570]
+
+  cookers_positions:
+    - [595, 585]
+    - [850, 585]
+    - [1120, 585]
+    - [1370, 585]
+
+  condiments_positions:
+    - [1675, 915]
+    - [1825, 925]
+    - [1640, 800]
+    - [1800, 800]
+    - [1615, 685]
+    - [1775, 685]
+    - [1600, 550]
+    - [1725, 555]
+
+  orders_regions:
+    - [500, 80, 720, 210]
+    - [875, 80, 1095, 210]
+    - [1250, 80, 1470, 210]
+    - [1620, 80, 1840, 210]
+
+  ingredients_regions:
+    - [440, 250, 780, 385]
+    - [815, 250, 1155, 385]
+    - [1190, 250, 1530, 385]
+    - [1565, 250, 1905, 385]
+
+  pickup_stations_positions:
+    - [610, 145]
+    - [990, 145]
+    - [1360, 145]
+    - [1740, 145]
+
+matching:
+  ingredients_strategy: ["tpl"]
+  ingredients_threshold: 0.7
+  save_best_match_images: False
