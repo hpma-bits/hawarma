@@ -1,10 +1,9 @@
 # hawarma/config.py
-from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
+from pydantic import BaseModel, Field
 
-@dataclass
-class ScreenConfig:
+class ScreenConfig(BaseModel):
     resolution: tuple[int, int]
     save_screenshots: bool
     assembly_station_position: tuple[int, int]
@@ -15,15 +14,13 @@ class ScreenConfig:
     ingredients_regions: list[tuple[int, int, int, int]]
     pickup_stations_positions: list[tuple[int, int]]
 
-@dataclass
-class MatchingConfig:
+class MatchingConfig(BaseModel):
     ingredients_strategy: list[str]
     ingredients_threshold: float
     save_best_match_images: bool
-    default_strategy: list[str] = field(default_factory=list)
+    default_strategy: list[str] = Field(default_factory=list)
 
-@dataclass
-class AppConfig:
+class AppConfig(BaseModel):
     image_directory: str
     log_directory: str
     episode_duration: int
@@ -33,21 +30,11 @@ class AppConfig:
     screen: ScreenConfig
     matching: MatchingConfig
 
-    @classmethod
-    def from_dict(cls, data: dict) -> "AppConfig":
-        screen_data = data.pop("screen")
-        matching_data = data.pop("matching")
-        return cls(
-            screen=ScreenConfig(**screen_data),
-            matching=MatchingConfig(**matching_data),
-            **data,
-        )
-
 def load_config(config_path: Path | str = "configs/config.yaml") -> AppConfig:
     """Loads the application configuration from a YAML file."""
     with open(config_path, "r", encoding="utf-8") as f:
         config_data = yaml.safe_load(f)
-    return AppConfig.from_dict(config_data)
+    return AppConfig.model_validate(config_data)
 
 # Example of how to use it (optional, for direct testing)
 if __name__ == "__main__":

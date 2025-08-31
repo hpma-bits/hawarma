@@ -16,6 +16,8 @@ recipes:
   7: Hearthroast Chicken
   8: Simple Seared Scallops
   9: Wild Herb Tomahawk
+  10: Deepwater Ink Pasta
+  11: Golden Cream Pasta
 
 ingredients:
   - hearthspice
@@ -56,7 +58,7 @@ screen:
     - [200, 670]
     - [350, 670]
     - [255, 570]
-    - [390. 570]
+    - [390, 570]
 
   cookers_positions:
     - [595, 585]

@@ -4,7 +4,7 @@ import time
 from unittest import TestCase
 
 import cv2
-from hawarma.order_detector import ImageMatcher, OrderDetector
+from hawarma._order_detector import ImageMatcher, OrderDetector
 from hawarma.models import Recipe
 from hawarma.config_loader import get_config
 from hawarma.recipes import RECIPES

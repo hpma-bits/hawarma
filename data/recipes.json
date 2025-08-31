@@ -4,6 +4,7 @@
     "name": "Gilded Shore Risotto",
     "raw_ingredients": ["clearwater_fish", "creamfield_rice"],
     "cookers": ["oven", "pot"],
+    "cookers_layout": ["oven", "pot"],
     "cook_durations": [3.0, 2.0],
     "condiments": ["buttermilk_cream", "midsummer_onion"]
   },
@@ -12,6 +13,7 @@
     "name": "Farmstead Feast Roast",
     "raw_ingredients": ["farmstead_pork"],
     "cookers": ["oven"],
+    "cookers_layout": ["oven"],
     "cook_durations": [4.0],
     "condiments": ["sunkissed_lemon", "hearthspice"]
   },
@@ -20,6 +22,7 @@
     "name": "Woodland Mushroom Risotto",
     "raw_ingredients": ["wild_mushroom", "creamfield_rice"],
     "cookers": ["skillet", "pot"],
+    "cookers_layout": ["skillet", "pot"],
     "cook_durations": [2.0, 2.0],
     "condiments": ["elderberry_liqueur", "hearthspice"]
   },
@@ -28,6 +31,7 @@
     "name": "Braised Venison Stew",
     "raw_ingredients": ["forest_venison", "blanquette_fig"],
     "cookers": ["pot", "skillet"],
+    "cookers_layout": ["skillet", "pot"],
     "cook_durations": [4.0, 3.0],
     "condiments": ["elderberry_liqueur", "paleleaf_laurel"]
   },
@@ -36,6 +40,7 @@
     "name": "Hearty Custard Pie",
     "raw_ingredients": ["hearty_egg"],
     "cookers": ["oven"],
+    "cookers_layout": ["oven"],
     "cook_durations": [3.0],
     "condiments": ["buttermilk_cream", "acacia_honey"]
   },
@@ -44,6 +49,7 @@
     "name": "Paleleaf Meat Roll",
     "raw_ingredients": ["succulent_cut", "blanquette_fig"],
     "cookers": ["grill", "skillet"],
+    "cookers_layout": ["grill", "skillet"],
     "cook_durations": [2.0, 3.0],
     "condiments": ["paleleaf_laurel", "midsummer_onion"]
   },
@@ -52,6 +58,7 @@
     "name": "Saltbaked Shrimp",
     "raw_ingredients": ["shoreline_shrimp"],
     "cookers": ["grill"],
+    "cookers_layout": ["grill"],
     "cook_durations": [4.0],
     "condiments": ["sunkissed_lemon", "fleur_de_sel"]
   },
@@ -60,6 +67,7 @@
     "name": "Hearthroast Chicken",
     "raw_ingredients": ["roasting_chicken"],
     "cookers": ["oven"],
+    "cookers_layout": ["oven"],
     "cook_durations": [3.0],
     "condiments": ["midsummer_onion", "acacia_honey"]
   },
@@ -68,6 +76,7 @@
     "name": "Simple Seared Scallops",
     "raw_ingredients": ["whiteshore_scallop", "vining_marjoram"],
     "cookers": ["grill", "grill"],
+    "cookers_layout": ["grill"],
     "cook_durations": [2.0, 4.0],
     "condiments": ["fleur_de_sel", "sunkissed_lemon"]
   },
@@ -76,7 +85,26 @@
     "name": "Wild Herb Tomahawk",
     "raw_ingredients": ["prime_cut_beef", "vining_marjoram"],
     "cookers": ["skillet", "grill"],
+    "cookers_layout": ["grill", "skillet"],
     "cook_durations": [5.0, 4.0],
     "condiments": ["hearthspice", "fleur_de_sel"]
+  },
+  {
+    "slug": "deepwaterInkPasta",
+    "name": "Deepwater Ink Pasta",
+    "raw_ingredients": ["deepwater_tentacle", "pliant_pasta"],
+    "cookers": ["oven", "pot"],
+    "cookers_layout": ["oven", "pot"],
+    "cook_durations": [5.0, 3.0],
+    "condiments": ["elderberry_liqueur", "paleleaf_laurel"]
+  },
+  {
+    "slug": "goldenCreamPasta",
+    "name": "Golden Cream Pasta",
+    "raw_ingredients": ["golden_crab_roe", "pliant_pasta"],
+    "cookers": ["skillet", "pot"],
+    "cookers_layout": ["skillet", "pot"],
+    "cook_durations": [3.0, 3.0],
+    "condiments": ["buttermilk_cream", "acacia_honey"]
   }
 ]
