@@ -1,5 +1,6 @@
 # config.yaml
 image_directory: "static/img"
+recipes_data_path: "data/recipes.json"
 log_directory: "logs"
 episode_duration: 90
 
@@ -93,6 +94,11 @@ screen:
     - [990, 145]
     - [1360, 145]
     - [1740, 145]
+
+  prep_area_positions:
+    - [800, 900]
+    - [950, 900]
+    - [1100, 900]
 
 matching:
   ingredients_strategy: ["tpl"]

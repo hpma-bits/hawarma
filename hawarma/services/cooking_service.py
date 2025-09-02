@@ -1,21 +1,19 @@
 # hawarma/services/cooking_service.py
 import asyncio
-import time
+from collections import defaultdict
 from typing import Dict, List, Tuple
 
 from airtest.core.api import swipe
 from loguru import logger
 
-from hawarma.models import Order, OrderStage
+from hawarma.models import Order, Recipe
 
 
 class CookingService:
     """
-    Handles the physical actions of cooking an order in the game.
-
-    This service is responsible for translating a recipe's instructions into
-    a series of swipe actions to move ingredients, cook them, add condiments,
-    and serve the final dish.
+    Handles the physical actions of cooking, stockpiling, and serving in the game.
+    This service translates recipes into swipe actions, manages cooker contention,
+    and interacts with both the assembly station and prep areas.
     """
 
     def __init__(
@@ -25,121 +23,149 @@ class CookingService:
         condiments_mapping: Dict[str, Tuple[int, int]],
         assembly_station_pos: Tuple[int, int],
         pickup_stations_pos: List[Tuple[int, int]],
+        prep_area_positions: List[Tuple[int, int]],
     ):
         """
         Initializes the CookingService.
-
-        Args:
-            raw_ingredients_mapping: A dictionary mapping raw ingredient names to their screen positions.
-            cookers_mapping: A dictionary mapping cooker names to their screen positions.
-            condiments_mapping: A dictionary mapping condiment names to their screen positions.
-            assembly_station_pos: The screen position of the assembly station.
-            pickup_stations_pos: A list of screen positions for the pickup stations.
         """
         self.raw_ingredients_mapping = raw_ingredients_mapping
         self.cookers_mapping = cookers_mapping
         self.condiments_mapping = condiments_mapping
         self.assembly_station = assembly_station_pos
         self.pickup_stations = pickup_stations_pos
+        self.prep_area_positions = prep_area_positions
 
-    async def process_order(self, order: Order, slot: int) -> None:
+        # Initialize locks for thread-safe access
+        self.cooker_locks = {
+            name: asyncio.Lock() for name in self.cookers_mapping.keys()
+        }
+        self.assembly_lock = asyncio.Lock()  # Lock for assembly station access
+        self.stockpile_locks = {
+            i: asyncio.Lock() for i in range(len(prep_area_positions))
+        }  # Locks for each prep area
+
+    async def prepare_ingredients(
+        self,
+        recipe: Recipe,
+        destination: Tuple[int, int],
+        ingredient_name_to_cook: str | None = None,
+    ) -> None:
         """
-        Processes the complete lifecycle of a cooking order.
+        Prepares ingredients for a recipe and moves them to a destination.
 
-        This method orchestrates the entire cooking process for a given order,
-        optimizing the workflow by moving ingredients to assembly as soon as they're
-        cooked and allowing the next order to start once ingredients are assembled.
+        If `ingredient_name_to_cook` is specified, it only cooks that single
+        ingredient. Otherwise, it cooks all raw ingredients in the recipe.
+        This method intelligently handles cooker contention.
+        """
+        cooker_schedule = defaultdict(list)
+        ingredients_to_process = (
+            [ingredient_name_to_cook]
+            if ingredient_name_to_cook
+            else recipe.raw_ingredients
+        )
 
-        Args:
-            order: The order to be processed.
-            slot: The order slot index, used to determine the serving position.
+        # Group ingredients by the cooker they require
+        for i, ingredient_name in enumerate(recipe.raw_ingredients):
+            if ingredient_name in ingredients_to_process:
+                ingredient_info = {
+                    "name": ingredient_name,
+                    "duration": recipe.cook_durations[i],
+                }
+                cooker_schedule[recipe.cookers[i]].append(ingredient_info)
+
+        preparation_tasks = []
+        for cooker_name, ingredients in cooker_schedule.items():
+            task = self._cook_on_single_cooker(cooker_name, ingredients, destination)
+            preparation_tasks.append(task)
+
+        await asyncio.gather(*preparation_tasks)
+        log_msg = (
+            f"Ingredient {ingredient_name_to_cook} is prepared."
+            if ingredient_name_to_cook
+            else f"All ingredients for recipe {recipe.name} are prepared."
+        )
+        logger.info(log_msg)
+
+    async def _cook_on_single_cooker(
+        self,
+        cooker_name: str,
+        ingredients: List[Dict],
+        destination: Tuple[int, int],
+    ):
+        """
+        Cooks a sequence of ingredients on a single cooker.
+        Uses async lock to ensure exclusive access to the cooker.
+        """
+        cooker_pos = self.cookers_mapping[cooker_name]
+
+        async with self.cooker_locks[cooker_name]:
+            logger.debug(f"Acquired lock for cooker '{cooker_name}'")
+
+            for ingredient in ingredients:
+                ingredient_name = ingredient["name"]
+                duration = ingredient["duration"]
+                raw_ingredient_pos = self.raw_ingredients_mapping[ingredient_name]
+
+                # Start cooking
+                logger.debug(
+                    f"Cooking {ingredient_name} on {cooker_name} for {duration}s."
+                )
+                swipe(raw_ingredient_pos, cooker_pos, duration=0.1)
+                await asyncio.sleep(duration)
+
+                # Move to destination (with assembly lock if needed)
+                logger.debug(
+                    f"Moving cooked {ingredient_name} from {cooker_name} to {destination}."
+                )
+                if destination == self.assembly_station:
+                    async with self.assembly_lock:
+                        swipe(cooker_pos, destination, duration=0.1)
+                        await asyncio.sleep(0.1)  # Small delay for game animation
+                else:
+                    swipe(cooker_pos, destination, duration=0.1)
+                    await asyncio.sleep(0.1)  # Small delay for game animation
+
+            logger.debug(f"Released lock for cooker '{cooker_name}'")
+
+    async def finish_order(self, order: Order, slot: int) -> None:
+        """
+        Finishes a prepared order by seasoning and serving it.
+        Uses assembly lock to ensure exclusive access during finishing.
         """
         try:
-            logger.info(
-                f"Starting to process order {order.order_id}: {order.recipe.name}"
-            )
+            async with self.assembly_lock:
+                await self._season(order)
+                logger.debug(f"Order {order.order_id}: Dish has been seasoned.")
 
-            # Start cooking and move ingredients as they finish
-            order.current_stage = OrderStage.HEATING
-            await self._heat_and_move(order)
-            await asyncio.sleep(0.1)
-
-            # Season and serve
-            order.current_stage = OrderStage.SEASONING
-            await self._season(order)
-            logger.debug(f"Order {order.order_id}: Dish has been seasoned.")
-            # await asyncio.sleep(0.5)
-
-            order.current_stage = OrderStage.SERVING
-            await self._serve_dish(order, slot=0)
-            logger.info(f"Order {order.order_id}: Successfully served.")
+                await self._serve_dish(order, slot)
+                logger.info(f"Order {order.order_id}: Successfully served.")
 
             order.done = True
-            order.current_stage = OrderStage.COMPLETED
             order.served_ts = asyncio.get_event_loop().time()
-
         except Exception as e:
             logger.error(
-                f"An error occurred while processing order {order.order_id}: {e}"
+                f"An error occurred while finishing order {order.order_id}: {e}"
             )
-            order.current_stage = OrderStage.FAILED
 
-    async def _start_cooking(self, order: Order) -> List[Tuple[str, float]]:
+    async def use_stocked_ingredient(
+        self, prep_area_index: int, destination: Tuple[int, int]
+    ):
         """
-        Places raw ingredients on cookers and returns a list of (cooker, cook_time) pairs.
+        Moves a stocked ingredient from a prep area to a destination.
+        Uses both prep area and assembly station locks to prevent conflicts.
         """
-        recipe = order.recipe
-        raw_ingredients = recipe.raw_ingredients
-        cookers = recipe.cookers
-        cook_durations = recipe.cook_durations
+        async with self.stockpile_locks[prep_area_index]:
+            prep_area_pos = self.prep_area_positions[prep_area_index]
+            logger.debug(f"Using stocked ingredient from prep area {prep_area_index}.")
 
-        # Sort ingredients by cooking time (longest first) to optimize cooking
-        cook_info = list(zip(raw_ingredients, cookers, cook_durations))
-        cook_info.sort(key=lambda x: x[2], reverse=True)
-
-        cooking_schedule = []
-        for raw_ingredient, cooker, duration in cook_info:
-            swipe(
-                self.raw_ingredients_mapping[raw_ingredient],
-                self.cookers_mapping[cooker],
-                duration=0.1,
-            )
-            cooking_schedule.append((cooker, duration))
-
-        return cooking_schedule
-
-    async def _heat_and_move(self, order: Order):
-        """Manages the cooking process and moves ingredients to assembly as they finish."""
-        cooking_schedule = await self._start_cooking(order)
-
-        # Track when each ingredient started cooking
-        start_time = time.time()
-        idle_cookers = set()
-
-        while len(idle_cookers) < len(cooking_schedule):
-            current_time = time.time()
-            elapsed = current_time - start_time
-            outstanding_time = 1
-
-            # Check each ingredient and move if it's done
-            for cooker, duration in cooking_schedule:
-                if cooker not in idle_cookers and elapsed >= duration:
-                    order.current_stage = OrderStage.OFF_HEAT
-                    swipe(
-                        self.cookers_mapping[cooker],
-                        self.assembly_station,
-                        duration=0.1,
-                    )
-                    idle_cookers.add(cooker)
-                    logger.debug(f"Moved cooked ingredient from {cooker} to assembly")
-                elif (remaining_time := duration - elapsed) < 1:
-                    outstanding_time = min(outstanding_time, remaining_time)
-
-            await asyncio.sleep(outstanding_time)
-
-        # Mark as ready for next order once ingredients are at assembly
-        order.current_stage = OrderStage.READY_TO_SEASON
-        logger.debug(f"Order {order.order_id}: All ingredients at assembly station")
+            # If moving to assembly station, acquire its lock
+            if destination == self.assembly_station:
+                async with self.assembly_lock:
+                    swipe(prep_area_pos, destination, duration=0.1)
+                    await asyncio.sleep(0.1)
+            else:
+                swipe(prep_area_pos, destination, duration=0.1)
+                await asyncio.sleep(0.1)
 
     async def _season(self, order: Order):
         """Adds the required condiments to the dish."""
@@ -154,4 +180,3 @@ class CookingService:
     async def _serve_dish(self, order: Order, slot: int):
         """Serves the completed dish to the customer."""
         swipe(self.assembly_station, self.pickup_stations[slot], duration=0.15)
-        # swipe(self.assembly_station, self.pickup_stations[slot], duration=0.15)

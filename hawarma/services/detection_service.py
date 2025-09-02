@@ -141,6 +141,40 @@ class DetectionService:
         )
         return match is not None
 
+    def wait_for_game_start(self, timeout: int = 60):
+        """
+        Waits for the game to start by detecting the timer icon.
+
+        Args:
+            timeout: The maximum time to wait in seconds.
+        """
+        logger.info("Waiting for game to start... (looking for timer icon)")
+        start_time = time.time()
+        timer_icon_path = self.image_dir / "icon-timer.jpg"
+        if not timer_icon_path.exists():
+            logger.error("Timer icon template not found, cannot detect game start.")
+            return
+
+        while time.time() - start_time < timeout:
+            screen = G.DEVICE.snapshot()
+            if screen is None:
+                time.sleep(0.5)
+                continue
+
+            # Define a broad region at the top of the screen to search for the icon
+            w, h = self.config.screen.resolution
+            roi = (0, 0, w, h // 4)  # Search in the top quarter of the screen
+
+            match = local_match(
+                Template(str(timer_icon_path), threshold=0.85), roi=roi, screen=screen
+            )
+            if match:
+                logger.success("Game start detected!")
+                time.sleep(3)  # Give some buffer time after detection
+                return
+
+        logger.warning("Timeout reached while waiting for game to start.")
+
     def _detect_condiments(
         self, slot: int, recipe: Recipe, screen: np.ndarray
     ) -> Dict[str, int]:

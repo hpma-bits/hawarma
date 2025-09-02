@@ -60,7 +60,8 @@ class Order:
     order_id: int = field(default_factory=itertools.count().__next__)
     done: bool = False
     current_stage: OrderStage = OrderStage.PENDING
-    processing_task: asyncio.Task | None = None
+    ingredient_prep_task: asyncio.Task | None = None
+    finish_order_task: asyncio.Task | None = None
     served_ts: float | None = asyncio.get_event_loop().time()
 
     def __repr__(self) -> str:

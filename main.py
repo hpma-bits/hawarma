@@ -89,6 +89,9 @@ def main():
         app = CookingBotApp(config)
         app.setup(ordered_recipes=ordered_recipes)
 
+        # Wait for the game to start before running the main loop
+        app.detection_service.wait_for_game_start()
+
         try:
             asyncio.run(app.run())
         except KeyboardInterrupt:
