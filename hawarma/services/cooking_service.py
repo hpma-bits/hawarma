@@ -179,4 +179,4 @@ class CookingService:
 
     async def _serve_dish(self, order: Order, slot: int):
         """Serves the completed dish to the customer."""
-        swipe(self.assembly_station, self.pickup_stations[slot], duration=0.15)
+        swipe(self.assembly_station, self.pickup_stations[slot], duration=0.2)
