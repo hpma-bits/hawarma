@@ -29,6 +29,7 @@ class CookingBotApp:
         self.is_running = False
         self.max_slots = 4
         self.order_slots: List[Order | None] = [None] * self.max_slots
+        self.order_slots_lock = asyncio.Lock()
         self.completed_orders_count = 0
         self.last_order_completion_time = 0.0  # Track when last order was completed
 
@@ -134,7 +135,7 @@ class CookingBotApp:
             self.stockpile_task = asyncio.create_task(self._manage_stockpile_task())
 
             while self.is_running:
-                self._advance_completed_orders()
+                await self._advance_completed_orders()
                 await self._process_order_pipeline()
                 await asyncio.sleep(0.1)
 
@@ -162,20 +163,21 @@ class CookingBotApp:
         await asyncio.sleep(0.5)
         logger.info("Cooking Bot has been stopped.")
 
-    def _advance_completed_orders(self):
+    async def _advance_completed_orders(self):
         """
         Checks if the first order is completed and advances the pipeline.
         """
-        if self.order_slots[0] and self.order_slots[0].done:
-            self.completed_orders_count += 1
-            logger.info(
-                f"Order in slot 0 is complete. Advancing pipeline. "
-                f"Total completed: {self.completed_orders_count}"
-            )
-            # Update the completion time when an order is completed
-            self.last_order_completion_time = asyncio.get_event_loop().time()
-            self.order_slots.pop(0)
-            self.order_slots.append(None)
+        async with self.order_slots_lock:
+            if self.order_slots[0] and self.order_slots[0].done:
+                self.completed_orders_count += 1
+                logger.info(
+                    f"Order in slot 0 is complete. Advancing pipeline. "
+                    f"Total completed: {self.completed_orders_count}"
+                )
+                # Update the completion time when an order is completed
+                self.last_order_completion_time = asyncio.get_event_loop().time()
+                self.order_slots.pop(0)
+                self.order_slots.append(None)
 
     async def _scan_for_new_orders(self):
         """
@@ -190,15 +192,16 @@ class CookingBotApp:
                 await asyncio.sleep(1.0 - elapsed)
                 continue
 
-            # Only scan if we have empty slots in the first two positions
-            empty_slots = [i for i in range(2) if self.order_slots[i] is None]
+            async with self.order_slots_lock:
+                empty_slots = [i for i in range(2) if self.order_slots[i] is None]
             if empty_slots:
                 for slot_idx in empty_slots:
                     new_order = await asyncio.to_thread(
                         self.detection_service.detect_order, slot_idx
                     )
                     if new_order:
-                        self.order_slots[slot_idx] = new_order
+                        async with self.order_slots_lock:
+                            self.order_slots[slot_idx] = new_order
                         logger.info(
                             f"New order detected in slot {slot_idx}: {new_order}"
                         )
@@ -209,8 +212,10 @@ class CookingBotApp:
                     else:
                         break  # Stop if no order found in current slot
 
+            async with self.order_slots_lock:
+                need_fast_sleep = None in self.order_slots[:2]
             # Dynamic sleep time based on slot status
-            await asyncio.sleep(0.2 if None in self.order_slots[:2] else 0.5)
+            await asyncio.sleep(0.2 if need_fast_sleep else 0.5)
 
     async def _manage_stockpile_task(self):
         """
@@ -218,10 +223,11 @@ class CookingBotApp:
         This task runs in the background with lower priority than order processing.
         """
         while self.is_running:
-            # Check if we have pending or processing orders
-            has_active_orders = any(
-                order is not None and not order.done for order in self.order_slots[:2]
-            )
+            async with self.order_slots_lock:
+                has_active_orders = any(
+                    order is not None and not order.done
+                    for order in self.order_slots[:2]
+                )
 
             # If we have active orders, wait longer before checking again
             if has_active_orders:
@@ -233,15 +239,15 @@ class CookingBotApp:
                 prep_area_idx_str,
                 ingredient_name,
             ) in self.prep_area_assignments.items():
-                # Check again for new orders before each stockpile attempt
-                if any(
-                    order is not None and not order.done
-                    for order in self.order_slots[:2]
-                ):
-                    logger.debug(
-                        "New orders detected, interrupting stockpile operations"
-                    )
-                    break
+                async with self.order_slots_lock:
+                    if any(
+                        order is not None and not order.done
+                        for order in self.order_slots[:2]
+                    ):
+                        logger.debug(
+                            "New orders detected, interrupting stockpile operations"
+                        )
+                        break
 
                 prep_area_idx = int(prep_area_idx_str.split("_")[-1])
                 # If stock is below target, try to cook more
@@ -319,31 +325,34 @@ class CookingBotApp:
         - Fulfills orders using a hybrid of stocked and freshly cooked ingredients.
         - Starts finishing the current order in parallel with preparing the next.
         """
-        # Stage 1: Start ingredient preparation for any new order in an open slot
-        for i, order in enumerate(self.order_slots):
-            if order and not order.ingredient_prep_task:
-                # Only start if the previous slot is ready for its finishing task
-                if i == 0 or (
-                    self.order_slots[i - 1]
-                    and self.order_slots[i - 1].current_stage
-                    == OrderStage.READY_TO_SEASON
-                ):
-                    logger.info(f"Starting ingredient prep for order {order.order_id}.")
-                    order.ingredient_prep_task = asyncio.create_task(
-                        self._gather_ingredients_for_order(order)
-                    )
+        async with self.order_slots_lock:
+            # Stage 1: Start ingredient preparation for any new order in an open slot
+            for i, order in enumerate(self.order_slots):
+                if order and not order.ingredient_prep_task:
+                    # Only start if the previous slot is ready for its finishing task
+                    if i == 0 or (
+                        self.order_slots[i - 1]
+                        and self.order_slots[i - 1].current_stage
+                        == OrderStage.READY_TO_SEASON
+                    ):
+                        logger.info(
+                            f"Starting ingredient prep for order {order.order_id}."
+                        )
+                        order.ingredient_prep_task = asyncio.create_task(
+                            self._gather_ingredients_for_order(order)
+                        )
 
-        # Stage 2: Start the finishing task for orders with all ingredients assembled
-        for i, order in enumerate(self.order_slots):
-            if (
-                order
-                and order.current_stage == OrderStage.READY_TO_SEASON
-                and not order.finish_order_task
-            ):
-                logger.info(f"Starting finishing task for order {order.order_id}.")
-                order.finish_order_task = asyncio.create_task(
-                    self.cooking_service.finish_order(order, slot=i)
-                )
+            # Stage 2: Start the finishing task for orders with all ingredients assembled
+            for i, order in enumerate(self.order_slots):
+                if (
+                    order
+                    and order.current_stage == OrderStage.READY_TO_SEASON
+                    and not order.finish_order_task
+                ):
+                    logger.info(f"Starting finishing task for order {order.order_id}.")
+                    order.finish_order_task = asyncio.create_task(
+                        self.cooking_service.finish_order(order, slot=i)
+                    )
 
     async def _gather_ingredients_for_order(self, order: Order):
         """
@@ -354,34 +363,36 @@ class CookingBotApp:
         required_ingredients = Counter(order.recipe.raw_ingredients)
         tasks = []
 
-        for ingredient, count in required_ingredients.items():
-            for _ in range(count):
-                if self.ingredient_stock_counts[ingredient] > 0:
-                    # Use a stocked ingredient
-                    logger.debug(
-                        f"Using stocked {ingredient} for order {order.order_id}"
-                    )
-                    prep_area_idx = list(self.prep_area_assignments.values()).index(
-                        ingredient
-                    )
-                    tasks.append(
-                        self.cooking_service.use_stocked_ingredient(
-                            prep_area_idx, self.config.screen.assembly_station_position
+        async with self.order_slots_lock:
+            for ingredient, count in required_ingredients.items():
+                for _ in range(count):
+                    if self.ingredient_stock_counts[ingredient] > 0:
+                        # Use a stocked ingredient
+                        logger.debug(
+                            f"Using stocked {ingredient} for order {order.order_id}"
                         )
-                    )
-                    self.ingredient_stock_counts[ingredient] -= 1
-                else:
-                    # Cook the specific ingredient from scratch
-                    logger.debug(
-                        f"Cooking {ingredient} from scratch for order {order.order_id}"
-                    )
-                    tasks.append(
-                        self.cooking_service.prepare_ingredients(
-                            order.recipe,
-                            self.config.screen.assembly_station_position,
-                            ingredient_name_to_cook=ingredient,
+                        prep_area_idx = list(self.prep_area_assignments.values()).index(
+                            ingredient
                         )
-                    )
+                        tasks.append(
+                            self.cooking_service.use_stocked_ingredient(
+                                prep_area_idx,
+                                self.config.screen.assembly_station_position,
+                            )
+                        )
+                        self.ingredient_stock_counts[ingredient] -= 1
+                    else:
+                        # Cook the specific ingredient from scratch
+                        logger.debug(
+                            f"Cooking {ingredient} from scratch for order {order.order_id}"
+                        )
+                        tasks.append(
+                            self.cooking_service.prepare_ingredients(
+                                order.recipe,
+                                self.config.screen.assembly_station_position,
+                                ingredient_name_to_cook=ingredient,
+                            )
+                        )
 
         await asyncio.gather(*tasks)
         order.current_stage = OrderStage.READY_TO_SEASON
