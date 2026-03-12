@@ -1,5 +1,17 @@
 # hawarma/config.py
+"""
+配置管理模块
+
+地位：负责从YAML文件加载和验证应用配置，提供类型安全的配置访问
+
+输入：YAML配置文件路径
+输出：AppConfig对象（包含ScreenConfig和MatchingConfig）
+
+⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
+"""
+
 from pathlib import Path
+
 import yaml
 from pydantic import BaseModel, Field
 

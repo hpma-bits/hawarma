@@ -1,4 +1,15 @@
 # hawarma/models.py
+"""
+数据模型定义模块
+
+地位：定义项目中的所有数据结构，是整个系统的基础类型层
+
+输入：JSON数据或构造参数
+输出：验证后的模型对象（Ingredient、Cooker、Recipe、Order等）
+
+⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
+"""
+
 import asyncio
 import itertools
 from dataclasses import dataclass, field
@@ -62,7 +73,7 @@ class Order:
     current_stage: OrderStage = OrderStage.PENDING
     ingredient_prep_task: asyncio.Task | None = None
     finish_order_task: asyncio.Task | None = None
-    served_ts: float | None = asyncio.get_event_loop().time()
+    served_ts: float | None = None  # Set when order is actually served
 
     def __repr__(self) -> str:
         return (

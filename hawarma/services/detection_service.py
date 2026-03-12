@@ -1,8 +1,19 @@
 # hawarma/services/detection_service.py
+"""
+订单检测服务
+
+地位：从屏幕截图中检测客户订单，识别配方、加急状态和调料偏好
+
+输入：配置对象、配方列表、屏幕截图
+输出：Order对象或None（当无订单时）
+
+⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
+"""
+
 import time
 from collections import defaultdict
-from typing import List, Dict, Tuple
 from pathlib import Path
+from typing import Dict, List, Tuple
 
 import cv2
 import numpy as np
@@ -196,7 +207,7 @@ class DetectionService:
         return preference
 
     def _match_condiment(
-        self, condiment_name: str, roi: list, screen: np.ndarray
+        self, condiment_name: str, roi: tuple[int, int, int, int], screen: np.ndarray
     ) -> bool:
         """Checks if a specific condiment exists in a given region."""
         template_path = self.image_dir / f"ingredient-{condiment_name}.jpg"
@@ -207,7 +218,9 @@ class DetectionService:
             is not None
         )
 
-    def _get_condiment_count(self, roi: list, screen: np.ndarray) -> int:
+    def _get_condiment_count(
+        self, roi: tuple[int, int, int, int], screen: np.ndarray
+    ) -> int:
         """Determines if a condiment has a 'double' icon."""
         double_icon_path = self.image_dir / "icon-double.jpg"
         if not double_icon_path.exists():

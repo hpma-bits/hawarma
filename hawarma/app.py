@@ -1,4 +1,15 @@
 # hawarma/app.py
+"""
+核心应用类
+
+地位：协调整个烹饪流程，管理订单队列、处理管道、库存管理和原料囤积策略
+
+输入：配置对象、配方列表
+输出：应用运行状态、订单完成统计
+
+⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
+"""
+
 import asyncio
 import itertools
 from collections import Counter
@@ -36,6 +47,9 @@ class CookingBotApp:
         # Background tasks
         self.scan_task = None
         self.stockpile_task = None
+
+        # Track all created tasks for cleanup
+        self.all_tasks: set[asyncio.Task] = set()
 
         # Stockpiling state
         self.prep_area_assignments: Dict[
@@ -112,7 +126,7 @@ class CookingBotApp:
                     # 3. Score by cook time (higher score for longer cooking times)
                     score += duration * 0.2
 
-            ingredient_scores[ingredient] = score
+            ingredient_scores[ingredient] = round(score * 10)
 
         # Assign the top 3 ingredients to the prep areas
         top_ingredients = [ing for ing, _ in ingredient_scores.most_common(3)]
@@ -154,13 +168,16 @@ class CookingBotApp:
         """
         self.is_running = False
         logger.info("Stopping the Cooking Bot...")
-        for order in self.order_slots:
-            if order:
-                if order.ingredient_prep_task and not order.ingredient_prep_task.done():
-                    order.ingredient_prep_task.cancel()
-                if order.finish_order_task and not order.finish_order_task.done():
-                    order.finish_order_task.cancel()
-        await asyncio.sleep(0.5)
+
+        # Cancel all tracked tasks
+        for task in self.all_tasks:
+            if not task.done():
+                task.cancel()
+
+        # Wait for tasks to complete cancellation
+        if self.all_tasks:
+            await asyncio.wait(self.all_tasks, timeout=2.0)
+
         logger.info("Cooking Bot has been stopped.")
 
     async def _advance_completed_orders(self):
@@ -193,7 +210,9 @@ class CookingBotApp:
                 continue
 
             async with self.order_slots_lock:
-                empty_slots = [i for i in range(2) if self.order_slots[i] is None]
+                empty_slots = [
+                    i for i in range(self.max_slots) if self.order_slots[i] is None
+                ]
             if empty_slots:
                 for slot_idx in empty_slots:
                     new_order = await asyncio.to_thread(
@@ -213,9 +232,9 @@ class CookingBotApp:
                         break  # Stop if no order found in current slot
 
             async with self.order_slots_lock:
-                need_fast_sleep = None in self.order_slots[:2]
+                need_fast_sleep = None in self.order_slots[:]
             # Dynamic sleep time based on slot status
-            await asyncio.sleep(0.2 if need_fast_sleep else 0.5)
+            await asyncio.sleep(0.1 if need_fast_sleep else 0.5)
 
     async def _manage_stockpile_task(self):
         """
@@ -310,14 +329,18 @@ class CookingBotApp:
         self, recipe: Recipe, ingredient_name: str, destination: Tuple[int, int]
     ):
         """Helper to cook a single ingredient and update stock count upon completion."""
-        await self.cooking_service.prepare_ingredients(
-            recipe, destination, ingredient_name_to_cook=ingredient_name
-        )
-        self.ingredient_stock_counts[ingredient_name] += 1
-        logger.info(
-            f"Successfully stockpiled {ingredient_name}. "
-            f"New count: {self.ingredient_stock_counts[ingredient_name]}"
-        )
+        try:
+            await self.cooking_service.prepare_ingredients(
+                recipe, destination, ingredient_name_to_cook=ingredient_name
+            )
+            self.ingredient_stock_counts[ingredient_name] += 1
+            logger.info(
+                f"Successfully stockpiled {ingredient_name}. "
+                f"New count: {self.ingredient_stock_counts[ingredient_name]}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to stockpile {ingredient_name}: {e}")
+            raise
 
     async def _process_order_pipeline(self):
         """
@@ -326,14 +349,14 @@ class CookingBotApp:
         - Starts finishing the current order in parallel with preparing the next.
         """
         async with self.order_slots_lock:
-            # Stage 1: Start ingredient preparation for any new order in an open slot
+            # Stage 1: Start ingredient prep·aration for any new order in an open slot
             for i, order in enumerate(self.order_slots):
                 if order and not order.ingredient_prep_task:
                     # Only start if the previous slot is ready for its finishing task
+                    prev_order = self.order_slots[i - 1] if i > 0 else None
                     if i == 0 or (
-                        self.order_slots[i - 1]
-                        and self.order_slots[i - 1].current_stage
-                        == OrderStage.READY_TO_SEASON
+                        prev_order
+                        and prev_order.current_stage == OrderStage.READY_TO_SEASON
                     ):
                         logger.info(
                             f"Starting ingredient prep for order {order.order_id}."

@@ -1,8 +1,21 @@
 # hawarma/utils/image_utils.py
+"""
+图像处理工具模块
+
+地位：提供在屏幕指定区域中查找模板图像的工具函数
+
+输入：Template对象、ROI区域、屏幕截图
+输出：匹配结果坐标或None
+
+⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
+"""
+
 import time
-from airtest.core.api import G, Template
-from airtest.aircv import crop_image
+
 import cv2
+from airtest.aircv import crop_image
+from airtest.core.api import G, Template
+
 
 def local_match(
     target: Template,

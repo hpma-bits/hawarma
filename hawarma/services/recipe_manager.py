@@ -1,10 +1,23 @@
 # hawarma/services/recipe_manager.py
+"""
+配方管理服务
+
+地位：从JSON文件加载配方数据，提供配方查询接口
+
+输入：JSON文件路径
+输出：Recipe对象列表
+
+⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
+"""
+
 import json
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict, List
 
 from loguru import logger
+
 from hawarma.models import Recipe
+
 
 class RecipeManager:
     """
@@ -36,10 +49,12 @@ class RecipeManager:
         try:
             with open(self._recipes_path, "r", encoding="utf-8") as f:
                 recipes_data = json.load(f)
-            
+
             self._recipes = [Recipe(**data) for data in recipes_data]
             self._recipes_by_slug = {recipe.slug: recipe for recipe in self._recipes}
-            logger.info(f"Successfully loaded {len(self._recipes)} recipes from {self._recipes_path}.")
+            logger.info(
+                f"Successfully loaded {len(self._recipes)} recipes from {self._recipes_path}."
+            )
         except FileNotFoundError:
             logger.error(f"Recipe file not found at: {self._recipes_path}")
         except json.JSONDecodeError:

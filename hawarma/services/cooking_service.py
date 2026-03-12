@@ -1,4 +1,15 @@
 # hawarma/services/cooking_service.py
+"""
+烹饪操作服务
+
+地位：执行游戏中的烹饪操作（滑动、点击），管理烹饪设备并发访问
+
+输入：配方对象、目标位置、锁定状态
+输出：异步操作结果
+
+⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
+"""
+
 import asyncio
 from collections import defaultdict
 from typing import Dict, List, Tuple
