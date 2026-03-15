@@ -90,7 +90,12 @@ class DetectionService:
         self, order_slot: int, screen: np.ndarray
     ) -> Tuple[Recipe | None, float]:
         """
-        Identifies the recipe in an order slot by matching its first ingredient.
+        Identifies the recipe in an order slot using first ingredient + cooker combination.
+
+        Strategy:
+        1. Detect the first ingredient
+        2. If only one recipe matches that ingredient, return directly
+        3. If multiple recipes match (conflict), detect the cooker to differentiate
 
         Args:
             order_slot: The index of the order slot to check.
@@ -99,11 +104,33 @@ class DetectionService:
         Returns:
             A tuple containing the best matching recipe and the confidence score.
         """
-        best_match_recipe, best_confidence = None, 0.0
+        # Step 1: Detect first ingredient, collect all matching recipes
+        ingredient_matches = self._detect_first_ingredient(order_slot, screen)
+
+        if not ingredient_matches:
+            return None, 0.0
+
+        # Step 2: No conflict - only one recipe uses this first ingredient
+        if len(ingredient_matches) == 1:
+            recipe, confidence = ingredient_matches[0]
+            return recipe, confidence
+
+        # Step 3: Conflict detected - use cooker to differentiate
+        return self._resolve_cooker_conflict(ingredient_matches, order_slot, screen)
+
+    def _detect_first_ingredient(
+        self, order_slot: int, screen: np.ndarray
+    ) -> list[Tuple[Recipe, float]]:
+        """
+        Detects the first ingredient and returns all recipes that use it.
+        
+        Returns:
+            List of (recipe, confidence) tuples for all matching recipes
+        """
+        matches = []
         roi = self._get_ingredient_roi(order_slot, 0)
 
         for recipe in self.recipes:
-            # The first ingredient is unique enough to identify a recipe
             first_ingredient_path = (
                 self.image_dir / f"ingredient-{recipe.raw_ingredients[0]}.jpg"
             )
@@ -114,14 +141,52 @@ class DetectionService:
             template = Template(str(first_ingredient_path))
             match_result = local_match(target=template, roi=roi, screen=screen)
 
-            if (
-                match_result
-                and (confidence := float(match_result["confidence"])) > best_confidence
-            ):
-                best_match_recipe = recipe
-                best_confidence = confidence
+            if match_result and (confidence := float(match_result["confidence"])) > 0.7:
+                matches.append((recipe, confidence))
 
-        return best_match_recipe, best_confidence
+        return matches
+
+    def _resolve_cooker_conflict(
+        self,
+        candidate_recipes: list[Tuple[Recipe, float]],
+        order_slot: int,
+        screen: np.ndarray,
+    ) -> Tuple[Recipe | None, float]:
+        """
+        Resolves conflict by detecting the cooker icon in the order region.
+        
+        The first ingredient's corresponding cooker icon is located at the 
+        leftmost 1/4 of the order region (same area as first ingredient).
+        """
+        best_match = None
+        best_confidence = 0.0
+        
+        # Get the order region for cooker detection
+        order_region = self.config.screen.orders_regions[order_slot]
+
+        for recipe, ingredient_confidence in candidate_recipes:
+            # Get the cooker for the first ingredient
+            cooker = recipe.cookers[0]
+            cooker_icon_path = self.image_dir / f"icon-{cooker}.jpg"
+
+            if not cooker_icon_path.exists():
+                logger.warning(f"Coaker icon not found: {cooker_icon_path}")
+                continue
+
+            match = local_match(
+                Template(str(cooker_icon_path), threshold=0.7),
+                roi=order_region,
+                screen=screen,
+            )
+
+            if match:
+                # Combine confidences: ingredient * cooker
+                combined_confidence = ingredient_confidence * float(match["confidence"])
+                if combined_confidence > best_confidence:
+                    best_match = recipe
+                    best_confidence = combined_confidence
+
+        return best_match, best_confidence
 
     def _get_ingredient_roi(
         self, order_slot: int, ingredient_slot: int
