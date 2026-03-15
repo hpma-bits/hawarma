@@ -21,6 +21,7 @@ from hawarma.config import AppConfig
 from hawarma.models import Order, OrderStage, Recipe
 from hawarma.services.cooking_service import CookingService
 from hawarma.services.detection_service import DetectionService
+from hawarma.ui_operation_manager import UIOperationManager
 
 
 class CookingBotApp:
@@ -83,6 +84,9 @@ class CookingBotApp:
         raw_ingredients_mapping = self._get_raw_ingredients_positions(ordered_recipes)
         condiments_mapping = self._get_condiments_positions(ordered_recipes)
 
+        # 创建全局UI操作管理器
+        self.ui_operation_manager = UIOperationManager()
+
         self.cooking_service = CookingService(
             raw_ingredients_mapping=raw_ingredients_mapping,
             cookers_mapping=cookers_mapping,
@@ -90,6 +94,7 @@ class CookingBotApp:
             assembly_station_pos=self.config.screen.assembly_station_position,
             pickup_stations_pos=self.config.screen.pickup_stations_positions,
             stockpile_positions=self.config.screen.stockpile_positions,
+            ui_operation_manager=self.ui_operation_manager,
         )
 
         # Determine and set up the stockpiling strategy for the current session

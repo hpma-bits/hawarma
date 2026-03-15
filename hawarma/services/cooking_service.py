@@ -18,6 +18,7 @@ from airtest.core.api import swipe
 from loguru import logger
 
 from hawarma.models import Order, Recipe
+from hawarma.ui_operation_manager import UIOperationManager
 
 
 class CookingService:
@@ -35,9 +36,13 @@ class CookingService:
         assembly_station_pos: Tuple[int, int],
         pickup_stations_pos: List[Tuple[int, int]],
         stockpile_positions: List[Tuple[int, int]],
+        ui_operation_manager: UIOperationManager | None = None,
     ):
         """
         Initializes the CookingService.
+        
+        Args:
+            ui_operation_manager: 全局UI操作管理器，用于串行化所有UI操作
         """
         self.raw_ingredients_mapping = raw_ingredients_mapping
         self.cookers_mapping = cookers_mapping
@@ -45,6 +50,9 @@ class CookingService:
         self.assembly_station = assembly_station_pos
         self.pickup_stations = pickup_stations_pos
         self.stockpile_positions = stockpile_positions
+        
+        # UI操作管理器，默认为新实例
+        self.ui_manager = ui_operation_manager or UIOperationManager()
 
         # Initialize locks for thread-safe access
         self.cooker_locks = {
@@ -121,7 +129,7 @@ class CookingService:
                 logger.debug(
                     f"Cooking {ingredient_name} on {cooker_name} for {duration}s."
                 )
-                swipe(raw_ingredient_pos, cooker_pos, duration=0.1)
+                await self.ui_manager.swipe(raw_ingredient_pos, cooker_pos, duration=0.1)
                 await asyncio.sleep(duration)
 
                 # Move to destination (with assembly lock if needed)
@@ -130,10 +138,10 @@ class CookingService:
                 )
                 if destination == self.assembly_station:
                     async with self.assembly_lock:
-                        swipe(cooker_pos, destination, duration=0.1)
+                        await self.ui_manager.swipe(cooker_pos, destination, duration=0.1)
                         await asyncio.sleep(0.1)  # Small delay for game animation
                 else:
-                    swipe(cooker_pos, destination, duration=0.1)
+                    await self.ui_manager.swipe(cooker_pos, destination, duration=0.1)
                     await asyncio.sleep(0.1)  # Small delay for game animation
 
             logger.debug(f"Released lock for cooker '{cooker_name}'")
@@ -172,17 +180,17 @@ class CookingService:
             # If moving to assembly station, acquire its lock
             if destination == self.assembly_station:
                 async with self.assembly_lock:
-                    swipe(stockpile_pos, destination, duration=0.1)
+                    await self.ui_manager.swipe(stockpile_pos, destination, duration=0.1)
                     await asyncio.sleep(0.1)
             else:
-                swipe(stockpile_pos, destination, duration=0.1)
+                await self.ui_manager.swipe(stockpile_pos, destination, duration=0.1)
                 await asyncio.sleep(0.1)
 
     async def _season(self, order: Order):
         """Adds the required condiments to the dish."""
         for condiment, count in order.condiment_preference.items():
             for _ in range(count):
-                swipe(
+                await self.ui_manager.swipe(
                     self.condiments_mapping[condiment],
                     self.assembly_station,
                     duration=0.1,
@@ -190,4 +198,4 @@ class CookingService:
 
     async def _serve_dish(self, order: Order, slot: int):
         """Serves the completed dish to the customer."""
-        swipe(self.assembly_station, self.pickup_stations[slot], duration=0.2)
+        await self.ui_manager.swipe(self.assembly_station, self.pickup_stations[slot], duration=0.2)
