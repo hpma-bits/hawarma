@@ -95,7 +95,7 @@ screen:
     - [1360, 145]
     - [1740, 145]
 
-  prep_area_positions:
+  stockpile_positions:
     - [800, 900]
     - [950, 900]
     - [1100, 900]

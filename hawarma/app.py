@@ -52,7 +52,7 @@ class CookingBotApp:
         self.all_tasks: set[asyncio.Task] = set()
 
         # Stockpiling state
-        self.prep_area_assignments: Dict[
+        self.stockpile_assignments: Dict[
             str, str
         ] = {}  # Maps prep area index to ingredient name
         self.ingredient_stock_counts: Dict[str, int] = Counter()
@@ -89,15 +89,15 @@ class CookingBotApp:
             condiments_mapping=condiments_mapping,
             assembly_station_pos=self.config.screen.assembly_station_position,
             pickup_stations_pos=self.config.screen.pickup_stations_positions,
-            prep_area_positions=self.config.screen.prep_area_positions,
+            stockpile_positions=self.config.screen.stockpile_positions,
         )
 
         # Determine and set up the stockpiling strategy for the current session
-        self._assign_ingredients_to_prep_areas(ordered_recipes)
+        self._assign_ingredients_to_stockpiles(ordered_recipes)
 
         logger.info("Application setup complete.")
 
-    def _assign_ingredients_to_prep_areas(self, recipes: List[Recipe]):
+    def _assign_ingredients_to_stockpiles(self, recipes: List[Recipe]):
         """
         Analyzes recipes to determine the most strategic ingredients to stockpile.
         It prioritizes ingredients based on frequency, cooker contention, and cook time.
@@ -130,10 +130,10 @@ class CookingBotApp:
 
         # Assign the top 3 ingredients to the prep areas
         top_ingredients = [ing for ing, _ in ingredient_scores.most_common(3)]
-        self.prep_area_assignments = {
-            f"prep_area_{i}": name for i, name in enumerate(top_ingredients)
+        self.stockpile_assignments = {
+            f"stockpile_{i}": name for i, name in enumerate(top_ingredients)
         }
-        logger.info(f"Prep area assignments: {self.prep_area_assignments}")
+        logger.info(f"Prep area assignments: {self.stockpile_assignments}")
 
     async def run(self):
         """
@@ -255,9 +255,9 @@ class CookingBotApp:
                 continue
 
             for (
-                prep_area_idx_str,
+                stockpile_idx_str,
                 ingredient_name,
-            ) in self.prep_area_assignments.items():
+            ) in self.stockpile_assignments.items():
                 async with self.order_slots_lock:
                     if any(
                         order is not None and not order.done
@@ -268,7 +268,7 @@ class CookingBotApp:
                         )
                         break
 
-                prep_area_idx = int(prep_area_idx_str.split("_")[-1])
+                stockpile_idx = int(stockpile_idx_str.split("_")[-1])
                 # If stock is below target, try to cook more
                 if self.ingredient_stock_counts[ingredient_name] < 5:
                     # Find a recipe from user-selected recipes that can produce this ingredient
@@ -319,7 +319,7 @@ class CookingBotApp:
                             self._cook_and_update_stock(
                                 recipe_for_ingredient,
                                 ingredient_name,
-                                self.config.screen.prep_area_positions[prep_area_idx],
+                                self.config.screen.stockpile_positions[stockpile_idx],
                             )
                         )
 
@@ -394,12 +394,12 @@ class CookingBotApp:
                         logger.debug(
                             f"Using stocked {ingredient} for order {order.order_id}"
                         )
-                        prep_area_idx = list(self.prep_area_assignments.values()).index(
+                        stockpile_idx = list(self.stockpile_assignments.values()).index(
                             ingredient
                         )
                         tasks.append(
                             self.cooking_service.use_stocked_ingredient(
-                                prep_area_idx,
+                                stockpile_idx,
                                 self.config.screen.assembly_station_position,
                             )
                         )

@@ -45,7 +45,7 @@ CookingBotApp (app.py)
 ```
 
 ## 🔒 并发控制
-- **cooking_service.py**: 使用asyncio.Lock管理烹饪设备、组装站和备餐区的并发访问
+- **cooking_service.py**: 使用asyncio.Lock管理烹饪设备、组装站和stockpile区的并发访问
 - **detection_service.py**: 无并发控制，主要为同步操作
 - **recipe_manager.py**: 无并发控制，主要为只读操作
 

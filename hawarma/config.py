@@ -22,7 +22,7 @@ class ScreenConfig(BaseModel):
     assembly_station_position: tuple[int, int]
     raw_ingredients_positions: list[tuple[int, int]]
     cookers_positions: list[tuple[int, int]]
-    prep_area_positions: list[tuple[int, int]]
+    stockpile_positions: list[tuple[int, int]]
     condiments_positions: list[tuple[int, int]]
     orders_regions: list[tuple[int, int, int, int]]
     ingredients_regions: list[tuple[int, int, int, int]]

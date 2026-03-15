@@ -34,7 +34,7 @@ class CookingService:
         condiments_mapping: Dict[str, Tuple[int, int]],
         assembly_station_pos: Tuple[int, int],
         pickup_stations_pos: List[Tuple[int, int]],
-        prep_area_positions: List[Tuple[int, int]],
+        stockpile_positions: List[Tuple[int, int]],
     ):
         """
         Initializes the CookingService.
@@ -44,7 +44,7 @@ class CookingService:
         self.condiments_mapping = condiments_mapping
         self.assembly_station = assembly_station_pos
         self.pickup_stations = pickup_stations_pos
-        self.prep_area_positions = prep_area_positions
+        self.stockpile_positions = stockpile_positions
 
         # Initialize locks for thread-safe access
         self.cooker_locks = {
@@ -52,7 +52,7 @@ class CookingService:
         }
         self.assembly_lock = asyncio.Lock()  # Lock for assembly station access
         self.stockpile_locks = {
-            i: asyncio.Lock() for i in range(len(prep_area_positions))
+            i: asyncio.Lock() for i in range(len(stockpile_positions))
         }  # Locks for each prep area
 
     async def prepare_ingredients(
@@ -159,23 +159,23 @@ class CookingService:
             )
 
     async def use_stocked_ingredient(
-        self, prep_area_index: int, destination: Tuple[int, int]
+        self, stockpile_index: int, destination: Tuple[int, int]
     ):
         """
         Moves a stocked ingredient from a prep area to a destination.
         Uses both prep area and assembly station locks to prevent conflicts.
         """
-        async with self.stockpile_locks[prep_area_index]:
-            prep_area_pos = self.prep_area_positions[prep_area_index]
-            logger.debug(f"Using stocked ingredient from prep area {prep_area_index}.")
+        async with self.stockpile_locks[stockpile_index]:
+            stockpile_pos = self.stockpile_positions[stockpile_index]
+            logger.debug(f"Using stocked ingredient from prep area {stockpile_index}.")
 
             # If moving to assembly station, acquire its lock
             if destination == self.assembly_station:
                 async with self.assembly_lock:
-                    swipe(prep_area_pos, destination, duration=0.1)
+                    swipe(stockpile_pos, destination, duration=0.1)
                     await asyncio.sleep(0.1)
             else:
-                swipe(prep_area_pos, destination, duration=0.1)
+                swipe(stockpile_pos, destination, duration=0.1)
                 await asyncio.sleep(0.1)
 
     async def _season(self, order: Order):
