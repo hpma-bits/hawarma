@@ -264,6 +264,8 @@ class OrderScheduler:
 - rush订单始终排在前面
 - submit位置根据当前slots动态计算
 - 支持判断是否接受新订单
+- **Cooker留存时间**：食材烹饪完成后在cooker上最多留存5秒，超时需移到厨余垃圾箱(130, 560)
+- **Stockpile配合优化**：后续订单食材可先烹饪存stockpile，前订单提交后立即组装
 
 #### 2.2.3 PipelineExecutor - 管道执行器
 
