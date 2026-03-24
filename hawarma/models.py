@@ -74,6 +74,7 @@ class Order:
     ingredient_prep_task: asyncio.Task | None = None
     finish_order_task: asyncio.Task | None = None
     served_ts: float | None = None  # Set when order is actually served
+    ingredients_at_assembly: list[str] = field(default_factory=list)
 
     def __repr__(self) -> str:
         return (

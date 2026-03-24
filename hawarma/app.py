@@ -1,8 +1,7 @@
-# hawarma/app.py
 """
-核心应用类
+Core Application
 
-地位：协调整个烹饪流程，管理订单队列、处理管道、库存管理和原料囤积策略
+地位：管理会话生命周期，扫描循环，启动和停止。
 
 输入：配置对象、配方列表
 输出：应用运行状态、订单完成统计
@@ -12,428 +11,182 @@
 
 import asyncio
 import itertools
-from collections import Counter
-from typing import Dict, List, Tuple
 
 from loguru import logger
 
 from hawarma.config import AppConfig
-from hawarma.models import Order, OrderStage, Recipe
-from hawarma.services.cooking_service import CookingService
-from hawarma.services.detection_service import DetectionService
+from hawarma.models import Recipe
+from hawarma.scheduler import Scheduler
+from hawarma.services import DetectionService, Executor, ResourceGuards
+from hawarma.state import GameState, SessionState, init_game_state, init_session_state
 from hawarma.ui_operation_manager import UIOperationManager
 
 
 class CookingBotApp:
     """
-    The main application class for the Cooking Bot.
-    This class orchestrates the entire cooking process, from detecting orders
-    to managing the cooking pipeline and interacting with the game.
+    Thin application class. Lifecycle only.
+
+    Responsibilities:
+    - Initialize services and global state
+    - Run scan loop (detect new orders)
+    - Run tick loop (schedule + execute actions)
+    - Stop and cleanup
+
+    All business decisions are delegated to Scheduler.
+    All physical actions are delegated to Executor.
     """
 
     def __init__(self, config: AppConfig):
-        """
-        Initializes the CookingBotApp.
-        Args:
-            config: The application configuration.
-        """
         self.config = config
         self.is_running = False
-        self.max_slots = 4
-        self.order_slots: List[Order | None] = [None] * self.max_slots
-        self.order_slots_lock = asyncio.Lock()
-        self.completed_orders_count = 0
-        self.last_order_completion_time = 0.0  # Track when last order was completed
+        self._setup_done = False
 
-        # Background tasks
-        self.scan_task = None
-        self.stockpile_task = None
+        self.scan_task: asyncio.Task | None = None
+        self.tick_task: asyncio.Task | None = None
 
-        # Track all created tasks for cleanup
-        self.all_tasks: set[asyncio.Task] = set()
+        self.detection_service: DetectionService | None = None
+        self.scheduler: Scheduler | None = None
+        self.executor: Executor | None = None
+        self.ui_manager: UIOperationManager | None = None
+        self.guards: ResourceGuards | None = None
 
-        # Stockpiling state
-        self.stockpile_assignments: Dict[
-            str, str
-        ] = {}  # Maps prep area index to ingredient name
-        self.ingredient_stock_counts: Dict[str, int] = Counter()
+        self.game_state: GameState | None = None
+        self.session_state: SessionState | None = None
 
-        # Services are initialized in the setup method
-        self.ordered_recipes: List[Recipe] = []
-        self.detection_service: DetectionService
-        self.cooking_service: CookingService
-
-    def setup(self, ordered_recipes: List[Recipe]):
-        """
-        Initializes and sets up the application's services and stockpiling strategy.
-        This method prepares the detection and cooking services based on the
-        recipes that will be used in the current session.
-        Args:
-            ordered_recipes: A list of recipes to be used.
-        """
+    def setup(self, ordered_recipes: list[Recipe]) -> None:
+        """Initialize all services and global state."""
         logger.info("Setting up application services...")
-
-        # Store ordered recipes for use in stockpiling
-        self.ordered_recipes = ordered_recipes
-
-        self.detection_service = DetectionService(
-            recipes=ordered_recipes, config=self.config
-        )
 
         cookers_mapping = self._get_cookers_positions(ordered_recipes)
         raw_ingredients_mapping = self._get_raw_ingredients_positions(ordered_recipes)
         condiments_mapping = self._get_condiments_positions(ordered_recipes)
 
-        # 创建全局UI操作管理器
-        self.ui_operation_manager = UIOperationManager()
+        self.ui_manager = UIOperationManager()
 
-        self.cooking_service = CookingService(
+        self.guards = ResourceGuards(
+            cookers=list(cookers_mapping.keys()),
+            stockpile_slot_count=len(self.config.screen.stockpile_positions),
+        )
+
+        self.game_state = init_game_state(list(cookers_mapping.keys()))
+        self.session_state = init_session_state(ordered_recipes)
+
+        self.detection_service = DetectionService(
+            recipes=ordered_recipes, config=self.config
+        )
+
+        self.scheduler = Scheduler(self.game_state, self.session_state)
+
+        self.executor = Executor(
+            game_state=self.game_state,
+            session_state=self.session_state,
             raw_ingredients_mapping=raw_ingredients_mapping,
             cookers_mapping=cookers_mapping,
             condiments_mapping=condiments_mapping,
             assembly_station_pos=self.config.screen.assembly_station_position,
             pickup_stations_pos=self.config.screen.pickup_stations_positions,
             stockpile_positions=self.config.screen.stockpile_positions,
-            ui_operation_manager=self.ui_operation_manager,
+            ui_manager=self.ui_manager,
+            guards=self.guards,
+            ordered_recipes=ordered_recipes,
         )
 
-        # Determine and set up the stockpiling strategy for the current session
-        self._assign_ingredients_to_stockpiles(ordered_recipes)
-
+        self._setup_done = True
         logger.info("Application setup complete.")
 
-    def _assign_ingredients_to_stockpiles(self, recipes: List[Recipe]):
-        """
-        Analyzes recipes to determine the most strategic ingredients to stockpile.
-        It prioritizes ingredients based on frequency, cooker contention, and cook time.
-        """
-        ingredient_scores = Counter()
-        all_raw_ingredients = [ing for r in recipes for ing in r.raw_ingredients]
-        cooker_usage = Counter(
-            itertools.chain.from_iterable(r.cookers for r in recipes)
-        )
+    async def run(self) -> None:
+        """Main entry point. Starts scan and tick loops."""
+        if not self._setup_done:
+            raise RuntimeError("setup() must be called before run()")
 
-        # Score each unique ingredient
-        for ingredient in set(all_raw_ingredients):
-            score = 0
-            for recipe in recipes:
-                if ingredient in recipe.raw_ingredients:
-                    # 1. Score by frequency
-                    score += all_raw_ingredients.count(ingredient)
-
-                    idx = recipe.raw_ingredients.index(ingredient)
-                    cooker = recipe.cookers[idx]
-                    duration = recipe.cook_durations[idx]
-
-                    # 2. Score by cooker contention (higher score for more used cookers)
-                    score += cooker_usage[cooker] * 0.5
-
-                    # 3. Score by cook time (higher score for longer cooking times)
-                    score += duration * 0.2
-
-            ingredient_scores[ingredient] = round(score * 10)
-
-        # Assign the top 3 ingredients to the prep areas
-        top_ingredients = [ing for ing, _ in ingredient_scores.most_common(3)]
-        self.stockpile_assignments = {
-            f"stockpile_{i}": name for i, name in enumerate(top_ingredients)
-        }
-        logger.info(f"Prep area assignments: {self.stockpile_assignments}")
-
-    async def run(self):
-        """
-        The main application loop.
-        This loop continuously processes orders and manages the cooking pipeline
-        until the application is stopped. Order scanning runs as a background task.
-        """
         self.is_running = True
         logger.info("Cooking Bot is running. Press Ctrl+C to stop.")
-        try:
-            # Start background tasks
-            self.scan_task = asyncio.create_task(self._scan_for_new_orders())
-            self.stockpile_task = asyncio.create_task(self._manage_stockpile_task())
 
-            while self.is_running:
-                await self._advance_completed_orders()
-                await self._process_order_pipeline()
-                await asyncio.sleep(0.1)
+        try:
+            self.scan_task = asyncio.create_task(self._scan_loop())
+            self.tick_task = asyncio.create_task(self._tick_loop())
+
+            await asyncio.gather(self.scan_task, self.tick_task)
 
         except (asyncio.CancelledError, KeyboardInterrupt):
             logger.warning("Application run loop interrupted.")
         finally:
-            if self.scan_task:
-                self.scan_task.cancel()
-            if self.stockpile_task:
-                self.stockpile_task.cancel()
             await self.stop()
 
-    async def stop(self):
-        """
-        Stops the application and cleans up resources.
-        """
+    async def stop(self) -> None:
+        """Stop application and cleanup all tasks."""
         self.is_running = False
         logger.info("Stopping the Cooking Bot...")
 
-        # Cancel all tracked tasks
-        for task in self.all_tasks:
-            if not task.done():
+        for task in [self.scan_task, self.tick_task]:
+            if task:
                 task.cancel()
-
-        # Wait for tasks to complete cancellation
-        if self.all_tasks:
-            await asyncio.wait(self.all_tasks, timeout=2.0)
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
         logger.info("Cooking Bot has been stopped.")
 
-    async def _advance_completed_orders(self):
+    async def _scan_loop(self) -> None:
         """
-        Checks if the first order is completed and advances the pipeline.
-        """
-        async with self.order_slots_lock:
-            if self.order_slots[0] and self.order_slots[0].done:
-                self.completed_orders_count += 1
-                logger.info(
-                    f"Order in slot 0 is complete. Advancing pipeline. "
-                    f"Total completed: {self.completed_orders_count}"
-                )
-                # Update the completion time when an order is completed
-                self.last_order_completion_time = asyncio.get_event_loop().time()
-                self.order_slots.pop(0)
-                self.order_slots.append(None)
+        Background task: continuously detect new orders.
 
-    async def _scan_for_new_orders(self):
-        """
-        Continuously scans for new orders in the background.
-        Ensures proper timing between order completion and new scans.
+        Detection runs outside the lock (I/O-bound).
+        Only the state write is locked.
+        Waits for slot animation to complete before scanning.
         """
         while self.is_running:
-            # Wait for screen update after order completion
-            elapsed = asyncio.get_event_loop().time() - self.last_order_completion_time
-            if elapsed < 1.0:  # Ensure 1 second wait after order completion
-                logger.debug("Waiting for order list update...")
-                await asyncio.sleep(1.0 - elapsed)
+            now = asyncio.get_event_loop().time()
+            async with self.game_state.lock:
+                can_scan = self.game_state.is_ui_stable(now)
+
+            if not can_scan:
+                await asyncio.sleep(0.1)
                 continue
 
-            async with self.order_slots_lock:
-                empty_slots = [
-                    i for i in range(self.max_slots) if self.order_slots[i] is None
-                ]
-            if empty_slots:
-                for slot_idx in empty_slots:
-                    new_order = await asyncio.to_thread(
-                        self.detection_service.detect_order, slot_idx
-                    )
-                    if new_order:
-                        async with self.order_slots_lock:
-                            self.order_slots[slot_idx] = new_order
-                        logger.info(
-                            f"New order detected in slot {slot_idx}: {new_order}"
-                        )
-                        # Reset completion time to prevent immediate re-scan
-                        self.last_order_completion_time = (
-                            asyncio.get_event_loop().time()
-                        )
-                    else:
-                        break  # Stop if no order found in current slot
+            for slot_idx in range(len(self.game_state.orders)):
+                # 跳过已有订单的 slot，避免重复检测
+                async with self.game_state.lock:
+                    if self.game_state.orders[slot_idx] is not None:
+                        continue
 
-            async with self.order_slots_lock:
-                need_fast_sleep = None in self.order_slots[:]
-            # Dynamic sleep time based on slot status
-            await asyncio.sleep(0.1 if need_fast_sleep else 0.5)
+                order = await asyncio.to_thread(
+                    self.detection_service.detect_order, slot_idx
+                )
+                if order:
+                    async with self.game_state.lock:
+                        if self.game_state.orders[slot_idx] is None:
+                            self.game_state.orders[slot_idx] = order
+                            logger.info(f"New order in slot {slot_idx}: {order}")
 
-    async def _manage_stockpile_task(self):
+            await asyncio.sleep(0.5)
+
+    async def _tick_loop(self) -> None:
         """
-        Proactively cooks and stockpiles strategic ingredients.
-        This task runs in the background with lower priority than order processing.
+        Main tick loop: ask scheduler for actions and execute them.
+
+        Scheduler call is inside the lock (state read).
+        Action execution is outside the lock.
+        Only schedules when UI is stable.
         """
         while self.is_running:
-            async with self.order_slots_lock:
-                has_active_orders = any(
-                    order is not None and not order.done
-                    for order in self.order_slots[:2]
-                )
+            now = asyncio.get_event_loop().time()
+            async with self.game_state.lock:
+                if self.game_state.is_ui_stable(now):
+                    actions = self.scheduler.get_next_actions()
+                else:
+                    actions = []
 
-            # If we have active orders, wait longer before checking again
-            if has_active_orders:
-                logger.debug("Active orders detected, pausing stockpile operations")
-                await asyncio.sleep(2.0)
-                continue
+            if actions:
+                await self.executor.execute_batch(actions)
 
-            for (
-                stockpile_idx_str,
-                ingredient_name,
-            ) in self.stockpile_assignments.items():
-                async with self.order_slots_lock:
-                    if any(
-                        order is not None and not order.done
-                        for order in self.order_slots[:2]
-                    ):
-                        logger.debug(
-                            "New orders detected, interrupting stockpile operations"
-                        )
-                        break
-
-                stockpile_idx = int(stockpile_idx_str.split("_")[-1])
-                # If stock is below target, try to cook more
-                if self.ingredient_stock_counts[ingredient_name] < 5:
-                    # Find a recipe from user-selected recipes that can produce this ingredient
-                    recipe_for_ingredient = next(
-                        (
-                            r
-                            for r in self.ordered_recipes
-                            if ingredient_name in r.raw_ingredients
-                        ),
-                        None,
-                    )
-                    if not recipe_for_ingredient:
-                        logger.debug(
-                            f"No recipe found for stockpiling {ingredient_name}"
-                        )
-                        continue
-
-                    # Get the cooker index and duration for this ingredient
-                    try:
-                        ing_idx = recipe_for_ingredient.raw_ingredients.index(
-                            ingredient_name
-                        )
-                        required_cooker = recipe_for_ingredient.cookers[ing_idx]
-                        cook_duration = recipe_for_ingredient.cook_durations[ing_idx]
-
-                        # Skip long-cooking ingredients for stockpiling
-                        if (
-                            cook_duration > 5.0
-                        ):  # Skip ingredients that take too long to cook
-                            logger.debug(
-                                f"Skipping stockpile of {ingredient_name}: cook time {cook_duration}s too long"
-                            )
-                            continue
-                    except (ValueError, IndexError) as e:
-                        logger.error(f"Error finding cooker for {ingredient_name}: {e}")
-                        continue
-                    cooker_lock = self.cooking_service.cooker_locks[required_cooker]
-
-                    if (
-                        not cooker_lock.locked()
-                    ):  # Non-blocking check for cooker availability
-                        logger.info(
-                            f"Cooker '{required_cooker}' is available. "
-                            f"Attempting to stockpile {ingredient_name}."
-                        )
-                        # Create a task that awaits completion before incrementing the count
-                        asyncio.create_task(
-                            self._cook_and_update_stock(
-                                recipe_for_ingredient,
-                                ingredient_name,
-                                self.config.screen.stockpile_positions[stockpile_idx],
-                            )
-                        )
-
-            await asyncio.sleep(1)  # Check every second
-
-    async def _cook_and_update_stock(
-        self, recipe: Recipe, ingredient_name: str, destination: Tuple[int, int]
-    ):
-        """Helper to cook a single ingredient and update stock count upon completion."""
-        try:
-            await self.cooking_service.prepare_ingredients(
-                recipe, destination, ingredient_name_to_cook=ingredient_name
-            )
-            self.ingredient_stock_counts[ingredient_name] += 1
-            logger.info(
-                f"Successfully stockpiled {ingredient_name}. "
-                f"New count: {self.ingredient_stock_counts[ingredient_name]}"
-            )
-        except Exception as e:
-            logger.error(f"Failed to stockpile {ingredient_name}: {e}")
-            raise
-
-    async def _process_order_pipeline(self):
-        """
-        Manages the intelligent, concurrent processing of orders.
-        - Fulfills orders using a hybrid of stocked and freshly cooked ingredients.
-        - Starts finishing the current order in parallel with preparing the next.
-        """
-        async with self.order_slots_lock:
-            # Stage 1: Start ingredient prep·aration for any new order in an open slot
-            for i, order in enumerate(self.order_slots):
-                if order and not order.ingredient_prep_task:
-                    # Only start if the previous slot is ready for its finishing task
-                    prev_order = self.order_slots[i - 1] if i > 0 else None
-                    if i == 0 or (
-                        prev_order
-                        and prev_order.current_stage == OrderStage.READY_TO_SEASON
-                    ):
-                        logger.info(
-                            f"Starting ingredient prep for order {order.order_id}."
-                        )
-                        order.ingredient_prep_task = asyncio.create_task(
-                            self._gather_ingredients_for_order(order)
-                        )
-
-            # Stage 2: Start the finishing task for orders with all ingredients assembled
-            for i, order in enumerate(self.order_slots):
-                if (
-                    order
-                    and order.current_stage == OrderStage.READY_TO_SEASON
-                    and not order.finish_order_task
-                ):
-                    logger.info(f"Starting finishing task for order {order.order_id}.")
-                    order.finish_order_task = asyncio.create_task(
-                        self.cooking_service.finish_order(order, slot=i)
-                    )
-
-    async def _gather_ingredients_for_order(self, order: Order):
-        """
-        Gathers all necessary ingredients for an order, using stock first,
-        and cooking only the specific missing ingredients.
-        """
-        order.current_stage = OrderStage.HEATING
-        required_ingredients = Counter(order.recipe.raw_ingredients)
-        tasks = []
-
-        async with self.order_slots_lock:
-            for ingredient, count in required_ingredients.items():
-                for _ in range(count):
-                    if self.ingredient_stock_counts[ingredient] > 0:
-                        # Use a stocked ingredient
-                        logger.debug(
-                            f"Using stocked {ingredient} for order {order.order_id}"
-                        )
-                        stockpile_idx = list(self.stockpile_assignments.values()).index(
-                            ingredient
-                        )
-                        tasks.append(
-                            self.cooking_service.use_stocked_ingredient(
-                                stockpile_idx,
-                                self.config.screen.assembly_station_position,
-                            )
-                        )
-                        self.ingredient_stock_counts[ingredient] -= 1
-                    else:
-                        # Cook the specific ingredient from scratch
-                        logger.debug(
-                            f"Cooking {ingredient} from scratch for order {order.order_id}"
-                        )
-                        tasks.append(
-                            self.cooking_service.prepare_ingredients(
-                                order.recipe,
-                                self.config.screen.assembly_station_position,
-                                ingredient_name_to_cook=ingredient,
-                            )
-                        )
-
-        await asyncio.gather(*tasks)
-        order.current_stage = OrderStage.READY_TO_SEASON
-        logger.info(
-            f"All ingredients for order {order.order_id} are at the assembly station."
-        )
+            await asyncio.sleep(0.1)
 
     def _get_cookers_positions(
-        self, recipes: List[Recipe]
-    ) -> Dict[str, Tuple[int, int]]:
-        """
-        Calculates the positions of the cookers based on the selected recipes.
-        """
+        self, recipes: list[Recipe]
+    ) -> dict[str, tuple[int, int]]:
+        """Calculate the positions of cookers based on selected recipes."""
         cookers_in_use = list(
             dict.fromkeys(
                 itertools.chain.from_iterable(r.cookers_layout for r in recipes)
@@ -448,11 +201,9 @@ class CookingBotApp:
         }
 
     def _get_raw_ingredients_positions(
-        self, recipes: List[Recipe]
-    ) -> Dict[str, Tuple[int, int]]:
-        """
-        Calculates the positions of raw ingredients based on the selected recipes.
-        """
+        self, recipes: list[Recipe]
+    ) -> dict[str, tuple[int, int]]:
+        """Calculate the positions of raw ingredients based on selected recipes."""
         ingredients_in_use = list(
             dict.fromkeys(
                 itertools.chain.from_iterable(r.raw_ingredients for r in recipes)
@@ -467,11 +218,9 @@ class CookingBotApp:
         }
 
     def _get_condiments_positions(
-        self, recipes: List[Recipe]
-    ) -> Dict[str, Tuple[int, int]]:
-        """
-        Calculates the positions of condiments based on the selected recipes.
-        """
+        self, recipes: list[Recipe]
+    ) -> dict[str, tuple[int, int]]:
+        """Calculate the positions of condiments based on selected recipes."""
         condiments_in_use = list(
             dict.fromkeys(itertools.chain.from_iterable(r.condiments for r in recipes))
         )

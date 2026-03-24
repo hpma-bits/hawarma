@@ -12,7 +12,6 @@
 
 import json
 from pathlib import Path
-from typing import Dict, List
 
 from loguru import logger
 
@@ -32,8 +31,8 @@ class RecipeManager:
             recipes_path: The path to the JSON file containing recipe data.
         """
         self._recipes_path = Path(recipes_path)
-        self._recipes: List[Recipe] = []
-        self._recipes_by_slug: Dict[str, Recipe] = {}
+        self._recipes: list[Recipe] = []
+        self._recipes_by_slug: dict[str, Recipe] = {}
 
     def load_recipes(self) -> None:
         """
@@ -62,7 +61,7 @@ class RecipeManager:
         except Exception as e:
             logger.error(f"An unexpected error occurred while loading recipes: {e}")
 
-    def get_all_recipes(self) -> List[Recipe]:
+    def get_all_recipes(self) -> list[Recipe]:
         """
         Returns a list of all loaded recipes.
 

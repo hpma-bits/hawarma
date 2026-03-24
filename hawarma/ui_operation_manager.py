@@ -10,7 +10,6 @@ UI操作管理器
 """
 
 import asyncio
-from typing import Tuple
 
 from airtest.core.api import swipe
 from loguru import logger
@@ -19,11 +18,11 @@ from loguru import logger
 class UIOperationManager:
     """
     统一管理所有UI操作，确保同一时刻只有1个UI操作发送到游戏
-    
+
     职责：
     1. 全局UI锁 - 序列化所有swipe/click操作
     2. 操作日志 - 记录所有UI操作便于调试
-    
+
     注意：此锁与资源锁（cooker_locks, assembly_lock等）是正交的
     - 资源锁：防止多个订单占用同一游戏资源
     - UI操作锁：确保UI操作串行发送到游戏
@@ -35,13 +34,13 @@ class UIOperationManager:
 
     async def swipe(
         self,
-        start: Tuple[int, int],
-        end: Tuple[int, int],
+        start: tuple[int, int],
+        end: tuple[int, int],
         duration: float = 0.1,
     ) -> None:
         """
         执行swipe操作
-        
+
         Args:
             start: 起始位置 (x, y)
             end: 结束位置 (x, y)
@@ -55,7 +54,7 @@ class UIOperationManager:
     async def execute(self, operation: str, *args, **kwargs) -> None:
         """
         执行通用UI操作
-        
+
         Args:
             operation: 操作类型
             *args, **kwargs: 操作参数
