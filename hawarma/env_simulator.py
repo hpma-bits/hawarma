@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 
-
 # ============================================================================
 # 事件类型
 # ============================================================================
@@ -233,15 +232,16 @@ class GameSimulator:
         """
         调度一个订单在未来出现（自动寻找空 slot）。
         """
-        self._pending_orders.append(
-            (Order(
+        self._pending_orders.append((
+            Order(
                 recipe=recipe,
                 is_rush=is_rush,
                 order_id=self._next_order_id,
                 condiments_done={},
                 created_at=appear_at,
-            ), appear_at)
-        )
+            ),
+            appear_at,
+        ))
         self._next_order_id += 1
 
     def get_order(self, slot_idx: int) -> Order | None:
@@ -564,7 +564,11 @@ class GameSimulator:
 
         # 检查灶台烹饪完成
         for cooker_name, cooker in self.cookers.items():
-            if cooker.busy and cooker.done_at is not None and self.time >= cooker.done_at:
+            if (
+                cooker.busy
+                and cooker.done_at is not None
+                and self.time >= cooker.done_at
+            ):
                 if cooker.clear_by is None:
                     cooker.clear_by = cooker.done_at + self.COOKER_RETENTION
                     self._emit(
@@ -737,8 +741,7 @@ class GameSimulator:
         at_assembly = Counter(self.assembly.ingredients)
 
         all_ingredients = all(
-            at_assembly.get(name, 0) >= count
-            for name, count in required_ing.items()
+            at_assembly.get(name, 0) >= count for name, count in required_ing.items()
         )
 
         all_condiments = all(
@@ -752,8 +755,7 @@ class GameSimulator:
     def _advance_slots(self) -> None:
         """位移 slot：移除已完成/失败的订单，空位移到右侧"""
         non_empty = [
-            o for o in self.orders
-            if o is not None and not o.done and not o.failed
+            o for o in self.orders if o is not None and not o.done and not o.failed
         ]
         self.orders = non_empty + [None] * (self.MAX_SLOTS - len(non_empty))
         self._animation_until = self.time + self.ANIMATION_DURATION
