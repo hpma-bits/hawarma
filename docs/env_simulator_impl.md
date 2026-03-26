@@ -342,11 +342,56 @@ def test_cooking_workflow():
     assert len(sim.assembly.ingredients) == 1
 ```
 
+## 6. Time Management and Order Generation
+
+### 6.1 Game Duration
+
+**Total Game Time**: 90 seconds
+- Game starts at `time = 0.0`
+- Game ends when `time >= 90.0`
+- No additional orders appear after game ends
+- Goal: Complete as many orders as possible within 90 seconds
+
+### 6.2 Order Generation
+
+**Automatic Order Generation**:
+- Orders appear automatically every 4 seconds
+- First order appears at `time = 4.0`
+- Orders continue until game ends (90 seconds) or all 4 slots are full
+- Orders fill the leftmost empty slot
+- If all 4 slots are full, new orders are queued until a slot becomes available
+
+**Order Sequence**:
+```
+time=0.0s:  Game starts, orders=[None, None, None, None]
+time=4.0s:  Order 1 appears at slot 0, orders=[Order1, None, None, None]
+time=8.0s:  Order 2 appears at slot 1, orders=[Order1, Order2, None, None]
+time=12.0s: Order 3 appears at slot 2, orders=[Order1, Order2, Order3, None]
+time=16.0s: Order 4 appears at slot 3, orders=[Order1, Order2, Order3, Order4]
+... (if Order1 served, new order fills slot 0 at next 4s interval)
+```
+
+### 6.3 Parallel Cooking
+
+**Multiple Cookers Support**:
+- All cookers can operate independently and in parallel
+- Each cooker maintains its own timer (started_at, done_at, expired_at)
+- `tick(dt)` checks all cookers simultaneously
+- No limit on how many cookers can be active at once (except total number of cookers)
+
+**Example of Parallel Cooking**:
+```
+time=0.0s: start_cooking('beef', 'grill'), start_cooking('fish', 'oven')
+time=3.0s: grill done (beef cooked for 3s)
+time=4.0s: oven done (fish cooked for 4s)
+Both cookers operated in parallel with different durations
+```
+
 ## 6. Next Steps
 
-1. **Implement core data structures** (Order, CookerState, AssemblyState, etc.)
-2. **Implement GameSimulator class** with all operations
-3. **Write comprehensive tests** for all operations and edge cases
+1. **Implement core data structures** (Order, CookerState, AssemblyState, etc.) ✅
+2. **Write comprehensive tests first (TDD)** - test 90s game time, parallel cooking, auto-order generation
+3. **Implement GameSimulator class** with all operations
 4. **Create debugging/visualization tools** for state inspection
 5. **Implement agent interface** for perception and action execution
 
