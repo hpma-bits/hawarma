@@ -12,20 +12,20 @@
 GameSimulator
 ├── 状态
 │   ├── orders: list[Order | None]       # 4 个订单 slot
-│   ├── cookers: dict[str, CookerState]  # 灶台状态
-│   ├── assembly: AssemblyState          # 组装站归属 + 食材
+│   ├── cookers: dict[str, CookerState]    # 灶台状态
+│   ├── assembly: AssemblyState            # 组装站食材（无订单归属概念）
 │   ├── stockpile: dict[str, StockpileSlot]  # 库存 slot
-│   └── time: float                      # 模拟器内部时钟
+│   └── time: float                        # 模拟器内部时钟
 │
 ├── 配置
-│   ├── setup_cookers(names)             # 初始化灶台
-│   └── setup_stockpile(slots)           # 初始化库存
+│   ├── setup_cookers(names)               # 初始化灶台
+│   └── setup_stockpile(slots)             # 初始化库存
 │
 ├── 订单管理
-│   ├── inject_order(slot, recipe)       # 注入订单到指定 slot
-│   ├── schedule_order(recipe, appear_at) # 调度未来出现的订单
-│   ├── get_order(slot)                  # 查询 slot 中的订单
-│   └── get_order_slot(order_id)         # 反查订单所在 slot
+│   ├── inject_order(slot, recipe)         # 注入订单到指定 slot
+│   ├── schedule_order(recipe, appear_at)   # 调度未来出现的订单
+│   ├── get_order(slot)                    # 查询 slot 中的订单
+│   └── get_order_slot(order_id)           # 反查订单所在 slot
 │
 ├── 操作（每个操作都有前置条件检查）
 │   ├── start_cooking(ingredient, cooker)
@@ -33,35 +33,44 @@ GameSimulator
 │   ├── move_to_stockpile(cooker, slot)
 │   ├── pull_from_stockpile(slot)
 │   ├── add_condiment(condiment)
-│   ├── serve_order(slot)                # 检查动画窗口
-│   └── clear_cooker(cooker)
+│   ├── serve_order(slot)                  # 检查动画窗口
+│   ├── move_to_trash(from_location)       # 丢弃任意位置的食材
+│   └── clear_cooker(cooker)               # 清理过期食材
 │
 ├── 时间
-│   └── tick(dt)                         # 推进时间，触发自动事件
+│   └── tick(dt)                           # 推进时间，触发自动事件
 │
 ├── 事件
-│   ├── drain_events()                   # 取出并清空事件队列
-│   └── events                           # 只读事件列表
+│   ├── drain_events()                     # 取出并清空事件队列
+│   └── events                             # 只读事件列表
 │
 └── 查询
-    ├── snapshot()                       # 状态快照（用于断言）
-    ├── get_overdue_cookers()            # 过期灶台列表
-    ├── is_assembly_free()
-    ├── get_stockpile_count(ingredient)
-    └── get_assembly_ingredients()
+    ├── snapshot()                         # 状态快照（用于断言）
+    ├── get_overdue_cookers()              # 过期灶台列表
+    ├── get_stockpile_count(ingredient)    # 某食材总库存
+    ├── get_assembly_ingredients()         # 组装站当前食材
+    └── is_animation_window()              # 是否在动画窗口期
 ```
 
 ## 操作前置条件
 
 | 操作 | 必须满足 | 失败时返回 |
 |------|---------|-----------|
-| `start_cooking` | 灶台存在、有配方包含该食材 | `False` |
-| `move_to_assembly` | 灶台 busy、有食材、烹饪完成、assembly 可用或归属正确 | `False` |
-| `move_to_stockpile` | 灶台 busy、烹饪完成、库存未满 5 | `False` |
-| `pull_from_stockpile` | 库存 > 0、assembly 可用或归属正确 | `False` |
-| `add_condiment` | 有 assembly 归属、调料未达需求量 | `False` |
-| `serve_order` | slot 有订单、状态 READY_TO_SEASON、不在动画窗口 | `False` |
+| `start_cooking` | 灶台存在 | `False` |
+| `move_to_assembly` | 灶台 busy、有食材、烹饪完成 | `False` |
+| `move_to_stockpile` | 灶台 busy、烹饪完成、目标 slot 未满(≤5)、同 cooker+食材 | `False` |
+| `pull_from_stockpile` | 库存 > 0 | `False` |
+| `add_condiment` | 组装站非空、该调料在 recipe 中且未达上限、总调料数 < 3 | `False` |
+| `serve_order` | slot 有订单、组装站食材组合符合 recipe 要求、调料符合要求、不在动画窗口 | `False` |
+| `move_to_trash` | 来源位置有食材 | `False` |
 | `clear_cooker` | 灶台 busy、已过期 | `False` |
+
+### 关键规则说明
+
+1. **食材独立性**：assembly station 上的食材不绑定任何订单，可被任意需要该食材的订单使用
+2. **库存约束**：每个 stockpile slot 只能存由同一 cooker 烹饪的同种食材，上限 5 份
+3. **调料机制**：最多 3 份调料，无效调料（非 recipe 要求）swipe 无效果
+4. **超时影响**：订单超时仅触发 slot 位移，不影响 assembly station 上的食材
 
 ## 事件类型
 
