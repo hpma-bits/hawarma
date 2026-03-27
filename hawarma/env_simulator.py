@@ -257,9 +257,18 @@ class GameSimulator:
         return self._state.time < self._animation_until
     
     def get_order(self, slot_idx: int) -> Optional[Order]:
-        """获取指定槽位的订单"""
+        """
+        获取指定槽位的订单
+        
+        注意：如果订单还在动画期间（1秒），返回None
+        动画期间订单已存在但agent还无法"看到"
+        """
         if 0 <= slot_idx < self.MAX_SLOTS:
-            return self._state.orders[slot_idx]
+            order = self._state.orders[slot_idx]
+            # 检查订单是否在动画期间（创建后1秒内）
+            if order is not None and self._state.time < order.created_at + 1.0:
+                return None
+            return order
         return None
     
     def get_cooker_state(self, cooker_name: str) -> Optional[CookerState]:
