@@ -342,6 +342,271 @@ class GameSimulator:
         return ActionResult.success_result([event])
     
     # ============================================================================
+    # 核心操作方法
+    # ============================================================================
+    
+    def start_cooking(self, ingredient: str, cooker: str) -> ActionResult:
+        """
+        在指定灶台开始烹饪食材
+        
+        Args:
+            ingredient: 食材名称
+            cooker: 灶台名称
+            
+        Returns:
+            ActionResult: 操作结果
+        """
+        # 检查灶台是否存在
+        if cooker not in self._state.cookers:
+            return ActionResult.failure_result(f"Cooker '{cooker}' does not exist")
+        
+        cooker_state = self._state.cookers[cooker]
+        
+        # 检查灶台是否繁忙
+        if cooker_state.busy:
+            return ActionResult.failure_result(f"Cooker '{cooker}' is busy")
+        
+        # 查找配方中的烹饪时间
+        duration = None
+        for recipe in self._recipes.values():
+            for ing in recipe.ingredients:
+                if ing.name == ingredient and ing.cooker_type == cooker:
+                    duration = ing.duration
+                    break
+            if duration is not None:
+                break
+        
+        # 如果没有找到配方，使用默认时间（或拒绝）
+        if duration is None:
+            return ActionResult.failure_result(
+                f"No recipe found for ingredient '{ingredient}' on cooker '{cooker}'"
+            )
+        
+        # 设置灶台状态
+        cooker_state.busy = True
+        cooker_state.ingredient_name = ingredient
+        cooker_state.cooker_type = cooker
+        cooker_state.started_at = self._state.time
+        cooker_state.done_at = self._state.time + duration
+        cooker_state.expired_at = cooker_state.done_at + self.COOKER_RETENTION
+        
+        # 创建事件
+        event = Event(
+            timestamp=self._state.time,
+            event_type=EventType.COOKING_STARTED,
+            details={
+                'ingredient': ingredient,
+                'cooker': cooker,
+                'duration': duration,
+                'done_at': cooker_state.done_at
+            }
+        )
+        
+        self._event_history.append(event)
+        
+        if self._debug:
+            print(f"Started cooking {ingredient} on {cooker} (done at {cooker_state.done_at:.1f}s)")
+        
+        return ActionResult.success_result([event])
+    
+    def move_to_assembly(self, cooker: str) -> ActionResult:
+        """
+        将烹饪完成的食材从灶台移动到组装站
+        
+        Args:
+            cooker: 灶台名称
+            
+        Returns:
+            ActionResult: 操作结果
+        """
+        # 检查灶台是否存在
+        if cooker not in self._state.cookers:
+            return ActionResult.failure_result(f"Cooker '{cooker}' does not exist")
+        
+        cooker_state = self._state.cookers[cooker]
+        
+        # 检查灶台是否有食材
+        if not cooker_state.busy or cooker_state.ingredient_name is None:
+            return ActionResult.failure_result(f"Cooker '{cooker}' has no ingredient")
+        
+        # 检查烹饪是否完成
+        if cooker_state.done_at is None or self._state.time < cooker_state.done_at:
+            return ActionResult.failure_result(
+                f"Ingredient on '{cooker}' is not cooked yet"
+            )
+        
+        # 检查食材是否过期
+        if cooker_state.expired_at and self._state.time >= cooker_state.expired_at:
+            return ActionResult.failure_result(
+                f"Ingredient on '{cooker}' has expired, must clear to trash"
+            )
+        
+        # 获取食材信息
+        ingredient_name = cooker_state.ingredient_name
+        cooker_type = cooker_state.cooker_type
+        
+        # 检查组装站兼容性
+        if not self._state.assembly.can_add_ingredient(ingredient_name, cooker_type):
+            return ActionResult.failure_result(
+                f"Ingredient {ingredient_name} is not compatible with current assembly"
+            )
+        
+        # 移动到组装站
+        self._state.assembly.ingredients.append((ingredient_name, cooker_type, self._state.time))
+        
+        # 设置目标配方（如果是第一个食材）
+        if self._state.assembly.target_recipe is None:
+            # 查找匹配的配方
+            for recipe in self._recipes.values():
+                for ing in recipe.ingredients:
+                    if ing.name == ingredient_name and ing.cooker_type == cooker_type:
+                        self._state.assembly.target_recipe = recipe
+                        break
+                if self._state.assembly.target_recipe:
+                    break
+        
+        # 清空灶台
+        cooker_state.clear()
+        
+        # 检查组装是否完成
+        if self._state.assembly.is_complete:
+            complete_event = Event(
+                timestamp=self._state.time,
+                event_type=EventType.ASSEMBLY_COMPLETED,
+                details={
+                    'recipe': self._state.assembly.target_recipe.name if self._state.assembly.target_recipe else None,
+                    'ingredients': [ing[0] for ing in self._state.assembly.ingredients]
+                }
+            )
+            self._event_history.append(complete_event)
+            if self._debug:
+                print(f"Assembly completed for recipe: {self._state.assembly.target_recipe.name if self._state.assembly.target_recipe else 'Unknown'}")
+        
+        # 创建事件
+        event = Event(
+            timestamp=self._state.time,
+            event_type=EventType.INGREDIENT_ADDED_TO_ASSEMBLY,
+            details={
+                'ingredient': ingredient_name,
+                'cooker': cooker,
+                'assembly_ingredients': [ing[0] for ing in self._state.assembly.ingredients]
+            }
+        )
+        
+        self._event_history.append(event)
+        
+        if self._debug:
+            print(f"Moved {ingredient_name} from {cooker} to assembly")
+        
+        return ActionResult.success_result([event])
+    
+    def serve_order(self, slot_idx: int) -> ActionResult:
+        """
+        提交订单（将组装好的菜品送到取餐台）
+        
+        Args:
+            slot_idx: 订单槽位索引
+            
+        Returns:
+            ActionResult: 操作结果
+        """
+        # 检查槽位索引
+        if slot_idx < 0 or slot_idx >= self.MAX_SLOTS:
+            return ActionResult.failure_result(f"Invalid slot index: {slot_idx}")
+        
+        # 检查槽位是否有订单
+        order = self._state.orders[slot_idx]
+        if order is None:
+            return ActionResult.failure_result(f"No order at slot {slot_idx}")
+        
+        # 检查组装站是否有完成的菜品
+        if not self._state.assembly.is_complete:
+            return ActionResult.failure_result("Assembly is not complete")
+        
+        # 检查组装站的配方是否匹配订单的配方
+        if self._state.assembly.target_recipe != order.recipe:
+            return ActionResult.failure_result(
+                f"Assembly recipe does not match order recipe"
+            )
+        
+        # 检查调料是否满足要求（简化版：检查数量）
+        # TODO: 更复杂的调料匹配逻辑
+        
+        # 标记订单完成
+        order.served_at = self._state.time
+        order.done = True
+        
+        # 计算得分（简化版）
+        base_score = 100
+        time_penalty = max(0, (order.timeout_at - order.created_at) - 
+                          (order.served_at - order.created_at))
+        # TODO: 更复杂的计分逻辑
+        
+        score = base_score
+        
+        # 清空组装站
+        self._state.assembly.clear()
+        
+        # 清除订单槽位
+        self._state.orders[slot_idx] = None
+        
+        # 触发槽位前移
+        self._advance_slots(self._state.time)
+        
+        # 创建事件
+        event = Event(
+            timestamp=self._state.time,
+            event_type=EventType.ORDER_SERVED,
+            details={
+                'order_id': order.order_id,
+                'slot': slot_idx,
+                'recipe': order.recipe.name,
+                'score': score,
+                'served_at': order.served_at
+            }
+        )
+        
+        self._event_history.append(event)
+        
+        if self._debug:
+            print(f"Order {order.order_id} served from slot {slot_idx}, score: {score}")
+        
+        return ActionResult.success_result([event], score=score)
+    
+    def _advance_slots(self, current_time: float) -> None:
+        """触发槽位前移"""
+        # 移除None值（已完成或超时的订单）
+        new_orders = [o for o in self._state.orders if o is not None]
+        # 填充None到右侧
+        while len(new_orders) < self.MAX_SLOTS:
+            new_orders.append(None)
+        
+        self._state.orders = new_orders
+        
+        # 设置动画窗口（1.5秒）
+        self._animation_until = current_time + self.ANIMATION_DURATION
+        
+        # 创建槽位前移事件
+        event = Event(
+            timestamp=current_time,
+            event_type=EventType.SLOTS_ADVANCED,
+            details={
+                'animation_until': self._animation_until
+            }
+        )
+        
+        self._event_history.append(event)
+        
+        if self._debug:
+            print(f"Slots advanced, animation until {self._animation_until}")
+    
+    # 其余操作将在后续实现...
+    # start_cooking, move_to_assembly, serve_order, tick, etc.
+
+
+# ============================================================================
+# 辅助函数
+# ============================================================================
     # 时间管理和订单生成
     # ============================================================================
     
