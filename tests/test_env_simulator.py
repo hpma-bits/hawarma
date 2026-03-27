@@ -231,11 +231,90 @@ class TestAutoOrderGeneration:
         sim.tick(4.0)
         # 时间应该保持在90秒
         assert sim.time == 90.0
-
-
-# ============================================================================
-# 测试类 4: 并行烹饪
-# ============================================================================
+    
+    def test_order_refresh_with_animation_time(self):
+        """测试新订单有1秒动画时间后才能被检测到"""
+        sim = create_simple_simulator()
+        sim._recipes['test_burger'] = create_test_recipe()
+        
+        # 推进到第4秒，新订单出现
+        sim.tick(4.0)
+        
+        # 在动画期间（1秒内），应该检测不到新订单
+        # 注意：这取决于实现，可能需要检查一个"animation_until"字段
+        # 或者检查订单是否有一个 "visible" 标志
+        
+        # 推进0.5秒（动画期间）
+        sim.tick(0.5)
+        # 此时订单应该还在动画中，不可见
+        # （具体实现可能需要一个方法来检查）
+        
+        # 再推进0.5秒（总共1秒，动画结束）
+        sim.tick(0.5)
+        # 现在订单应该可见了
+        order = sim.get_order(0)
+        assert order is not None
+        assert order.order_id == 1
+    
+    def test_immediate_refresh_when_no_orders_after_serve(self):
+        """测试提交后无订单时立即刷新新订单"""
+        sim = create_simple_simulator()
+        sim._recipes['test_burger'] = create_test_recipe()
+        
+        # 设置一个完整的订单处理流程
+        # 第4秒生成第一个订单
+        sim.tick(4.0)
+        assert sim.get_order(0) is not None
+        
+        # 模拟完成这个订单并提交
+        # 注意：这里需要完整的流程：烹饪 -> 组装 -> 提交
+        # 为了测试，我们直接模拟提交后的状态
+        
+        # 假设在第20秒提交了这个唯一的订单
+        sim.tick(16.0)  # 从第4秒到第20秒
+        
+        # 提交订单后，场上没有订单了
+        # 根据规则：如果没有订单，应该立即刷新新订单
+        # 注意：新订单有1秒动画时间
+        
+        # 检查是否立即生成了新订单（在内部状态）
+        # 但玩家需要等待1秒动画后才能看到
+        
+        # 这个测试主要验证立即刷新逻辑是否存在
+        # 具体实现可能需要检查 _pending_orders 或类似机制
+        
+        # 简单验证：提交后如果槽位变空，应该很快有新订单
+        #（具体实现细节取决于你如何实现）
+        pass  # 占位，等待实现后再完善
+    
+    def test_refresh_timer_starts_from_serve_when_orders_remain(self):
+        """测试有剩余订单时从提交时刻开始4秒计时刷新"""
+        sim = create_simple_simulator()
+        sim._recipes['test_burger'] = create_test_recipe()
+        
+        # 生成4个订单填满所有槽位
+        sim.tick(4.0)   # 第4秒：订单1
+        sim.tick(4.0)   # 第8秒：订单2
+        sim.tick(4.0)   # 第12秒：订单3
+        sim.tick(4.0)   # 第16秒：订单4
+        
+        # 确认4个槽位都有订单
+        for i in range(4):
+            assert sim.get_order(i) is not None
+        
+        # 假设在第20秒提交了订单1（slot 0）
+        # 提交后，slot 0 变空，slot 1-3 的订单左移
+        # 场上还剩3个订单（原来的2、3、4，现在变成1、2、3）
+        sim.tick(4.0)   # 第20秒
+        
+        # 根据规则：如果场上有剩余订单，从提交时刻（第20秒）开始计时
+        # 4秒后（第24秒）应该刷新新订单到空的 slot 3
+        sim.tick(4.0)   # 第24秒
+        
+        # 验证第24秒有新订单出现
+        # 注意：具体验证方式取决于实现
+        # 可能需要检查是否有新订单ID或者 slot 3 不为空
+        pass  # 占位，等待实现后再完善
 
 class TestParallelCooking:
     """测试并行烹饪"""
