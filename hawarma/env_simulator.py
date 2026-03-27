@@ -341,8 +341,244 @@ class GameSimulator:
         
         return ActionResult.success_result([event])
     
+    # ============================================================================
+    # 时间管理和订单生成
+    # ============================================================================
+    
+    def tick(self, dt: float) -> List[Event]:
+        """
+        推进游戏时间并处理自动事件
+        
+        处理的事件包括：
+        - 订单超时
+        - 烹饪完成
+        - 食材过期
+        - 订单生成（基于4秒间隔）
+        
+        Args:
+            dt: 推进的时间（秒）
+            
+        Returns:
+            本次tick触发的事件列表
+        """
+        if self._state.time >= self.GAME_DURATION:
+            return []
+        
+        events: List[Event] = []
+        new_time = self._state.time + dt
+        
+        # 检查订单超时
+        timeout_events = self._check_order_timeouts(new_time)
+        events.extend(timeout_events)
+        
+        # 检查烹饪完成和食材过期
+        cooking_events = self._check_cooking_progress(new_time)
+        events.extend(cooking_events)
+        
+        # 生成新订单
+        order_events = self._generate_orders(new_time)
+        events.extend(order_events)
+        
+        # 更新时间
+        self._state.time = min(new_time, self.GAME_DURATION)
+        
+        # 记录事件
+        self._event_history.extend(events)
+        
+        return events
+    
+    def _check_order_timeouts(self, current_time: float) -> List[Event]:
+        """检查并处理订单超时"""
+        events = []
+        
+        for i, order in enumerate(self._state.orders):
+            if order is None or order.is_completed:
+                continue
+            
+            if current_time >= order.timeout_at:
+                # 订单超时
+                order.failed = True
+                events.append(Event(
+                    timestamp=current_time,
+                    event_type=EventType.ORDER_TIMEOUT,
+                    details={
+                        'order_id': order.order_id,
+                        'slot': i,
+                        'recipe': order.recipe.name
+                    }
+                ))
+                
+                # 清除订单并触发槽位前移
+                self._state.orders[i] = None
+                self._advance_slots(current_time)
+        
+        return events
+    
+    def _check_cooking_progress(self, current_time: float) -> List[Event]:
+        """检查烹饪完成和食材过期"""
+        events = []
+        
+        for cooker_name, cooker in self._state.cookers.items():
+            if not cooker.busy:
+                continue
+            
+            # 检查烹饪完成
+            if cooker.done_at and current_time >= cooker.done_at:
+                if not any(e.event_type == EventType.COOKING_COMPLETED 
+                          for e in self._event_history[-10:]):
+                    events.append(Event(
+                        timestamp=current_time,
+                        event_type=EventType.COOKING_COMPLETED,
+                        details={
+                            'cooker': cooker_name,
+                            'ingredient': cooker.ingredient_name
+                        }
+                    ))
+            
+            # 检查食材过期
+            if cooker.expired_at and current_time >= cooker.expired_at:
+                events.append(Event(
+                    timestamp=current_time,
+                    event_type=EventType.INGREDIENT_EXPIRED,
+                    details={
+                        'cooker': cooker_name,
+                        'ingredient': cooker.ingredient_name
+                    }
+                ))
+                
+                # 清理过期食材
+                cooker.clear()
+        
+        return events
+    
+    def _generate_orders(self, current_time: float) -> List[Event]:
+        """生成新订单"""
+        events = []
+        
+        # 检查是否需要立即刷新（提交后无订单）
+        if self._should_immediate_refresh(current_time):
+            event = self._create_new_order(current_time)
+            if event:
+                events.append(event)
+            return events
+        
+        # 检查4秒间隔
+        # 找到下一个应该生成订单的时间点
+        next_order_time = ((int(current_time) // 4) + 1) * 4
+        
+        # 检查是否到达或超过了下一个订单时间点
+        if current_time >= next_order_time:
+            # 检查是否已经有足够的订单
+            active_orders = sum(1 for o in self._state.orders if o is not None)
+            if active_orders < self.MAX_SLOTS:
+                event = self._create_new_order(current_time)
+                if event:
+                    events.append(event)
+        
+        return events
+    
+    def _should_immediate_refresh(self, current_time: float) -> bool:
+        """检查是否需要立即刷新订单（提交后无订单）"""
+        # 检查场上是否没有订单
+        active_orders = sum(1 for o in self._state.orders if o is not None)
+        if active_orders == 0:
+            # 检查是否不在动画窗口期
+            if current_time >= self._animation_until:
+                return True
+        return False
+    
+    def _create_new_order(self, current_time: float) -> Optional[Event]:
+        """创建一个新订单"""
+        # 查找空槽位
+        empty_slot = None
+        for i, order in enumerate(self._state.orders):
+            if order is None:
+                empty_slot = i
+                break
+        
+        if empty_slot is None:
+            return None
+        
+        # 获取配方（暂时使用第一个可用配方）
+        if not self._recipes:
+            return None
+        
+        recipe = list(self._recipes.values())[0]
+        
+        # 随机决定是否rush（25%概率）
+        import random
+        is_rush = random.random() < 0.25
+        
+        # 创建订单
+        timeout = self.RUSH_TIMEOUT if is_rush else self.NORMAL_TIMEOUT
+        order = Order(
+            order_id=self._next_order_id,
+            recipe=recipe,
+            is_rush=is_rush,
+            created_at=current_time,
+            timeout_at=current_time + timeout,
+            condiments_applied={}
+        )
+        
+        self._next_order_id += 1
+        
+        # 放置订单
+        self._state.orders[empty_slot] = order
+        
+        # 设置动画窗口（1秒）
+        self._animation_until = current_time + 1.0
+        
+        # 创建事件
+        event = Event(
+            timestamp=current_time,
+            event_type=EventType.ORDER_APPEARED,
+            details={
+                'order_id': order.order_id,
+                'recipe': recipe.name,
+                'slot': empty_slot,
+                'rush': is_rush,
+                'timeout_at': order.timeout_at,
+                'animation_until': self._animation_until
+            }
+        )
+        
+        self._event_history.append(event)
+        
+        if self._debug:
+            print(f"Order {order.order_id} appeared at slot {empty_slot} "
+                  f"(rush={is_rush}, animation until {self._animation_until})")
+        
+        return event
+    
+    def _advance_slots(self, current_time: float) -> None:
+        """触发槽位前移"""
+        # 移除None值（已完成或超时的订单）
+        new_orders = [o for o in self._state.orders if o is not None]
+        # 填充None到右侧
+        while len(new_orders) < self.MAX_SLOTS:
+            new_orders.append(None)
+        
+        self._state.orders = new_orders
+        
+        # 设置动画窗口（1.5秒）
+        self._animation_until = current_time + self.ANIMATION_DURATION
+        
+        # 创建槽位前移事件
+        event = Event(
+            timestamp=current_time,
+            event_type=EventType.SLOTS_ADVANCED,
+            details={
+                'animation_until': self._animation_until
+            }
+        )
+        
+        self._event_history.append(event)
+        
+        if self._debug:
+            print(f"Slots advanced, animation until {self._animation_until}")
+    
     # 其余操作将在后续实现...
-    # start_cooking, move_to_assembly, serve_order, tick, etc.
+    # start_cooking, move_to_assembly, serve_order, etc.
 
 
 # ============================================================================
