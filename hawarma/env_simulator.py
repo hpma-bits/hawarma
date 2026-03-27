@@ -612,7 +612,7 @@ class GameSimulator:
     
     def tick(self, dt: float) -> List[Event]:
         """
-        推进游戏时间并处理自动事件
+        推进游戏时间并触发自动事件
         
         处理的事件包括：
         - 订单超时
@@ -626,11 +626,14 @@ class GameSimulator:
         Returns:
             本次tick触发的事件列表
         """
-        if self._state.time >= self.GAME_DURATION:
+        # 如果游戏已结束，不再推进时间
+        if self.is_game_over():
             return []
         
         events: List[Event] = []
-        new_time = self._state.time + dt
+        
+        # 计算新时间，但不能超过游戏结束时间
+        new_time = min(self._state.time + dt, self.GAME_DURATION)
         
         # 检查订单超时
         timeout_events = self._check_order_timeouts(new_time)
@@ -645,7 +648,7 @@ class GameSimulator:
         events.extend(order_events)
         
         # 更新时间
-        self._state.time = min(new_time, self.GAME_DURATION)
+        self._state.time = new_time
         
         # 记录事件
         self._event_history.extend(events)
