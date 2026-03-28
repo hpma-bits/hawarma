@@ -1412,14 +1412,22 @@ class GameSimulator:
         if empty_slot is None:
             return None
         
-        # 获取配方（暂时使用第一个可用配方）
+        # 获取可用配方（从选中的配方中随机选择）
         if not self._recipes:
             return None
         
-        recipe = list(self._recipes.values())[0]
+        # 使用选中的配方，如果没有则使用所有配方
+        if self._game_config.selected_recipes:
+            available_slugs = [s for s in self._game_config.selected_recipes if s in self._recipes]
+            if available_slugs:
+                recipe_slug = random.choice(available_slugs)
+                recipe = self._recipes[recipe_slug]
+            else:
+                recipe = list(self._recipes.values())[0]
+        else:
+            recipe = list(self._recipes.values())[0]
         
         # 随机决定是否rush（25%概率）
-        import random
         is_rush = random.random() < 0.25
         
         # 创建订单
