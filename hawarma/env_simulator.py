@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 import json
+import random
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -28,6 +29,7 @@ from .env_simulator_types import (
     GameState,
     Recipe,
     IngredientRequirement,
+    GameConfig,
 )
 
 
@@ -79,16 +81,6 @@ class ActionResult:
         )
 
 
-class SimulationError(Exception):
-    """模拟器内部错误"""
-    pass
-
-
-class ValidationError(Exception):
-    """验证错误（游戏规则违反）"""
-    pass
-
-
 # ============================================================================
 # 游戏模拟器主类
 # ============================================================================
@@ -133,6 +125,8 @@ class GameSimulator:
     RUSH_TIMEOUT = 40.0      # Rush 订单超时时间
     NORMAL_TIMEOUT = 70.0    # 普通订单超时时间
     MAX_CONDIMENTS = 3       # 每道菜最多调料数
+    GAME_DURATION = 90.0     # 游戏总时长（秒）
+    ORDER_INTERVAL = 4.0     # 订单生成间隔（秒）
     
     def __init__(self):
         """初始化模拟器"""
@@ -156,10 +150,130 @@ class GameSimulator:
         
         # 调试模式
         self._debug: bool = False
+        
+        # 标记是否需要立即刷新订单（订单完成后所有槽位为空）
+        self._needs_immediate_refresh: bool = False
+        
+        # 上次订单生成时间
+        self._last_order_time: float = 0.0
+        
+        # 下一次订单刷新时间（相对计时）
+        # 初始为 4 秒（游戏开始后第一个订单）
+        self._next_order_refresh_time: float = self.ORDER_INTERVAL
+        
+        # 游戏配置（选菜单后的配置）
+        self._game_config: GameConfig = GameConfig()
     
     # ------------------------------------------------------------------
     # 配置和初始化
     # ------------------------------------------------------------------
+    
+    @property
+    def game_config(self) -> GameConfig:
+        """获取当前游戏配置"""
+        return self._game_config
+    
+    def select_recipes(self, count: int = 4, random_seed: Optional[int] = None) -> List[str]:
+        """
+        从所有菜谱中随机选择指定数量的菜谱
+        
+        Args:
+            count: 选择的菜谱数量（默认4，最多4）
+            random_seed: 随机种子（用于可复现的测试）
+        
+        Returns:
+            选中的菜谱slug列表
+        """
+        if not self._recipes:
+            raise ValueError("No recipes loaded. Call load_recipes() first.")
+        
+        # 最多选择4个菜谱
+        count = min(count, 4)
+        
+        # 获取所有菜谱的slug
+        all_slugs = list(self._recipes.keys())
+        
+        # 设置随机种子（如果提供）
+        if random_seed is not None:
+            random.seed(random_seed)
+        
+        # 随机选择指定数量的菜谱
+        selected = random.sample(all_slugs, min(count, len(all_slugs)))
+        
+        # 恢复随机状态（如果没有提供种子）
+        if random_seed is None:
+            random.seed()
+        
+        if self._debug:
+            print(f"Selected {len(selected)} recipes: {selected}")
+        
+        return selected
+    
+    def setup_from_recipes(self, recipe_slugs: List[str]) -> GameConfig:
+        """
+        根据选中的菜谱自动配置游戏
+        
+        自动设置：
+        - 灶台（从菜谱的cookers字段收集）
+        - 食材区（从菜谱的raw_ingredients字段收集）
+        - 调料区（从菜谱的condiments字段收集）
+        
+        Args:
+            recipe_slugs: 选中的菜谱slug列表
+            
+        Returns:
+            GameConfig对象
+        """
+        if not recipe_slugs:
+            raise ValueError("Must select at least one recipe")
+        
+        if len(recipe_slugs) > 4:
+            raise ValueError("Cannot select more than 4 recipes")
+        
+        # 收集所有需要的资源
+        cookers_set = set()
+        ingredients_set = set()
+        condiments_set = set()
+        
+        for slug in recipe_slugs:
+            if slug not in self._recipes:
+                raise ValueError(f"Unknown recipe: {slug}")
+            
+            recipe = self._recipes[slug]
+            
+            # 收集灶台
+            for ing in recipe.ingredients:
+                cookers_set.add(ing.cooker_type)
+            
+            # 收集食材
+            for ing in recipe.ingredients:
+                ingredients_set.add(ing.name)
+            
+            # 收集调料
+            for condiment in recipe.condiments:
+                condiments_set.add(condiment)
+        
+        # 创建游戏配置
+        self._game_config = GameConfig(
+            selected_recipes=recipe_slugs,
+            available_cookers=list(cookers_set),
+            available_ingredients=list(ingredients_set),
+            available_condiments=list(condiments_set)
+        )
+        
+        # 自动设置灶台
+        self.setup_cookers(self._game_config.available_cookers)
+        
+        # 库存区保持为空（由Agent自己决定存什么）
+        self.setup_stockpile(['stk0', 'stk1', 'stk2'])
+        
+        if self._debug:
+            print(f"Game configured with {len(recipe_slugs)} recipes")
+            print(f"  Cookers: {self._game_config.available_cookers}")
+            print(f"  Ingredients: {self._game_config.available_ingredients}")
+            print(f"  Condiments: {self._game_config.available_condiments}")
+        
+        return self._game_config
     
     def load_recipes(self, filepath: Union[str, Path]) -> None:
         """
@@ -176,23 +290,59 @@ class GameSimulator:
             data = json.load(f)
         
         self._recipes = {}
-        for recipe_data in data.get('recipes', []):
-            # 解析食材需求
+        # 支持两种格式：直接列表或包含 'recipes' 键的字典
+        recipes_list = data.get('recipes', data) if isinstance(data, dict) else data
+        for recipe_data in recipes_list:
+            # 解析食材需求 - 支持两种格式
             ingredients = []
-            for ing_data in recipe_data['ingredients']:
-                ing = IngredientRequirement(
-                    name=ing_data['name'],
-                    cooker_type=ing_data['cooker'],
-                    duration=ing_data['duration']
-                )
-                ingredients.append(ing)
+            
+            if 'ingredients' in recipe_data:
+                # 格式1: ingredients 是对象列表 [{name, cooker, duration}, ...]
+                for ing_data in recipe_data['ingredients']:
+                    ing = IngredientRequirement(
+                        name=ing_data['name'],
+                        cooker_type=ing_data['cooker'],
+                        duration=ing_data['duration']
+                    )
+                    ingredients.append(ing)
+            elif 'raw_ingredients' in recipe_data:
+                # 格式2: raw_ingredients, cookers, cook_durations 是并行数组
+                raw_ingredients = recipe_data['raw_ingredients']
+                cookers = recipe_data.get('cookers', [])
+                durations = recipe_data.get('cook_durations', [])
+                
+                # 对于 cooker_layout 的处理
+                # cookers_layout 指定了每个食材使用哪个厨具
+                cookers_layout = recipe_data.get('cookers_layout', cookers)
+                
+                for i, ing_name in enumerate(raw_ingredients):
+                    # 使用 cookers_layout 确定每个食材的厨具
+                    cooker = cookers_layout[i] if i < len(cookers_layout) else cookers[0]
+                    duration = durations[i] if i < len(durations) else 3.0
+                    ing = IngredientRequirement(
+                        name=ing_name,
+                        cooker_type=cooker,
+                        duration=duration
+                    )
+                    ingredients.append(ing)
+            
+            # 解析调料 - 支持列表和字典两种格式
+            condiments_data = recipe_data.get('condiments', [])
+            if isinstance(condiments_data, dict):
+                # 格式1: {name: count, ...}
+                condiments = condiments_data
+            elif isinstance(condiments_data, list):
+                # 格式2: [name, name, ...] -> 每种调料需要1份
+                condiments = {name: 1 for name in condiments_data}
+            else:
+                condiments = {}
             
             # 创建配方对象
             recipe = Recipe(
                 name=recipe_data['name'],
                 slug=recipe_data['slug'],
                 ingredients=tuple(ingredients),
-                condiments=recipe_data.get('condiments', {})
+                condiments=condiments
             )
             
             self._recipes[recipe.slug] = recipe
@@ -255,6 +405,10 @@ class GameSimulator:
     def is_in_animation_window(self) -> bool:
         """检查是否在动画窗口期"""
         return self._state.time < self._animation_until
+    
+    def is_game_over(self) -> bool:
+        """检查游戏是否已结束（到达90秒）"""
+        return self._state.time >= self.GAME_DURATION
     
     def get_order(self, slot_idx: int) -> Optional[Order]:
         """
@@ -356,7 +510,12 @@ class GameSimulator:
     
     def start_cooking(self, ingredient: str, cooker: str) -> ActionResult:
         """
-        在指定灶台开始烹饪食材
+        开始在指定灶台烹饪食材
+        
+        验证：
+        - 游戏必须已配置（已选菜谱）
+        - ingredient 必须在 available_ingredients 中
+        - cooker 必须在 available_cookers 中
         
         Args:
             ingredient: 食材名称
@@ -365,6 +524,24 @@ class GameSimulator:
         Returns:
             ActionResult: 操作结果
         """
+        # 检查游戏是否已配置
+        if not self._game_config.is_configured:
+            return ActionResult.failure_result("Game not configured. Call setup_from_recipes() first.")
+        
+        # 检查食材是否在本局可用
+        if ingredient not in self._game_config.available_ingredients:
+            return ActionResult.failure_result(
+                f"Ingredient '{ingredient}' not available in this game. "
+                f"Available: {self._game_config.available_ingredients}"
+            )
+        
+        # 检查灶台是否在本局可用
+        if cooker not in self._game_config.available_cookers:
+            return ActionResult.failure_result(
+                f"Cooker '{cooker}' not available in this game. "
+                f"Available: {self._game_config.available_cookers}"
+            )
+        
         # 检查灶台是否存在
         if cooker not in self._state.cookers:
             return ActionResult.failure_result(f"Cooker '{cooker}' does not exist")
@@ -509,6 +686,393 @@ class GameSimulator:
         
         return ActionResult.success_result([event])
     
+    def add_condiment(self, condiment_name: str) -> ActionResult:
+        """
+        向组装站添加调料
+        
+        规则：
+        - 组装站必须非空且所有食材已到齐
+        - 调料必须在目标配方的调料列表中
+        - 每种调料有数量上限（recipe.condiments中指定）
+        - 总调料数不超过 MAX_CONDIMENTS (3)
+        - 无效调料（非recipe要求）会被忽略，返回success但不实际添加
+        
+        Args:
+            condiment_name: 调料名称
+            
+        Returns:
+            ActionResult: 操作结果
+        """
+        # 检查组装站是否有食材
+        if not self._state.assembly.ingredients:
+            return ActionResult.failure_result("Assembly is empty, cannot add condiment")
+        
+        # 检查组装站是否已完成（所有食材已到齐）
+        if not self._state.assembly.is_complete:
+            return ActionResult.failure_result(
+                "Assembly is not complete, add all ingredients first"
+            )
+        
+        # 获取目标配方
+        recipe = self._state.assembly.target_recipe
+        if recipe is None:
+            return ActionResult.failure_result("No target recipe for assembly")
+        
+        # 检查是否为无效调料（非recipe要求）- 忽略但不报错
+        if condiment_name not in recipe.condiments:
+            if self._debug:
+                print(f"Condiment '{condiment_name}' ignored (not in recipe)")
+            return ActionResult.success_result([])
+        
+        # 检查总调料数是否已达上限
+        total_condiments = sum(self._state.assembly.condiments.values())
+        if total_condiments >= self.MAX_CONDIMENTS:
+            return ActionResult.failure_result(
+                f"Maximum condiments ({self.MAX_CONDIMENTS}) reached"
+            )
+        
+        # 检查该调料是否已达上限
+        current_count = self._state.assembly.condiments.get(condiment_name, 0)
+        max_count = recipe.condiments[condiment_name]
+        if current_count >= max_count:
+            return ActionResult.failure_result(
+                f"Condiment '{condiment_name}' already at maximum ({max_count})"
+            )
+        
+        # 添加调料
+        self._state.assembly.condiments[condiment_name] = current_count + 1
+        
+        # 创建事件
+        event = Event(
+            timestamp=self._state.time,
+            event_type=EventType.CONDIMENT_ADDED,
+            details={
+                'condiment': condiment_name,
+                'count': current_count + 1,
+                'total_condiments': total_condiments + 1
+            }
+        )
+        
+        self._event_history.append(event)
+        
+        if self._debug:
+            print(f"Added condiment {condiment_name} ({current_count + 1}/{max_count})")
+        
+        return ActionResult.success_result([event])
+    
+    def move_to_stockpile(self, cooker: str, slot_name: str) -> ActionResult:
+        """
+        将烹饪完成的食材从灶台移到库存
+        
+        规则：
+        - 灶台必须存在且有食材
+        - 烹饪必须完成
+        - 食材不能已过期
+        - 库存槽位必须兼容（同食材+同厨具）
+        - 库存槽位不能已满（最多5份）
+        
+        Args:
+            cooker: 灶台名称
+            slot_name: 库存槽位名称
+            
+        Returns:
+            ActionResult: 操作结果
+        """
+        # 检查灶台是否存在
+        if cooker not in self._state.cookers:
+            return ActionResult.failure_result(f"Cooker '{cooker}' does not exist")
+        
+        cooker_state = self._state.cookers[cooker]
+        
+        # 检查灶台是否有食材
+        if not cooker_state.busy or cooker_state.ingredient_name is None:
+            return ActionResult.failure_result(f"Cooker '{cooker}' has no ingredient")
+        
+        # 检查烹饪是否完成
+        if cooker_state.done_at is None or self._state.time < cooker_state.done_at:
+            return ActionResult.failure_result(
+                f"Ingredient on '{cooker}' is not cooked yet"
+            )
+        
+        # 检查食材是否过期
+        if cooker_state.expired_at and self._state.time >= cooker_state.expired_at:
+            return ActionResult.failure_result(
+                f"Ingredient on '{cooker}' has expired, must clear to trash"
+            )
+        
+        # 检查库存槽位是否存在
+        if slot_name not in self._state.stockpile:
+            return ActionResult.failure_result(f"Stockpile slot '{slot_name}' does not exist")
+        
+        stockpile_slot = self._state.stockpile[slot_name]
+        ingredient_name = cooker_state.ingredient_name
+        cooker_type = cooker_state.cooker_type
+        
+        # 检查库存槽位兼容性
+        if not stockpile_slot.can_add(ingredient_name, cooker_type):
+            return ActionResult.failure_result(
+                f"Cannot add {ingredient_name} ({cooker_type}) to slot '{slot_name}' "
+                f"(incompatible with existing: {stockpile_slot.ingredient_name})"
+            )
+        
+        # 检查库存槽位是否已满
+        if stockpile_slot.count >= self.MAX_STOCKPILE:
+            return ActionResult.failure_result(
+                f"Stockpile slot '{slot_name}' is full ({self.MAX_STOCKPILE} items)"
+            )
+        
+        # 添加到库存
+        stockpile_slot.add(ingredient_name, cooker_type)
+        
+        # 清空灶台
+        cooker_state.clear()
+        
+        # 创建事件
+        event = Event(
+            timestamp=self._state.time,
+            event_type=EventType.INGREDIENT_MOVED_TO_STOCKPILE,
+            details={
+                'ingredient': ingredient_name,
+                'cooker': cooker,
+                'stockpile_slot': slot_name,
+                'count': stockpile_slot.count
+            }
+        )
+        
+        self._event_history.append(event)
+        
+        if self._debug:
+            print(f"Moved {ingredient_name} from {cooker} to stockpile {slot_name}")
+        
+        return ActionResult.success_result([event])
+    
+    def pull_from_stockpile(self, slot_name: str) -> ActionResult:
+        """
+        从库存取出食材放到组装站
+        
+        规则：
+        - 库存槽位必须存在且有食材
+        - 食材必须与当前组装站兼容
+        
+        Args:
+            slot_name: 库存槽位名称
+            
+        Returns:
+            ActionResult: 操作结果
+        """
+        # 检查库存槽位是否存在
+        if slot_name not in self._state.stockpile:
+            return ActionResult.failure_result(f"Stockpile slot '{slot_name}' does not exist")
+        
+        stockpile_slot = self._state.stockpile[slot_name]
+        
+        # 检查库存是否有食材
+        if stockpile_slot.count <= 0:
+            return ActionResult.failure_result(f"Stockpile slot '{slot_name}' is empty")
+        
+        ingredient_name = stockpile_slot.ingredient_name
+        cooker_type = stockpile_slot.cooker_type
+        
+        # 检查组装站兼容性
+        if not self._state.assembly.can_add_ingredient(ingredient_name, cooker_type):
+            return ActionResult.failure_result(
+                f"Ingredient {ingredient_name} is not compatible with current assembly"
+            )
+        
+        # 添加到组装站
+        self._state.assembly.ingredients.append((ingredient_name, cooker_type, self._state.time))
+        
+        # 设置目标配方（如果是第一个食材）
+        if self._state.assembly.target_recipe is None:
+            for recipe in self._recipes.values():
+                for ing in recipe.ingredients:
+                    if ing.name == ingredient_name and ing.cooker_type == cooker_type:
+                        self._state.assembly.target_recipe = recipe
+                        break
+                if self._state.assembly.target_recipe:
+                    break
+        
+        # 从库存移除
+        stockpile_slot.remove_one()
+        
+        # 创建事件
+        event = Event(
+            timestamp=self._state.time,
+            event_type=EventType.INGREDIENT_ADDED_TO_ASSEMBLY,
+            details={
+                'ingredient': ingredient_name,
+                'cooker': cooker_type,
+                'source': f'stockpile:{slot_name}',
+                'assembly_ingredients': [ing[0] for ing in self._state.assembly.ingredients]
+            }
+        )
+        
+        self._event_history.append(event)
+        
+        if self._debug:
+            print(f"Pulled {ingredient_name} from stockpile {slot_name} to assembly")
+        
+        return ActionResult.success_result([event])
+    
+    def move_to_trash(self, from_location: str) -> ActionResult:
+        """
+        将食材丢弃到垃圾桶
+        
+        支持的来源位置：
+        - cooker名称（如 'grill'）
+        - stockpile名称（如 'stk0'）
+        - 'assembly'（清空整个组装站）
+        
+        Args:
+            from_location: 来源位置
+            
+        Returns:
+            ActionResult: 操作结果
+        """
+        # 检查是否为组装站
+        if from_location == 'assembly':
+            if not self._state.assembly.ingredients:
+                return ActionResult.failure_result("Assembly is already empty")
+            
+            # 记录被丢弃的食材
+            discarded = [ing[0] for ing in self._state.assembly.ingredients]
+            
+            # 清空组装站
+            self._state.assembly.clear()
+            
+            event = Event(
+                timestamp=self._state.time,
+                event_type=EventType.INGREDIENT_MOVED_TO_TRASH,
+                details={
+                    'source': 'assembly',
+                    'discarded': discarded
+                }
+            )
+            
+            self._event_history.append(event)
+            
+            if self._debug:
+                print(f"Trashed assembly: {discarded}")
+            
+            return ActionResult.success_result([event])
+        
+        # 检查是否为灶台
+        if from_location in self._state.cookers:
+            cooker_state = self._state.cookers[from_location]
+            
+            if not cooker_state.busy or cooker_state.ingredient_name is None:
+                return ActionResult.failure_result(
+                    f"Cooker '{from_location}' has no ingredient to trash"
+                )
+            
+            ingredient_name = cooker_state.ingredient_name
+            
+            # 清空灶台
+            cooker_state.clear()
+            
+            event = Event(
+                timestamp=self._state.time,
+                event_type=EventType.INGREDIENT_MOVED_TO_TRASH,
+                details={
+                    'source': f'cooker:{from_location}',
+                    'ingredient': ingredient_name
+                }
+            )
+            
+            self._event_history.append(event)
+            
+            if self._debug:
+                print(f"Trashed {ingredient_name} from cooker {from_location}")
+            
+            return ActionResult.success_result([event])
+        
+        # 检查是否为库存
+        if from_location in self._state.stockpile:
+            stockpile_slot = self._state.stockpile[from_location]
+            
+            if stockpile_slot.count <= 0:
+                return ActionResult.failure_result(
+                    f"Stockpile slot '{from_location}' is empty"
+                )
+            
+            ingredient_name = stockpile_slot.ingredient_name
+            
+            # 清空库存槽位
+            stockpile_slot.clear()
+            
+            event = Event(
+                timestamp=self._state.time,
+                event_type=EventType.INGREDIENT_MOVED_TO_TRASH,
+                details={
+                    'source': f'stockpile:{from_location}',
+                    'ingredient': ingredient_name
+                }
+            )
+            
+            self._event_history.append(event)
+            
+            if self._debug:
+                print(f"Trashed stockpile {from_location}")
+            
+            return ActionResult.success_result([event])
+        
+        return ActionResult.failure_result(f"Unknown location: '{from_location}'")
+    
+    def clear_cooker(self, cooker: str) -> ActionResult:
+        """
+        清理灶台上的过期食材
+        
+        规则：
+        - 灶台必须存在
+        - 灶台必须有食材
+        - 食材必须已过期
+        
+        Args:
+            cooker: 灶台名称
+            
+        Returns:
+            ActionResult: 操作结果
+        """
+        # 检查灶台是否存在
+        if cooker not in self._state.cookers:
+            return ActionResult.failure_result(f"Cooker '{cooker}' does not exist")
+        
+        cooker_state = self._state.cookers[cooker]
+        
+        # 检查灶台是否有食材
+        if not cooker_state.busy or cooker_state.ingredient_name is None:
+            return ActionResult.failure_result(f"Cooker '{cooker}' has no ingredient")
+        
+        # 检查食材是否已过期
+        if cooker_state.expired_at is None or self._state.time < cooker_state.expired_at:
+            return ActionResult.failure_result(
+                f"Ingredient on '{cooker}' has not expired yet "
+                f"(expires at {cooker_state.expired_at:.1f}s, now {self._state.time:.1f}s)"
+            )
+        
+        ingredient_name = cooker_state.ingredient_name
+        
+        # 清空灶台
+        cooker_state.clear()
+        
+        # 创建事件
+        event = Event(
+            timestamp=self._state.time,
+            event_type=EventType.INGREDIENT_MOVED_TO_TRASH,
+            details={
+                'source': f'cooker:{cooker}',
+                'ingredient': ingredient_name,
+                'reason': 'expired'
+            }
+        )
+        
+        self._event_history.append(event)
+        
+        if self._debug:
+            print(f"Cleared expired {ingredient_name} from cooker {cooker}")
+        
+        return ActionResult.success_result([event])
+    
     def serve_order(self, slot_idx: int) -> ActionResult:
         """
         提交订单（将组装好的菜品送到取餐台）
@@ -519,6 +1083,12 @@ class GameSimulator:
         Returns:
             ActionResult: 操作结果
         """
+        # 检查动画窗口
+        if self.is_in_animation_window():
+            return ActionResult.failure_result(
+                f"Cannot serve during animation window (until {self._animation_until:.1f}s)"
+            )
+        
         # 检查槽位索引
         if slot_idx < 0 or slot_idx >= self.MAX_SLOTS:
             return ActionResult.failure_result(f"Invalid slot index: {slot_idx}")
@@ -538,20 +1108,24 @@ class GameSimulator:
                 f"Assembly recipe does not match order recipe"
             )
         
-        # 检查调料是否满足要求（简化版：检查数量）
-        # TODO: 更复杂的调料匹配逻辑
+        # 检查调料是否满足要求
+        recipe = order.recipe
+        assembly_condiments = self._state.assembly.condiments
+        
+        # 验证每种调料数量
+        for condiment_name, required_count in recipe.condiments.items():
+            actual_count = assembly_condiments.get(condiment_name, 0)
+            if actual_count < required_count:
+                return ActionResult.failure_result(
+                    f"Missing condiment: {condiment_name} "
+                    f"(need {required_count}, have {actual_count})"
+                )
+        
+        # 计算得分
+        score = self._calculate_score(order, assembly_condiments)
         
         # 标记订单完成
         order.served_at = self._state.time
-        order.done = True
-        
-        # 计算得分（简化版）
-        base_score = 100
-        time_penalty = max(0, (order.timeout_at - order.created_at) - 
-                          (order.served_at - order.created_at))
-        # TODO: 更复杂的计分逻辑
-        
-        score = base_score
         
         # 清空组装站
         self._state.assembly.clear()
@@ -582,6 +1156,42 @@ class GameSimulator:
         
         return ActionResult.success_result([event], score=score)
     
+    def _calculate_score(self, order: Order, assembly_condiments: Dict[str, int]) -> int:
+        """
+        计算订单得分
+        
+        基础分 + 时间奖励 + 调料匹配奖励
+        
+        Args:
+            order: 订单
+            assembly_condiments: 组装站上的调料
+            
+        Returns:
+            得分
+        """
+        # 基础分数
+        base_score = 100
+        
+        # Rush订单额外加分
+        if order.is_rush:
+            base_score = 150
+        
+        # 时间奖励：剩余时间越多，奖励越高
+        time_elapsed = self._state.time - order.created_at
+        time_limit = order.timeout_at - order.created_at
+        time_ratio = max(0.0, 1.0 - (time_elapsed / time_limit))
+        time_bonus = int(50 * time_ratio)
+        
+        # 调料匹配奖励
+        condiment_bonus = 0
+        recipe = order.recipe
+        for condiment_name, required_count in recipe.condiments.items():
+            actual_count = assembly_condiments.get(condiment_name, 0)
+            if actual_count >= required_count:
+                condiment_bonus += 10
+        
+        return base_score + time_bonus + condiment_bonus
+    
     def _advance_slots(self, current_time: float) -> None:
         """触发槽位前移"""
         # 移除None值（已完成或超时的订单）
@@ -594,6 +1204,16 @@ class GameSimulator:
         
         # 设置动画窗口（1.5秒）
         self._animation_until = current_time + self.ANIMATION_DURATION
+        
+        # 检查剩余订单数量，设置刷新计时
+        active_orders = sum(1 for o in self._state.orders if o is not None)
+        if active_orders == 0:
+            # 所有槽位为空，需要立即刷新
+            self._needs_immediate_refresh = True
+        else:
+            # 有剩余订单，从当前时刻开始计时 4 秒后刷新
+            # 每次订单过期都重置计时器
+            self._next_order_refresh_time = current_time + self.ORDER_INTERVAL
         
         # 创建槽位前移事件
         event = Event(
@@ -644,6 +1264,11 @@ class GameSimulator:
         # 计算新时间，但不能超过游戏结束时间
         new_time = min(self._state.time + dt, self.GAME_DURATION)
         
+        # 先生成新订单（在超时检查之前）
+        # 这样在订单超时重置计时器之前，可以先生成之前的订单
+        order_events = self._generate_orders(new_time)
+        events.extend(order_events)
+        
         # 检查订单超时
         timeout_events = self._check_order_timeouts(new_time)
         events.extend(timeout_events)
@@ -651,10 +1276,6 @@ class GameSimulator:
         # 检查烹饪完成和食材过期
         cooking_events = self._check_cooking_progress(new_time)
         events.extend(cooking_events)
-        
-        # 生成新订单
-        order_events = self._generate_orders(new_time)
-        events.extend(order_events)
         
         # 更新时间
         self._state.time = new_time
@@ -674,7 +1295,6 @@ class GameSimulator:
             
             if current_time >= order.timeout_at:
                 # 订单超时
-                order.failed = True
                 events.append(Event(
                     timestamp=current_time,
                     event_type=EventType.ORDER_TIMEOUT,
@@ -729,43 +1349,59 @@ class GameSimulator:
         return events
     
     def _generate_orders(self, current_time: float) -> List[Event]:
-        """生成新订单"""
+        """生成新订单
+        
+        刷新规则：
+        1. 立即刷新：如果所有槽位为空（提交或超时后），在动画窗口结束后立即生成
+        2. 定时刷新：达到 _next_order_refresh_time 时生成新订单
+           - 游戏开始后第 4 秒生成第一个订单
+           - 订单提交/超时后有剩余订单时，从该时刻开始计时 4 秒
+        
+        注意：当 tick 时间跳过刷新点时，订单应在刷新时刻创建（而非当前时刻）
+        注意：使用容差处理浮点精度问题（如 7.9 + 0.1 可能 ≠ 8.0）
+        """
         events = []
         
-        # 检查是否需要立即刷新（提交后无订单）
-        if self._should_immediate_refresh(current_time):
-            event = self._create_new_order(current_time)
-            if event:
-                events.append(event)
-            return events
+        # 浮点比较容差
+        EPSILON = 1e-9
         
-        # 检查4秒间隔
-        # 找到下一个应该生成订单的时间点
-        next_order_time = ((int(current_time) // 4) + 1) * 4
-        
-        # 检查是否到达或超过了下一个订单时间点
-        if current_time >= next_order_time:
-            # 检查是否已经有足够的订单
-            active_orders = sum(1 for o in self._state.orders if o is not None)
-            if active_orders < self.MAX_SLOTS:
+        # 检查是否需要立即刷新（提交或超时后所有槽位为空）
+        if self._needs_immediate_refresh:
+            if current_time >= self._animation_until:
                 event = self._create_new_order(current_time)
                 if event:
                     events.append(event)
+                    self._needs_immediate_refresh = False
+                    # 更新下一次刷新时间
+                    self._next_order_refresh_time = current_time + self.ORDER_INTERVAL
+            return events
+        
+        # 检查是否到达刷新时间（使用容差处理浮点精度）
+        if current_time >= self._next_order_refresh_time - EPSILON:
+            # 检查是否有空槽位
+            active_orders = sum(1 for o in self._state.orders if o is not None)
+            if active_orders < self.MAX_SLOTS:
+                # 使用刷新时刻作为订单创建时间（而非当前时间）
+                order_time = self._next_order_refresh_time
+                event = self._create_new_order(order_time)
+                if event:
+                    events.append(event)
+                    # 更新下一次刷新时间（4秒后）
+                    self._next_order_refresh_time = order_time + self.ORDER_INTERVAL
+                    self._last_order_time = order_time
         
         return events
     
-    def _should_immediate_refresh(self, current_time: float) -> bool:
-        """检查是否需要立即刷新订单（提交后无订单）"""
-        # 检查场上是否没有订单
-        active_orders = sum(1 for o in self._state.orders if o is not None)
-        if active_orders == 0:
-            # 检查是否不在动画窗口期
-            if current_time >= self._animation_until:
-                return True
-        return False
-    
-    def _create_new_order(self, current_time: float) -> Optional[Event]:
-        """创建一个新订单"""
+    def _create_new_order(self, created_at: float) -> Optional[Event]:
+        """
+        创建一个新订单
+        
+        Args:
+            created_at: 订单创建时间（用于计算动画和超时）
+            
+        Returns:
+            生成的事件，如果没有生成则返回None
+        """
         # 查找空槽位
         empty_slot = None
         for i, order in enumerate(self._state.orders):
@@ -792,8 +1428,8 @@ class GameSimulator:
             order_id=self._next_order_id,
             recipe=recipe,
             is_rush=is_rush,
-            created_at=current_time,
-            timeout_at=current_time + timeout,
+            created_at=created_at,
+            timeout_at=created_at + timeout,
             condiments_applied={}
         )
         
@@ -803,11 +1439,11 @@ class GameSimulator:
         self._state.orders[empty_slot] = order
         
         # 设置动画窗口（1秒）
-        self._animation_until = current_time + 1.0
+        self._animation_until = created_at + 1.0
         
         # 创建事件
         event = Event(
-            timestamp=current_time,
+            timestamp=created_at,
             event_type=EventType.ORDER_APPEARED,
             details={
                 'order_id': order.order_id,
@@ -827,90 +1463,9 @@ class GameSimulator:
         
         return event
     
-    def _advance_slots(self, current_time: float) -> None:
-        """触发槽位前移"""
-        # 移除None值（已完成或超时的订单）
-        new_orders = [o for o in self._state.orders if o is not None]
-        # 填充None到右侧
-        while len(new_orders) < self.MAX_SLOTS:
-            new_orders.append(None)
-        
-        self._state.orders = new_orders
-        
-        # 设置动画窗口（1.5秒）
-        self._animation_until = current_time + self.ANIMATION_DURATION
-        
-        # 创建槽位前移事件
-        event = Event(
-            timestamp=current_time,
-            event_type=EventType.SLOTS_ADVANCED,
-            details={
-                'animation_until': self._animation_until
-            }
-        )
-        
-        self._event_history.append(event)
-        
-        if self._debug:
-            print(f"Slots advanced, animation until {self._animation_until}")
-    
-    # 其余操作将在后续实现...
-    # start_cooking, move_to_assembly, serve_order, etc.
-
-
-# ============================================================================
-# 辅助函数
-# ============================================================================
-
-def load_recipes_from_file(filepath: Union[str, Path]) -> Dict[str, Recipe]:
-    """
-    从文件加载配方数据
-    
-    这是一个独立的辅助函数，不依赖于 GameSimulator 实例
-    
-    Args:
-        filepath: 配方文件路径
-        
-    Returns:
-        Dict[str, Recipe]: 配方字典 {slug: Recipe}
-    """
-    path = Path(filepath)
-    if not path.exists():
-        raise FileNotFoundError(f"Recipe file not found: {filepath}")
-    
-    with open(path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    
-    recipes = {}
-    for recipe_data in data.get('recipes', []):
-        # 解析食材需求
-        ingredients = []
-        for ing_data in recipe_data['ingredients']:
-            ing = IngredientRequirement(
-                name=ing_data['name'],
-                cooker_type=ing_data['cooker'],
-                duration=ing_data['duration']
-            )
-            ingredients.append(ing)
-        
-        # 创建配方对象
-        recipe = Recipe(
-            name=recipe_data['name'],
-            slug=recipe_data['slug'],
-            ingredients=tuple(ingredients),
-            condiments=recipe_data.get('condiments', {})
-        )
-        
-        recipes[recipe.slug] = recipe
-    
-    return recipes
-
 
 # 模块导出
 __all__ = [
     'GameSimulator',
     'ActionResult',
-    'SimulationError',
-    'ValidationError',
-    'load_recipes_from_file',
 ]

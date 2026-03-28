@@ -97,11 +97,6 @@ class Recipe:
         if len(self.ingredients) > 2:
             raise ValueError(f"Recipe {self.name} cannot have more than 2 ingredients")
     
-    @property
-    def is_single_ingredient(self) -> bool:
-        """是否为单食材菜品"""
-        return len(self.ingredients) == 1
-    
     def __repr__(self) -> str:
         return f"Recipe({self.name}, {len(self.ingredients)} ingredients)"
 
@@ -130,12 +125,10 @@ class Order:
         """订单是否已完成"""
         return self.served_at is not None
     
-    @property
     def is_expired(self, current_time: float) -> bool:
         """订单是否已超时"""
         return current_time >= self.timeout_at and not self.is_completed
     
-    @property
     def time_remaining(self, current_time: float) -> float:
         """订单剩余时间（秒）"""
         if self.is_completed:
@@ -305,6 +298,24 @@ class GameState:
         return f"GameState(t={self.time:.1f}s, {order_count} orders, {len(self.cookers)} cookers)"
 
 
+@dataclass
+class GameConfig:
+    """
+    单局游戏配置
+    
+    记录当前游戏局的具体配置：选中的菜谱、可用的道具等
+    """
+    selected_recipes: List[str] = field(default_factory=list)
+    available_cookers: List[str] = field(default_factory=list)
+    available_ingredients: List[str] = field(default_factory=list)
+    available_condiments: List[str] = field(default_factory=list)
+    
+    @property
+    def is_configured(self) -> bool:
+        """检查游戏是否已配置"""
+        return len(self.selected_recipes) > 0
+
+
 # 模块导出列表
 __all__ = [
     # 事件
@@ -321,4 +332,5 @@ __all__ = [
     'AssemblyState',
     'StockpileSlot',
     'GameState',
+    'GameConfig',
 ]

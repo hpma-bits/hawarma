@@ -89,6 +89,30 @@
 包含工具函数：
 - `image_utils.py`: 图像处理工具
 
+### `env_simulator.py`
+- **地位**: 游戏环境模拟器核心
+- **功能**:
+  - 轻量级状态机，模拟游戏规则
+  - 订单生成、超时、槽位前移
+  - 烹饪、组装、上菜操作
+  - 时间推进和事件生成
+- **输入**: 游戏动作、时间推进
+- **输出**: 事件列表、状态更新
+
+### `env_simulator_types.py`
+- **地位**: 模拟器数据类型定义
+- **功能**:
+  - Event、EventType 枚举
+  - Order、Recipe、IngredientRequirement
+  - CookerState、AssemblyState、StockpileSlot
+  - GameState、GameConfig
+
+### `env_bridge.py`
+- **地位**: 环境桥接器
+- **功能**:
+  - 连接 Executor（真实系统）和 GameSimulator（参考实现）
+  - 将坐标操作翻译为符号操作并验证
+
 ## 🔗 模块间关系
 
 ```

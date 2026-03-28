@@ -13,19 +13,20 @@ GameSimulator
 ├── 状态
 │   ├── orders: list[Order | None]       # 4 个订单 slot
 │   ├── cookers: dict[str, CookerState]    # 灶台状态
-│   ├── assembly: AssemblyState            # 组装站食材（无订单归属概念）
+│   ├── assembly: AssemblyState            # 组装站食材
 │   ├── stockpile: dict[str, StockpileSlot]  # 库存 slot
 │   └── time: float                        # 模拟器内部时钟
 │
 ├── 配置
+│   ├── load_recipes(filepath)             # 从 JSON 文件加载配方
+│   ├── select_recipes(count, seed)        # 随机选择配方
+│   ├── setup_from_recipes(slugs)          # 根据配方自动配置游戏
 │   ├── setup_cookers(names)               # 初始化灶台
 │   └── setup_stockpile(slots)             # 初始化库存
 │
 ├── 订单管理
 │   ├── inject_order(slot, recipe)         # 注入订单到指定 slot
-│   ├── schedule_order(recipe, appear_at)   # 调度未来出现的订单
-│   ├── get_order(slot)                    # 查询 slot 中的订单
-│   └── get_order_slot(order_id)           # 反查订单所在 slot
+│   └── get_order(slot)                    # 查询 slot 中的订单
 │
 ├── 操作（每个操作都有前置条件检查）
 │   ├── start_cooking(ingredient, cooker)
@@ -41,22 +42,19 @@ GameSimulator
 │   └── tick(dt)                           # 推进时间，触发自动事件
 │
 ├── 事件
-│   ├── drain_events()                     # 取出并清空事件队列
 │   └── events                             # 只读事件列表
 │
 └── 查询
-    ├── snapshot()                         # 状态快照（用于断言）
-    ├── get_overdue_cookers()              # 过期灶台列表
-    ├── get_stockpile_count(ingredient)    # 某食材总库存
-    ├── get_assembly_ingredients()         # 组装站当前食材
-    └── is_animation_window()              # 是否在动画窗口期
+    ├── get_cooker_state(cooker)           # 灶台状态
+    ├── get_stockpile_slot(slot)           # 库存槽位状态
+    └── is_in_animation_window()           # 是否在动画窗口期
 ```
 
 ## 操作前置条件
 
 | 操作 | 必须满足 | 失败时返回 |
 |------|---------|-----------|
-| `start_cooking` | 灶台存在 | `False` |
+| `start_cooking` | 灶台存在且空闲 | `False` |
 | `move_to_assembly` | 灶台 busy、有食材、烹饪完成 | `False` |
 | `move_to_stockpile` | 灶台 busy、烹饪完成、目标 slot 未满(≤5)、同 cooker+食材 | `False` |
 | `pull_from_stockpile` | 库存 > 0 | `False` |
@@ -76,46 +74,56 @@ GameSimulator
 
 ```python
 class EventType(Enum):
-    SWIPE = auto()              # 物理滑动操作
     ORDER_APPEARED = auto()     # 新订单出现
     ORDER_TIMEOUT = auto()      # 订单超时
-    COOKING_DONE = auto()       # 烹饪完成
-    INGREDIENT_EXPIRED = auto() # 灶台食材过期
     ORDER_SERVED = auto()       # 订单上菜
+    COOKING_STARTED = auto()    # 开始烹饪
+    COOKING_COMPLETED = auto()  # 烹饪完成
+    INGREDIENT_EXPIRED = auto() # 灶台食材过期
+    INGREDIENT_ADDED_TO_ASSEMBLY = auto()  # 食材加入组装站
+    CONDIMENT_ADDED = auto()               # 添加调料
+    ASSEMBLY_COMPLETED = auto()            # 组装完成
+    INGREDIENT_MOVED_TO_STOCKPILE = auto() # 食材移入库存
+    INGREDIENT_MOVED_TO_TRASH = auto()     # 食材丢弃
     SLOTS_ADVANCED = auto()     # slot 位移
 ```
+
+## 订单刷新规则
+
+1. **自动刷新**：游戏开始后，每隔 4 秒自动刷新一个新订单（第 4、8、12... 秒）
+2. **提交后立即刷新**：如果订单被提交后，场上没有订单，系统会立即刷新一个新订单
+3. **提交后部分订单**：如果有 4 个订单，提交 1 个后剩 3 个，从提交时刻开始计时 4 秒后刷新
+4. **过期后刷新**：每次订单过期都重置 4 秒计时器，从该时刻开始重新计时
+5. **新订单动画**：新订单有 1 秒动画时间，动画结束后才能被"看到"
 
 ## 使用方式
 
 ```python
-from hawarma.env_simulator import GameSimulator, Recipe, Ingredient
+from hawarma.env_simulator import GameSimulator
 
 # 初始化
-env = GameSimulator()
-env.setup_cookers(['grill', 'oven', 'skillet', 'pot'])
-env.setup_stockpile(['stk0', 'stk1', 'stk2'])
+sim = GameSimulator()
+sim.load_recipes("data/recipes.json")
 
-# 定义配方
-fish = Recipe(
-    name='Braised Fish',
-    ingredients=[Ingredient('clearwater_fish', 'skillet', 4.0)],
-    condiments={'hearthspice': 1, 'acacia_honey': 1},
-)
+# 选菜单并配置
+selected = sim.select_recipes(count=4, random_seed=42)
+sim.setup_from_recipes(selected)
 
-# 注入并执行
-env.inject_order(0, fish)
-env.tick(0.1)                     # 等待动画
-env.start_cooking('clearwater_fish', 'skillet')
-env.tick(4.0)                     # 烹饪等待
-env.move_to_assembly('skillet')
-env.add_condiment('hearthspice')
-env.add_condiment('acacia_honey')
-env.serve_order(0)
+# 注入订单并执行
+recipe = list(sim.recipes.values())[0]
+sim.inject_order(0, recipe, is_rush=False)
+sim.tick(0.1)  # 等待动画
+
+# 烹饪
+sim.start_cooking('clearwater_fish', 'skillet')
+sim.tick(4.0)  # 烹饪等待
+sim.move_to_assembly('skillet')
+sim.add_condiment('hearthspice')
+sim.serve_order(0)
 
 # 检查结果
-for e in env.events:
-    if e.type == EventType.SWIPE:
-        print(f'{e.time:.2f}s  {e.detail["action"]}  {e.detail["start"]} -> {e.detail["end"]}')
+for e in sim.events:
+    print(f"{e.timestamp:.2f}s  {e.event_type.name}  {e.details}")
 ```
 
 ## 与功能侧的关系

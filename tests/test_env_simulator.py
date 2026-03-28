@@ -27,9 +27,6 @@ from hawarma.env_simulator_types import (
 from hawarma.env_simulator import (
     GameSimulator,
     ActionResult,
-    SimulationError,
-    ValidationError,
-    load_recipes_from_file,
 )
 
 
@@ -53,8 +50,9 @@ def create_test_recipe() -> Recipe:
 def create_simple_simulator() -> GameSimulator:
     """创建一个配置好的简单模拟器"""
     sim = GameSimulator()
-    sim.setup_cookers(['grill', 'oven'])
-    sim.setup_stockpile(['stk0', 'stk1', 'stk2'])
+    sim.load_recipes("data/recipes.json")
+    selected = sim.select_recipes(count=4, random_seed=42)
+    sim.setup_from_recipes(selected)
     return sim
 
 
@@ -96,7 +94,8 @@ class TestBasicStructure:
         """测试模拟器初始化"""
         sim = GameSimulator()
         assert sim.time == 0.0
-        assert len(sim.state.orders) == 0  # 未设置时为空
+        assert len(sim.state.orders) == 4  # 初始化时有4个空槽位
+        assert all(o is None for o in sim.state.orders)
         assert len(sim.state.cookers) == 0
         assert len(sim.state.stockpile) == 0
 
@@ -167,8 +166,8 @@ class TestAutoOrderGeneration:
         # 游戏开始，时间=0
         assert sim.get_order(0) is None
         
-        # 推进4秒
-        sim.tick(4.0)
+        # 推进5秒（4秒生成 + 1秒动画）
+        sim.tick(5.0)
         
         # 应该有一个订单在槽位0
         order1 = sim.get_order(0)
@@ -180,15 +179,15 @@ class TestAutoOrderGeneration:
         sim = create_simple_simulator()
         sim._recipes['test_burger'] = create_test_recipe()
         
-        # 在第4秒生成第一个订单
-        sim.tick(4.0)
+        # 在第5秒可以看到第一个订单（4秒生成 + 1秒动画）
+        sim.tick(5.0)
         assert sim.get_order(0) is not None
         
-        # 在第8秒生成第二个订单
+        # 在第9秒可以看到第二个订单
         sim.tick(4.0)
         assert sim.get_order(1) is not None
         
-        # 在第12秒生成第三个订单
+        # 在第13秒可以看到第三个订单
         sim.tick(4.0)
         assert sim.get_order(2) is not None
     
@@ -197,9 +196,11 @@ class TestAutoOrderGeneration:
         sim = create_simple_simulator()
         sim._recipes['test_burger'] = create_test_recipe()
         
-        # 填满4个槽位
-        for i in range(4):
-            sim.tick(4.0)
+        # 填满4个槽位（每个+1秒动画）
+        sim.tick(5.0)   # 第5秒：订单1可见
+        sim.tick(4.0)   # 第9秒：订单2可见
+        sim.tick(4.0)   # 第13秒：订单3可见
+        sim.tick(4.0)   # 第17秒：订单4可见
         
         # 所有4个槽位都应该有订单
         for i in range(4):
@@ -261,60 +262,128 @@ class TestAutoOrderGeneration:
         sim = create_simple_simulator()
         sim._recipes['test_burger'] = create_test_recipe()
         
-        # 设置一个完整的订单处理流程
-        # 第4秒生成第一个订单
-        sim.tick(4.0)
+        # 第4秒生成第一个订单，+1秒动画（可见于5秒）
+        sim.tick(5.0)
         assert sim.get_order(0) is not None
         
-        # 模拟完成这个订单并提交
-        # 注意：这里需要完整的流程：烹饪 -> 组装 -> 提交
-        # 为了测试，我们直接模拟提交后的状态
+        # 模拟提交订单：清除订单并触发槽位前移
+        sim._state.orders[0] = None
+        sim._advance_slots(sim.time)  # time=5.0, animation_until=6.5
         
-        # 假设在第20秒提交了这个唯一的订单
-        sim.tick(16.0)  # 从第4秒到第20秒
+        # 推进超过动画窗口（1.5秒）
+        sim.tick(2.0)  # time=7.0, animation over at 6.5
         
-        # 提交订单后，场上没有订单了
-        # 根据规则：如果没有订单，应该立即刷新新订单
-        # 注意：新订单有1秒动画时间
+        # 立即刷新应该已触发，订单创建于6.5，动画到7.5
+        # 再等1秒动画结束
+        sim.tick(1.0)  # time=8.0
         
-        # 检查是否立即生成了新订单（在内部状态）
-        # 但玩家需要等待1秒动画后才能看到
-        
-        # 这个测试主要验证立即刷新逻辑是否存在
-        # 具体实现可能需要检查 _pending_orders 或类似机制
-        
-        # 简单验证：提交后如果槽位变空，应该很快有新订单
-        #（具体实现细节取决于你如何实现）
-        pass  # 占位，等待实现后再完善
+        # 现在应该可以看到新订单了
+        new_order = sim.get_order(0)
+        assert new_order is not None, "Immediate refresh should create new order when all slots empty"
     
     def test_refresh_timer_starts_from_serve_when_orders_remain(self):
         """测试有剩余订单时从提交时刻开始4秒计时刷新"""
         sim = create_simple_simulator()
         sim._recipes['test_burger'] = create_test_recipe()
         
-        # 生成4个订单填满所有槽位
-        sim.tick(4.0)   # 第4秒：订单1
-        sim.tick(4.0)   # 第8秒：订单2
-        sim.tick(4.0)   # 第12秒：订单3
-        sim.tick(4.0)   # 第16秒：订单4
+        # 生成4个订单填满所有槽位（每个+1秒动画）
+        sim.tick(5.0)   # 第5秒：订单1可见
+        sim.tick(4.0)   # 第9秒：订单2可见
+        sim.tick(4.0)   # 第13秒：订单3可见
+        sim.tick(4.0)   # 第17秒：订单4可见
         
         # 确认4个槽位都有订单
         for i in range(4):
             assert sim.get_order(i) is not None
         
-        # 假设在第20秒提交了订单1（slot 0）
-        # 提交后，slot 0 变空，slot 1-3 的订单左移
-        # 场上还剩3个订单（原来的2、3、4，现在变成1、2、3）
-        sim.tick(4.0)   # 第20秒
+        # 模拟在第20秒提交订单1（slot 0）
+        sim.tick(3.0)  # 推进到第20秒
+        sim._state.orders[0] = None
+        sim._advance_slots(sim.time)
         
-        # 根据规则：如果场上有剩余订单，从提交时刻（第20秒）开始计时
-        # 4秒后（第24秒）应该刷新新订单到空的 slot 3
-        sim.tick(4.0)   # 第24秒
+        # 剩余3个订单应该左移
+        assert sim.get_order(0) is not None  # 原slot1
+        assert sim.get_order(1) is not None  # 原slot2
+        assert sim.get_order(2) is not None  # 原slot3
         
-        # 验证第24秒有新订单出现
-        # 注意：具体验证方式取决于实现
-        # 可能需要检查是否有新订单ID或者 slot 3 不为空
-        pass  # 占位，等待实现后再完善
+        # 推进到24秒（提交后4秒），新订单应该出现
+        sim.tick(4.0)
+        # 新订单在动画期间，再等1秒
+        sim.tick(1.0)
+        
+        # slot 3应该有新订单了
+        assert sim.get_order(3) is not None, "New order should appear 4s after serve"
+    
+    def test_refresh_timer_starts_from_expire_when_orders_remain(self):
+        """测试订单过期后有剩余订单时从过期时刻开始4秒计时刷新"""
+        sim = create_simple_simulator()
+        sim._recipes['test_burger'] = create_test_recipe()
+        
+        # 生成4个订单填满所有槽位（每个+1秒动画）
+        sim.tick(5.0)   # 第5秒：订单1可见
+        sim.tick(4.0)   # 第9秒：订单2可见
+        sim.tick(4.0)   # 第13秒：订单3可见
+        sim.tick(4.0)   # 第17秒：订单4可见
+        
+        # 确认4个槽位都有订单
+        for i in range(4):
+            assert sim.get_order(i) is not None
+        
+        # 推进到第20秒
+        sim.tick(3.0)
+        
+        # 模拟订单1（slot 0）过期：设置其 timeout_at 为当前时间之前
+        sim._state.orders[0].timeout_at = sim.time - 1.0
+        
+        # 推进时间触发超时检查（tick会调用_check_order_timeouts）
+        sim.tick(0.1)
+        
+        # 订单1应该已过期，触发 slot 位移
+        # 剩余3个订单应该左移
+        assert sim.get_order(0) is not None  # 原slot1
+        assert sim.get_order(1) is not None  # 原slot2
+        assert sim.get_order(2) is not None  # 原slot3
+        
+        # 推进到24秒（过期后4秒），新订单应该出现
+        sim.tick(4.0)
+        # 新订单在动画期间，再等1秒
+        sim.tick(1.0)
+        
+        # slot 3应该有新订单了
+        assert sim.get_order(3) is not None, "New order should appear 4s after expire"
+    
+    def test_refresh_timer_starts_from_serve_when_orders_remain(self):
+        """测试有剩余订单时从提交时刻开始4秒计时刷新"""
+        sim = create_simple_simulator()
+        sim._recipes['test_burger'] = create_test_recipe()
+        
+        # 生成4个订单填满所有槽位（每个+1秒动画）
+        sim.tick(5.0)   # 第5秒：订单1可见
+        sim.tick(4.0)   # 第9秒：订单2可见
+        sim.tick(4.0)   # 第13秒：订单3可见
+        sim.tick(4.0)   # 第17秒：订单4可见
+        
+        # 确认4个槽位都有订单
+        for i in range(4):
+            assert sim.get_order(i) is not None
+        
+        # 模拟在第20秒提交订单1（slot 0）
+        sim.tick(3.0)  # 推进到第20秒
+        sim._state.orders[0] = None
+        sim._advance_slots(sim.time)
+        
+        # 剩余3个订单应该左移
+        assert sim.get_order(0) is not None  # 原slot1
+        assert sim.get_order(1) is not None  # 原slot2
+        assert sim.get_order(2) is not None  # 原slot3
+        
+        # 推进到24秒（提交后4秒），新订单应该出现
+        sim.tick(4.0)
+        # 新订单在动画期间，再等1秒
+        sim.tick(1.0)
+        
+        # slot 3应该有新订单了
+        assert sim.get_order(3) is not None, "New order should appear 4s after serve"
 
 class TestParallelCooking:
     """测试并行烹饪"""
@@ -322,46 +391,54 @@ class TestParallelCooking:
     def test_multiple_cookers_can_cook_simultaneously(self):
         """测试多个灶台可以同时烹饪"""
         sim = create_simple_simulator()
+        sim.load_recipes("data/recipes.json")
         
-        # 同时在两个灶台开始烹饪
-        result1 = sim.start_cooking('beef', 'grill')
-        result2 = sim.start_cooking('fish', 'oven')
+        # 同时在两个灶台开始烹饪（使用选中菜谱中的食材）
+        result1 = sim.start_cooking('clearwater_fish', 'skillet')
+        result2 = sim.start_cooking('creamfield_rice', 'pot')
         
         # 两个都应该成功
-        assert result1.success, f"Failed to start on grill: {result1.error_message}"
-        assert result2.success, f"Failed to start on oven: {result2.error_message}"
+        assert result1.success, f"Failed to start on skillet: {result1.error_message}"
+        assert result2.success, f"Failed to start on pot: {result2.error_message}"
         
         # 检查状态
-        grill = sim.get_cooker_state('grill')
-        oven = sim.get_cooker_state('oven')
+        skillet = sim.get_cooker_state('skillet')
+        pot = sim.get_cooker_state('pot')
         
-        assert grill.busy
-        assert grill.ingredient_name == 'beef'
-        assert oven.busy
-        assert oven.ingredient_name == 'fish'
+        assert skillet.busy
+        assert skillet.ingredient_name == 'clearwater_fish'
+        assert pot.busy
+        assert pot.ingredient_name == 'creamfield_rice'
     
     def test_cookers_complete_at_different_times(self):
         """测试不同灶台在不同时间完成烹饪"""
         sim = create_simple_simulator()
+        sim.load_recipes("data/recipes.json")
         
-        # 模拟配方数据（烹饪时间不同）
-        # 注意：实际实现中应该从 recipe 获取持续时间
-        # 这里我们只是测试 tick 机制
+        # 使用不同烹饪时间的食材
+        sim.start_cooking('clearwater_fish', 'skillet')  # 4秒
+        sim.start_cooking('creamfield_rice', 'pot')  # 2秒
         
-        # 在 grill 开始烹饪（假设 3 秒）
-        sim.start_cooking('beef', 'grill')
-        # 在 oven 开始烹饪（假设 4 秒）
-        sim.start_cooking('fish', 'oven')
+        # 推进 2 秒 - pot 应该完成
+        sim.tick(2.0)
+        pot = sim.get_cooker_state('pot')
+        skillet = sim.get_cooker_state('skillet')
         
-        # 推进 3 秒
-        events = sim.tick(3.0)
+        # pot 食材已烹饪完成（但仍在灶台上）
+        assert pot.done_at is not None
+        assert sim.time >= pot.done_at
         
-        # grill 应该完成，但 oven 还未完成
-        # 注意：实际实现中需要检查事件的类型
-        grill = sim.get_cooker_state('grill')
+        # skillet 还没完成
+        assert skillet.busy
+        assert sim.time < skillet.done_at
         
-        # 推进再 1 秒（总共 4 秒）
-        events = sim.tick(1.0)
+        # 推进再 2 秒（总共 4 秒）
+        sim.tick(2.0)
+        skillet = sim.get_cooker_state('skillet')
+        
+        # 现在 skillet 也完成了
+        assert skillet.done_at is not None
+        assert sim.time >= skillet.done_at
         
         # oven 应该完成
         oven = sim.get_cooker_state('oven')
@@ -369,24 +446,25 @@ class TestParallelCooking:
     def test_cooker_becomes_available_after_completion(self):
         """测试灶台在完成后可以再次使用"""
         sim = create_simple_simulator()
+        sim.load_recipes("data/recipes.json")
         
-        # 第一轮烹饪
-        result1 = sim.start_cooking('beef', 'grill')
+        # 第一轮烹饪：wild_mushroom on skillet (2秒)
+        result1 = sim.start_cooking('wild_mushroom', 'skillet')
         assert result1.success
         
         # 推进时间到完成
-        sim.tick(3.0)  # 假设牛肉需要 3 秒
+        sim.tick(2.0)
         
         # 将食材移出
-        result2 = sim.move_to_assembly('grill')
+        result2 = sim.move_to_assembly('skillet')
         assert result2.success
         
         # 灶台现在应该是空闲的
-        grill = sim.get_cooker_state('grill')
-        assert not grill.busy
+        skillet = sim.get_cooker_state('skillet')
+        assert not skillet.busy
         
-        # 第二轮烹饪应该可以开始
-        result3 = sim.start_cooking('fish', 'grill')
+        # 第二轮烹饪应该可以开始：vining_marjoram on skillet (4秒)
+        result3 = sim.start_cooking('vining_marjoram', 'skillet')
         assert result3.success
 
 
@@ -431,15 +509,16 @@ class TestErrorHandling:
     def test_busy_cooker_cannot_start(self):
         """测试繁忙的灶台不能开始新的烹饪"""
         sim = create_simple_simulator()
+        sim.load_recipes("data/recipes.json")
         
-        # 在grill开始烹饪
-        result1 = sim.start_cooking('beef', 'grill')
+        # 在 pot 开始烹饪
+        result1 = sim.start_cooking('creamfield_rice', 'pot')
         assert result1.success
         
-        # 尝试在同一个grill开始另一个烹饪
-        result2 = sim.start_cooking('fish', 'grill')
+        # 尝试在同一个 pot 开始另一个烹饪
+        result2 = sim.start_cooking('wild_mushroom', 'pot')
         assert not result2.success
-        assert "busy" in result2.error_message.lower() or "cooker" in result2.error_message.lower()
+        assert "busy" in result2.error_message.lower()
 
 
 # ============================================================================
