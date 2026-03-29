@@ -4,54 +4,125 @@
 
 **最轻量方案**：
 1. **只 detect 订单** - 其他状态通过程序逻辑追踪
-2. **不使用 GameSimulator** - 实现 `GameEnvironment` 类，接口兼容但内部实现不同
-3. **Agent 直接交互** - Agent 与 GameEnvironment 交互，无需中间层
+2. **GameEnvironment** - 接口兼容 GameSimulator，但内部实现不同
+3. **Agent 直接持有配方数据** - 烹饪时长从配方获取
 
-## 2. 架构图
+## 2. 关键决策（已确认）
+
+| 问题 | 决策 |
+|------|------|
+| 订单完成/超时 | 依赖内部状态追踪，送餐后认为完成 |
+| 烹饪时长 | Agent 自己持有配方数据 |
+| 调料信息 | 检测时获取，存储在订单中 |
+| 游戏开始 | 检测 timer 图标，3 秒后正式开始 |
+| 游戏结束 | 90 秒倒计时 |
+| 异常处理 | 先信任操作成功 |
+
+---
+
+## 3. 架构图
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                  Real Game Bridge                    │
+│                  RealGameBridge                      │
 ├─────────────────────────────────────────────────────┤
 │                                                      │
 │  ┌────────────────┐      ┌────────────────┐         │
-│  │ GameEnvironment│◄────►│ CookingAgent   │         │
-│  │  (状态追踪)    │      │  (决策大脑)    │         │
+│  │GameEnvironment │◄────►│ CookingAgent   │         │
+│  │  (状态追踪)    │      │  (持有配方数据) │         │
 │  └───────┬────────┘      └────────────────┘         │
 │          │                                          │
-│          │ 执行动作时                              │
-│          ▼                                          │
-│  ┌────────────────┐      ┌────────────────┐         │
-│  │   OrderScanner │      │   UIRunner     │         │
-│  │   (订单检测)    │      │   (swipe)      │         │
-│  └────────────────┘      └────────────────┘         │
+│  ┌───────┴────────┐                                 │
+│  │                │                                 │
+│  ▼                ▼                                 │
+│ OrderScanner    UIRunner                            │
+│ (定时扫描)      (swipe操作)                         │
 │                                                      │
 └─────────────────────────────────────────────────────┘
 ```
 
-## 3. 核心组件
+---
 
-### 3.1 GameEnvironment
+## 4. 核心组件
 
-替代 GameSimulator，接口兼容但实现不同：
+### 4.1 RealGameBridge
+
+主控制器，管理游戏生命周期：
+
+```python
+class RealGameBridge:
+    def __init__(self, config: AppConfig, recipes: list[Recipe]):
+        self.config = config
+        self.env = GameEnvironment(config)
+        self.agent = CookingAgentV2(self.env, recipes)
+        self.scanner = OrderScanner(config, recipes)
+        self.ui = UIRunner(config)
+        
+        self.game_start_time: float = 0
+        self.game_duration: float = 90  # 秒
+    
+    async def run(self):
+        """主循环"""
+        # 1. 等待游戏开始
+        await self._wait_for_game_start()
+        
+        # 2. 启动扫描和决策循环
+        await asyncio.gather(
+            self._scan_loop(),
+            self._agent_loop()
+        )
+    
+    async def _wait_for_game_start(self):
+        """等待游戏开始：检测 timer，然后等待 3 秒"""
+        logger.info("Waiting for game to start...")
+        while not self.scanner.detect_timer():
+            await asyncio.sleep(0.5)
+        
+        logger.info("Timer detected, waiting 3 seconds...")
+        await asyncio.sleep(3)
+        self.game_start_time = time.time()
+        logger.info("Game started!")
+    
+    async def _scan_loop(self):
+        """订单扫描循环"""
+        while not self._is_game_over():
+            if not self.env.is_in_animation_window():
+                orders = await asyncio.to_thread(self.scanner.scan_orders)
+                self.env.sync_orders(orders)
+            await asyncio.sleep(0.5)
+    
+    async def _agent_loop(self):
+        """Agent 决策循环"""
+        while not self._is_game_over():
+            if not self.env.is_in_animation_window():
+                action = self.agent.step()
+                if action:
+                    await self._execute_action(action)
+            await asyncio.sleep(0.1)
+    
+    def _is_game_over(self) -> bool:
+        """游戏是否结束"""
+        return time.time() - self.game_start_time >= self.game_duration
+```
+
+### 4.2 GameEnvironment
+
+替代 GameSimulator，状态通过程序追踪：
 
 ```python
 class GameEnvironment:
-    """
-    游戏环境 - 状态通过程序逻辑追踪
-    
-    与 GameSimulator 的区别：
-    - 不模拟游戏规则
-    - 不 tick() 推进时间
-    - 状态通过实际操作和订单检测更新
-    """
+    """游戏环境 - 状态通过程序逻辑追踪"""
     
     def __init__(self, config: AppConfig):
+        self.config = config
+        
         # 订单状态（通过检测更新）
         self.orders: list[Order | None] = [None] * 4
         
         # 灶台状态（通过操作追踪）
-        self.cookers: dict[str, CookerState] = {}
+        self.cookers: dict[str, CookerState] = {
+            name: CookerState() for name in config.cookers
+        }
         
         # 组装站状态（通过操作追踪）
         self.assembly: AssemblyState = AssemblyState()
@@ -59,106 +130,175 @@ class GameEnvironment:
         # 库存状态（通过操作追踪）
         self.stockpile: dict[str, int] = {}
         
-        # 时间追踪
-        self.start_time: float = 0
-        self.is_running: bool = False
-    
-    # === Agent 接口（与 GameSimulator 兼容）===
-    
-    def get_order(self, slot_idx: int) -> Order | None:
-        """获取订单"""
-        return self.orders[slot_idx]
-    
-    def get_cooker_state(self, cooker_name: str) -> CookerState:
-        """获取灶台状态"""
-        return self.cookers.get(cooker_name, CookerState())
+        # 动画窗口
+        self._animation_until: float = 0
     
     def is_in_animation_window(self) -> bool:
-        """是否在动画窗口期"""
-        # 通过程序追踪
-        return self._animation_until > time.time()
+        return time.time() < self._animation_until
     
-    def is_game_over(self) -> bool:
-        """游戏是否结束"""
-        return time.time() - self.start_time >= 90
+    def set_animation_window(self, duration: float = 1.5):
+        self._animation_until = time.time() + duration
     
-    # === 操作执行（更新内部状态 + 执行 UI）===
+    def sync_orders(self, detected_orders: list[Order | None]):
+        """同步订单状态"""
+        for i, order in enumerate(detected_orders):
+            # 只更新变化的 slot
+            if order is not None and self.orders[i] is None:
+                self.orders[i] = order
+                logger.info(f"New order in slot {i}: {order.recipe.name}")
     
-    async def start_cooking(self, ingredient: str, cooker: str) -> ActionResult:
+    # === 操作方法（更新内部状态）===
+    
+    def start_cooking(self, ingredient: str, cooker: str, duration: float) -> bool:
         """开始烹饪"""
-        # 1. 检查前置条件
         if self.cookers[cooker].busy:
-            return ActionResult.failure("Cooker busy")
+            return False
         
-        # 2. 执行 UI 操作
-        await self.ui.swipe(
-            self.positions.ingredients[ingredient],
-            self.positions.cookers[cooker]
-        )
-        
-        # 3. 更新内部状态
         self.cookers[cooker] = CookerState(
             busy=True,
             ingredient_name=ingredient,
+            cooker_type=cooker,
             started_at=time.time(),
             done_at=time.time() + duration
         )
-        
-        return ActionResult.success()
+        return True
     
-    async def move_to_assembly(self, cooker: str) -> ActionResult:
+    def move_to_assembly(self, cooker: str, order_id: int) -> bool:
         """移动到组装站"""
-        # 执行 UI 操作
-        await self.ui.swipe(
-            self.positions.cookers[cooker],
-            self.positions.assembly
-        )
+        cooker_state = self.cookers[cooker]
+        if not cooker_state.busy or cooker_state.done_at is None:
+            return False
         
-        # 更新状态
-        self.assembly.ingredients.append(self.cookers[cooker].ingredient_name)
+        # 更新组装站
+        self.assembly.ingredients.append(cooker_state.ingredient_name)
+        self.assembly.order_id = order_id
+        
+        # 清空灶台
         self.cookers[cooker] = CookerState()
-        
-        return ActionResult.success()
+        return True
     
-    async def serve_order(self, slot_idx: int) -> ActionResult:
+    def serve_order(self, slot_idx: int) -> bool:
         """送餐"""
-        # 执行 UI 操作
-        await self.ui.swipe(
-            self.positions.assembly,
-            self.positions.pickups[slot_idx]
-        )
+        if self.orders[slot_idx] is None:
+            return False
         
-        # 更新状态
+        # 清空订单和组装站
         self.orders[slot_idx] = None
         self.assembly = AssemblyState()
-        self._animation_until = time.time() + 1.5
-        
-        return ActionResult.success()
+        self.set_animation_window(1.5)
+        return True
 ```
 
-### 3.2 OrderScanner
+### 4.3 CookingAgentV2
 
-只检测订单，最轻量检测：
+Agent 持有配方数据，决策逻辑：
+
+```python
+class CookingAgentV2:
+    """高效 Agent - 持有配方数据"""
+    
+    def __init__(self, env: GameEnvironment, recipes: list[Recipe]):
+        self.env = env
+        self.recipes = {r.slug: r for r in recipes}
+        
+        # 食材 → (灶台, 时长) 映射
+        self.ingredient_info: dict[str, tuple[str, float]] = {}
+        for recipe in recipes:
+            for i, ing in enumerate(recipe.raw_ingredients):
+                cooker = recipe.cookers_layout[i] if i < len(recipe.cookers_layout) else recipe.cookers[i]
+                duration = recipe.cook_durations[i]
+                self.ingredient_info[ing] = (cooker, duration)
+    
+    def step(self) -> Action | None:
+        """单步决策"""
+        # 1. 送餐
+        if action := self._try_serve():
+            return action
+        
+        # 2. 移动到组装站
+        if action := self._try_move_to_assembly():
+            return action
+        
+        # 3. 从库存取用
+        if action := self._try_pull_from_stockpile():
+            return action
+        
+        # 4. 烹饪
+        if action := self._try_cook():
+            return action
+        
+        return None
+    
+    def _try_serve(self) -> Action | None:
+        """尝试送餐"""
+        if self.env.is_in_animation_window():
+            return None
+        
+        assembly = self.env.assembly
+        if not assembly.ingredients:
+            return None
+        
+        # 找到匹配的订单
+        for slot_idx, order in enumerate(self.env.orders):
+            if order is None:
+                continue
+            
+            # 检查食材是否匹配
+            if self._ingredients_match(assembly.ingredients, order.recipe.raw_ingredients):
+                return FinishOrder(slot_idx=slot_idx)
+        
+        return None
+    
+    def _try_cook(self) -> Action | None:
+        """尝试烹饪"""
+        # 获取需要的食材
+        needed = self._get_needed_ingredients()
+        
+        for ing_name in needed:
+            if ing_name not in self.ingredient_info:
+                continue
+            
+            cooker, duration = self.ingredient_info[ing_name]
+            
+            # 检查灶台是否空闲
+            if not self.env.cookers[cooker].busy:
+                return CookAction(
+                    ingredient=ing_name,
+                    cooker=cooker,
+                    duration=duration
+                )
+        
+        return None
+```
+
+### 4.4 OrderScanner
+
+订单扫描器，只检测订单：
 
 ```python
 class OrderScanner:
-    """
-    订单扫描器
+    """订单扫描器"""
     
-    从截图检测订单，是唯一的"感知"组件
-    """
-    
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, recipes: list[Recipe]):
         self.config = config
-        self.recipes = self._load_recipes()
+        self.recipes = recipes
+        self.image_dir = Path(config.image_directory)
+    
+    def detect_timer(self) -> bool:
+        """检测 timer 图标（游戏开始标志）"""
+        screen = G.DEVICE.snapshot()
+        timer_path = self.image_dir / "icon-timer.jpg"
+        
+        if not timer_path.exists():
+            return False
+        
+        # 在屏幕顶部检测 timer
+        roi = (0, 0, 1920, 100)
+        match = local_match(Template(str(timer_path)), roi, screen)
+        return match is not None
     
     def scan_orders(self) -> list[Order | None]:
-        """
-        扫描所有订单槽位
-        
-        Returns:
-            4 个槽位的订单列表
-        """
+        """扫描所有订单"""
         screen = G.DEVICE.snapshot()
         orders = []
         
@@ -172,25 +312,38 @@ class OrderScanner:
         """检测单个订单"""
         roi = self.config.screen.orders_regions[slot]
         
-        # 检测食材图标
         for recipe in self.recipes:
-            template = Template(f"static/img/ingredient-{recipe.raw_ingredients[0]}.jpg")
-            match = local_match(template, roi, screen)
+            # 检测第一个食材图标
+            ing_path = self.image_dir / f"ingredient-{recipe.raw_ingredients[0]}.jpg"
+            if not ing_path.exists():
+                continue
             
-            if match and match["confidence"] > 0.7:
+            match = local_match(Template(str(ing_path)), roi, screen)
+            if match and float(match["confidence"]) > 0.7:
                 # 检测是否 rush
                 is_rush = self._detect_rush(slot, screen)
                 
                 return Order(
                     recipe=recipe,
                     is_rush=is_rush,
-                    created_at=time.time()
+                    created_at=time.time(),
+                    timeout_at=time.time() + (40 if is_rush else 70)
                 )
         
         return None
+    
+    def _detect_rush(self, slot: int, screen) -> bool:
+        """检测是否 rush 订单"""
+        timer_path = self.image_dir / "icon-timer.jpg"
+        if not timer_path.exists():
+            return False
+        
+        roi = self.config.screen.orders_regions[slot]
+        match = local_match(Template(str(timer_path), threshold=0.8), roi, screen)
+        return match is not None
 ```
 
-### 3.3 UIRunner
+### 4.5 UIRunner
 
 UI 操作执行器：
 
@@ -205,117 +358,149 @@ class UIRunner:
     async def swipe(self, start: tuple, end: tuple, duration: float = 0.1):
         """执行滑动"""
         async with self._lock:
+            logger.debug(f"Swipe: {start} -> {end}")
             swipe(start, end, duration=duration)
             await asyncio.sleep(0.1)
 ```
 
-## 4. 主循环
+---
+
+## 5. Action 类型
 
 ```python
-class RealGameBridge:
-    """主桥接器"""
-    
-    def __init__(self, config: AppConfig):
-        self.env = GameEnvironment(config)
-        self.agent = CookingAgent(self.env)
-        self.scanner = OrderScanner(config)
-        self.ui = UIRunner(config)
-    
-    async def run(self):
-        """主循环"""
-        self.env.start_time = time.time()
-        
-        # 启动订单扫描任务
-        scan_task = asyncio.create_task(self._scan_loop())
-        
-        # 启动 agent 决策任务
-        agent_task = asyncio.create_task(self._agent_loop())
-        
-        await asyncio.gather(scan_task, agent_task)
-    
-    async def _scan_loop(self):
-        """订单扫描循环"""
-        while not self.env.is_game_over():
-            if not self.env.is_in_animation_window():
-                orders = await asyncio.to_thread(self.scanner.scan_orders)
-                self.env.orders = orders
-            
-            await asyncio.sleep(0.5)
-    
-    async def _agent_loop(self):
-        """Agent 决策循环"""
-        while not self.env.is_game_over():
-            if not self.env.is_in_animation_window():
-                action = self.agent.step()
-                if action:
-                    await self._execute_action(action)
-            
-            await asyncio.sleep(0.1)
+@dataclass
+class Action:
+    """动作基类"""
+    pass
+
+@dataclass
+class CookAction(Action):
+    """烹饪动作"""
+    ingredient: str
+    cooker: str
+    duration: float
+
+@dataclass
+class MoveToAssemblyAction(Action):
+    """移动到组装站"""
+    cooker: str
+    order_id: int
+
+@dataclass
+class PullFromStockpileAction(Action):
+    """从库存取用"""
+    ingredient: str
+    slot: int
+
+@dataclass
+class FinishOrder(Action):
+    """送餐"""
+    slot_idx: int
 ```
 
-## 5. 状态追踪策略
+---
 
-| 状态 | 追踪方式 | 原因 |
-|------|---------|------|
-| 订单 | 检测 | 唯一需要外部感知的状态 |
-| 灶台 | 程序追踪 | 我们控制何时开始烹饪 |
-| 组装站 | 程序追踪 | 我们控制何时移动食材 |
-| 库存 | 程序追踪 | 我们控制何时存储/取用 |
-| 时间 | time.time() | 真实时间 |
-| 动画窗口 | 程序追踪 | 我们知道何时送餐 |
-
-## 6. 与 GameSimulator 的接口兼容
-
-Agent 只需要这些接口：
+## 6. 动作执行
 
 ```python
-# Agent 需要的接口
-class GameProtocol(Protocol):
-    def get_order(self, slot_idx: int) -> Order | None: ...
-    def get_cooker_state(self, cooker: str) -> CookerState: ...
-    def is_in_animation_window(self) -> bool: ...
-    def is_game_over(self) -> bool: ...
-    @property
-    def state(self) -> GameState: ...
+async def _execute_action(self, action: Action):
+    """执行动作"""
+    if isinstance(action, CookAction):
+        await self._execute_cook(action)
+    elif isinstance(action, MoveToAssemblyAction):
+        await self._execute_move_to_assembly(action)
+    elif isinstance(action, PullFromStockpileAction):
+        await self._execute_pull(action)
+    elif isinstance(action, FinishOrder):
+        await self._execute_finish(action)
+
+async def _execute_cook(self, action: CookAction):
+    """执行烹饪"""
+    ing_pos = self._get_ingredient_position(action.ingredient)
+    cooker_pos = self._get_cooker_position(action.cooker)
+    
+    # 食材 → 灶台
+    await self.ui.swipe(ing_pos, cooker_pos)
+    
+    # 更新状态
+    self.env.start_cooking(action.ingredient, action.cooker, action.duration)
+    
+    # 等待烹饪
+    await asyncio.sleep(action.duration)
+    
+    # 灶台 → 组装站
+    assembly_pos = self.config.screen.assembly_station_position
+    await self.ui.swipe(cooker_pos, assembly_pos)
+    
+    # 更新状态
+    self.env.move_to_assembly(action.cooker, order_id=0)  # TODO: 正确的 order_id
+
+async def _execute_finish(self, action: FinishOrder):
+    """执行送餐"""
+    assembly_pos = self.config.screen.assembly_station_position
+    pickup_pos = self.config.screen.pickup_stations_positions[action.slot_idx]
+    
+    # 组装站 → 取餐台
+    await self.ui.swipe(assembly_pos, pickup_pos)
+    
+    # 更新状态
+    self.env.serve_order(action.slot_idx)
+    self.env.set_animation_window(1.5)
 ```
 
-GameEnvironment 实现这些接口，Agent 可以直接使用。
+---
 
 ## 7. 文件结构
 
 ```
 hawarma/
-├── environment/
+├── bridge/
 │   ├── __init__.py
-│   ├── game_env.py        # GameEnvironment
-│   ├── order_scanner.py   # OrderScanner
-│   └── ui_runner.py       # UIRunner
+│   ├── bridge.py          # RealGameBridge
+│   ├── environment.py     # GameEnvironment
+│   ├── scanner.py         # OrderScanner
+│   ├── ui_runner.py       # UIRunner
+│   └── actions.py         # Action 类型
 ├── agent/
-│   ├── __init__.py        # CookingAgent
-│   └── v2.py              # CookingAgentV2
-└── bridge.py              # RealGameBridge
+│   ├── __init__.py        # CookingAgentV2（适配 bridge）
+│   └── v2.py              # 原有 agent（模拟器用）
 
 scripts/
 └── run_bridge.py          # 运行脚本
 ```
 
-## 8. 配置
+---
 
-复用现有 `configs/config.yaml`，无需额外配置。
+## 8. 待讨论问题
 
-## 9. 对比
+### 8.1 食材位置映射
 
-| 方案 | 检测范围 | 代码量 | 复杂度 |
-|------|---------|--------|--------|
-| 原系统 | 订单+灶台+组装站+库存 | ~2000行 | 高 |
-| v1 方案 | 订单+灶台+组装站+库存 | ~500行 | 中 |
-| v2 方案 | 只检测订单 | ~300行 | 低 |
+`config.yaml` 中 `raw_ingredients_positions` 是固定 8 个位置。但实际游戏中食材位置取决于选中的配方。
 
-## 10. 总结
+问题：如何确定食材的屏幕位置？
+- A. 从配置的 8 个位置中，根据食材索引映射
+- B. 每次检测食材位置（更灵活但更慢）
 
-v2 方案的核心优势：
+### 8.2 配料取用时机
 
-1. **最轻量检测**：只检测订单，其他状态程序追踪
-2. **最简架构**：3 个核心组件，~300 行代码
-3. **接口兼容**：Agent 可以无缝切换 simulator/environment
-4. **易于调试**：状态追踪透明，问题定位简单
+Agent 需要从库存取用食材，但库存位置是固定的。
+
+问题：库存槽位如何分配？
+- A. 固定分配（每个槽位存固定食材）
+- B. 动态分配（按需存储）
+
+### 8.3 烹饪等待期间
+
+执行烹饪后需要等待 `duration` 秒。期间：
+- 其他灶台可以同时开始烹饪
+- 订单扫描继续进行
+
+问题：是否需要并行等待多个灶台？
+
+### 8.4 调料添加
+
+当前方案保留调料检测，但 Agent 如何知道添加哪种调料？
+- 配方中有 `condiments` 列表
+- 检测时有 `condiment_preference`
+
+问题：是否需要实现 `add_condiment` 操作？
