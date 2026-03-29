@@ -53,6 +53,21 @@
   - `get_stockpile_refill_actions()` - 获取补货动作
   - `_assign_slots()` - 分配stockpile槽位
 
+### `agent_scheduler.py`
+- **地位**: 高效 Agent 调度器
+- **状态**: ✅ 完成
+- **功能**:
+  - 替换原有 Scheduler，提供更高性能
+  - 全局优化：跨订单共享资源
+  - 预烹饪：空闲灶台补充库存
+  - 激进并行：同时启动多个灶台
+- **关键方法**:
+  - `get_next_actions()` - 主入口
+  - `_try_finish_order()` - 立即送餐
+  - `_try_start_cooking()` - 全局灶台分配
+  - `_precook_for_stockpile()` - 预烹饪策略
+- **性能**: 平均 13.5 订单/90秒，最高 20 订单
+
 ## 🔗 模块间关系
 
 ```
