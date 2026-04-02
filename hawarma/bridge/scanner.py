@@ -1,0 +1,205 @@
+"""
+订单扫描器
+
+地位：从屏幕截图中检测订单，识别配方和加急状态
+      轻量级实现，只检测订单，其他状态通过程序追踪
+
+输入：屏幕截图、配方列表、配置对象
+输出：检测到的订单信息
+
+⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
+"""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+from airtest.core.api import G, Template
+from loguru import logger
+
+from hawarma.config import AppConfig
+from hawarma.models import Recipe
+from hawarma.utils.image_utils import local_match
+
+
+@dataclass
+class DetectedOrder:
+    """检测到的订单"""
+    slot_idx: int
+    recipe_slug: str
+    is_rush: bool
+    confidence: float
+
+
+class OrderScanner:
+    """
+    订单扫描器
+    
+    只检测订单信息，不涉及其他状态（灶台、组装站、库存）。
+    """
+    
+    def __init__(self, config: AppConfig, recipes: list[Recipe]):
+        """
+        初始化订单扫描器
+        
+        Args:
+            config: 应用配置
+            recipes: 配方列表
+        """
+        self.config = config
+        self.recipes = recipes
+        self.image_dir = Path(config.image_directory)
+        
+        # 配方 slug -> Recipe 映射
+        self._recipe_by_slug = {r.slug: r for r in recipes}
+        
+        # 上次检测的订单（用于去重）
+        self._last_detected: dict[int, DetectedOrder] = {}
+        
+        logger.info(f"OrderScanner initialized with {len(recipes)} recipes")
+    
+    def detect_timer(self) -> bool:
+        """
+        检测 timer 图标（游戏开始标志）
+
+        Returns:
+            是否检测到 timer
+        """
+        screen = G.DEVICE.snapshot()
+        if screen is None:
+            return False
+
+        timer_path = self.image_dir / "icon-timer.jpg"
+        if not timer_path.exists():
+            logger.warning(f"Timer image not found: {timer_path}")
+            return False
+
+        roi = tuple(self.config.screen.timer_region)
+        match = local_match(Template(str(timer_path)), roi, screen)
+        return match is not None
+    
+    def scan_orders(self) -> list[Optional[DetectedOrder]]:
+        """
+        扫描所有订单槽位
+        
+        Returns:
+            4个槽位的检测结果列表
+        """
+        screen = G.DEVICE.snapshot()
+        if screen is None:
+            return [None] * 4
+        
+        results = []
+        for slot_idx in range(4):
+            order = self._detect_order(slot_idx, screen)
+            results.append(order)
+        
+        return results
+    
+    def scan_new_orders(self) -> list[DetectedOrder]:
+        """
+        扫描新出现的订单（与上次检测结果对比）
+        
+        Returns:
+            新出现的订单列表
+        """
+        current_orders = self.scan_orders()
+        new_orders = []
+        
+        for slot_idx, order in enumerate(current_orders):
+            last_order = self._last_detected.get(slot_idx)
+            
+            # 新订单出现
+            if order is not None and last_order is None:
+                new_orders.append(order)
+                logger.info(f"New order detected in slot {slot_idx}: {order.recipe_slug}")
+            
+            # 订单变化（配方不同）
+            elif order is not None and last_order is not None:
+                if order.recipe_slug != last_order.recipe_slug:
+                    new_orders.append(order)
+                    logger.info(f"Order changed in slot {slot_idx}: {order.recipe_slug}")
+        
+        # 更新缓存
+        self._last_detected = {
+            slot_idx: order
+            for slot_idx, order in enumerate(current_orders)
+            if order is not None
+        }
+        
+        return new_orders
+    
+    def _detect_order(self, slot: int, screen) -> Optional[DetectedOrder]:
+        """
+        检测单个订单槽位
+        
+        Args:
+            slot: 槽位索引 (0-3)
+            screen: 屏幕截图
+            
+        Returns:
+            检测到的订单，如果没有则返回 None
+        """
+        roi = self.config.screen.ingredients_regions[slot]
+        
+        best_match = None
+        best_confidence = 0.0
+        
+        for recipe in self.recipes:
+            # 检测第一个食材图标
+            ing_name = recipe.raw_ingredients[0] if recipe.raw_ingredients else None
+            if not ing_name:
+                continue
+            
+            ing_path = self.image_dir / f"ingredient-{ing_name}.jpg"
+            if not ing_path.exists():
+                # 尝试其他格式
+                ing_path = self.image_dir / f"icon-{ing_name}.jpg"
+                if not ing_path.exists():
+                    continue
+            
+            match = local_match(Template(str(ing_path)), roi, screen)
+            if match:
+                confidence = float(match.get("confidence", 0))
+                if confidence > best_confidence:
+                    best_confidence = confidence
+                    best_match = recipe
+        
+        if best_match and best_confidence > 0.7:
+            # 检测是否 rush
+            is_rush = self._detect_rush(slot, screen)
+            
+            return DetectedOrder(
+                slot_idx=slot,
+                recipe_slug=best_match.slug,
+                is_rush=is_rush,
+                confidence=best_confidence,
+            )
+        
+        return None
+    
+    def _detect_rush(self, slot: int, screen) -> bool:
+        """
+        检测是否 rush 订单
+        
+        Args:
+            slot: 槽位索引
+            screen: 屏幕截图
+            
+        Returns:
+            是否 rush
+        """
+        timer_path = self.image_dir / "icon-timer.jpg"
+        if not timer_path.exists():
+            return False
+        
+        roi = self.config.screen.orders_regions[slot]
+        match = local_match(Template(str(timer_path), threshold=0.8), roi, screen)
+        return match is not None
+    
+    def get_recipe_by_slug(self, slug: str) -> Optional[Recipe]:
+        """根据 slug 获取配方"""
+        return self._recipe_by_slug.get(slug)
