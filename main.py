@@ -30,7 +30,7 @@ def setup_airtest():
             platform="Android",
             uuid="127.0.0.1:16384",
             cap_method="minicap",
-            touch_method="maxtouch",
+            touch_method="adbtouch",
         )
         touch((0, 0))
         logger.info("Airtest device connected.")

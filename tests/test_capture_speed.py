@@ -11,7 +11,7 @@ class TestCaptureSpeed(unittest.TestCase):
             platform="Android",
             uuid="127.0.0.1:16384",  # mumu
             cap_method="minicap",
-            touch_method="maxtouch",
+            touch_method="adbtouch",
         )
 
     def _capture_once(self):
