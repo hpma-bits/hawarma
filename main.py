@@ -1,12 +1,18 @@
-# main.py
+"""
+Hawarma - 烹饪游戏自动化 Agent
+
+通过图像检测识别订单，使用贪心策略在 90 秒内最大化订单完成数。
+"""
+
 import asyncio
+import sys
+from pathlib import Path
 
 import questionary
 from airtest.core.api import init_device, touch
 from airtest.core.settings import Settings as ST
 from loguru import logger
 
-from hawarma.app import CookingBotApp
 from hawarma.config import load_config
 from hawarma.services.recipe_manager import RecipeManager
 from hawarma.monkey_patches import apply_patch
@@ -14,22 +20,21 @@ from hawarma.logging_setup import setup_logging
 
 
 def setup_airtest():
-    """Initializes Airtest device and settings."""
+    """Initialize Airtest device and settings."""
     ST.CVSTRATEGY = ["tpl"]
     ST.OPDELAY = 0.05
     ST.THRESHOLD = 0.7
     try:
-        logger.info("Attempting to connect to Airtest device...")
+        logger.info("Connecting to Airtest device...")
         device = init_device(
             platform="Android",
-            uuid="127.0.0.1:16384",  # mumu
+            uuid="127.0.0.1:16384",
             cap_method="minicap",
             touch_method="maxtouch",
         )
-        touch((0, 0))  # Wake up screen
-        logger.info("Airtest device initialized.")
+        touch((0, 0))
+        logger.info("Airtest device connected.")
         return device
-
     except Exception as e:
         logger.error(f"Failed to initialize Airtest device: {e}")
         raise
@@ -42,7 +47,6 @@ def get_recipe_selection(all_recipes):
     ).ask()
 
     if not selected_names:
-        logger.warning("No recipes selected.")
         return None
 
     selected_recipes = [r for r in all_recipes if r.name in selected_names]
@@ -65,49 +69,61 @@ def get_recipe_selection(all_recipes):
     return ordered_recipes
 
 
-def main():
-    """Main application entry point."""
-    # Setup environment
-    setup_logging(log_level="DEBUG")
-    device = setup_airtest()
-    apply_patch()
+async def run_game(config, ordered_recipes):
+    """Run the agent game loop."""
+    from hawarma.bridge import RealGameBridge
+    from hawarma.agent import CookingAgent
 
-    # Load configuration and data
+    bridge = RealGameBridge(config, ordered_recipes)
+    agent = CookingAgent(bridge.env, ordered_recipes)
+    bridge.set_agent(agent)
+
+    logger.info("=" * 60)
+    logger.info("Starting game...")
+    logger.info(f"Recipes: {[r.name for r in ordered_recipes]}")
+    logger.info(f"Cookers: {list(config.cookers)}")
+    logger.info("=" * 60)
+
+    stats = await bridge.run()
+
+    logger.info("=" * 60)
+    logger.info("Game over!")
+    logger.info(f"  Time:        {stats['time']:.1f}s")
+    logger.info(f"  Orders done: {stats['orders_served']}")
+    logger.info(f"  Score:       {stats['total_score']}")
+    logger.info(f"  Timed out:   {stats['orders_timeout']}")
+    logger.info(f"  Actions:     {stats['actions_taken']}")
+    logger.info("=" * 60)
+
+    return stats
+
+
+def main():
+    """Main entry point."""
+    setup_logging()
+    apply_patch()
+    device = setup_airtest()
+
     config = load_config()
     recipe_manager = RecipeManager(recipes_path="data/recipes.json")
     all_recipes = recipe_manager.get_all_recipes()
 
     while True:
-        # Get recipe selection from user
         ordered_recipes = get_recipe_selection(all_recipes)
         if not ordered_recipes:
-            if questionary.confirm("Would you like to exit?").ask():
+            if questionary.confirm("Exit?").ask():
                 break
             continue
 
-        # Initialize and run the application
-        app = CookingBotApp(config)
-        app.setup(ordered_recipes=ordered_recipes)
-
-        # Wait for the game to start before running the main loop
-        app.detection_service.wait_for_game_start()
-
         try:
-            asyncio.run(app.run())
+            asyncio.run(run_game(config, ordered_recipes))
         except KeyboardInterrupt:
-            logger.info("Application paused. Press Ctrl+C again to exit completely.")
-            try:
-                # Allow time to press Ctrl+C again if user wants to exit
-                asyncio.run(asyncio.sleep(1))
-            except KeyboardInterrupt:
-                logger.info("Application terminated by user.")
-                break
+            logger.info("Interrupted.")
+        except Exception as e:
+            logger.error(f"Game error: {e}", exc_info=True)
 
-            # Ask if user wants to continue with new recipes
-            if not questionary.confirm(
-                "Would you like to continue with new recipes?"
-            ).ask():
-                break
+        if not questionary.confirm("Play again with new recipes?").ask():
+            break
 
 
 if __name__ == "__main__":

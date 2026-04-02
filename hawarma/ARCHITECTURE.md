@@ -2,7 +2,7 @@
 
 ## 📁 目录概述
 
-此目录是hawarma项目的核心模块，包含应用的主要逻辑、服务、模型和工具。
+此目录是 Hawarma 项目的核心，包含 Agent 自动化烹饪游戏的全部逻辑。
 
 ## ⚠️ 重要提示
 
@@ -12,126 +12,120 @@
 
 ### `__init__.py`
 - **地位**: 包初始化文件
-- **功能**: 标识Python包
-
-### `app.py`
-- **地位**: 核心应用类（已重构为生命周期管理器）
-- **功能**:
-  - 初始化服务和全局状态
-  - 运行扫描循环（检测新订单）
-  - 运行调度循环（调度+执行动作）
-  - 停止和清理
-- **输入**: 配置对象、配方列表
-- **输出**: 应用运行状态、订单完成统计
-- **注意**: 所有业务决策已移至Scheduler，执行已移至Executor
-
-### `actions.py`
-- **地位**: 动作类型定义
-- **功能**: 定义Scheduler返回的所有行动计划类型
-- **输入**: Scheduler决策结果
-- **输出**: Executor可执行的原子动作对象
-- **关键类型**: `CookIngredient`, `PullFromStockpile`, `FinishOrder`, `AdvanceSlots`
 
 ### `config.py`
 - **地位**: 配置管理模块
-- **功能**:
-  - 从YAML文件加载配置
-  - 使用Pydantic进行配置验证
-- **输入**: YAML配置文件路径
-- **输出**: AppConfig对象
+- **功能**: 从 YAML 文件加载配置，Pydantic 验证
 
 ### `logging_setup.py`
 - **地位**: 日志配置模块
-- **功能**: 使用loguru配置应用日志系统
+- **功能**: 使用 loguru 配置终端 + 文件日志
 
 ### `models.py`
 - **地位**: 数据模型定义模块
-- **功能**:
-  - 定义Ingredient、Cooker、Recipe等数据模型
-  - 定义Order和OrderStage枚举
-- **输入**: JSON数据或构造参数
-- **输出**: 验证后的模型对象
+- **功能**: Recipe、Order、OrderStage 等数据结构
 
 ### `monkey_patches.py`
 - **地位**: 兼容性补丁模块
-- **功能**: 修复airtest框架的兼容性问题
-
-### `scheduler/` 子目录
-- **地位**: 调度策略层（唯一决策中心）
-- **功能**: 所有业务决策（订单优先级、stockpile策略、动作规划）
-- **文件**:
-  - `scheduler.py`: 统一调度器
-  - `order_policy.py`: 订单优先级逻辑
-  - `stockpile_policy.py`: Stockpile决策逻辑
-
-### `services/` 子目录
-- **地位**: 服务执行层
-- **功能**: 检测和执行
-- **文件**:
-  - `detection_service.py`: 订单检测（保持不变）
-  - `executor.py`: 原子UI动作执行
-  - `resource_guards.py`: 物理资源锁
-  - `recipe_manager.py`: 配方管理（保持不变）
-
-### `state.py`
-- **地位**: 运行时真相来源
-- **功能**:
-  - GameState: 游戏运行时状态
-  - SessionState: 会话配置状态
-- **输入**: DetectionService检测结果、Executor操作结果
-- **输出**: 供Scheduler决策的完整游戏状态快照
-
-### `ui_operation_manager.py`
-- **地位**: UI操作管理器
-- **功能**: 全局UI锁，序列化所有swipe/click操作
-
-### `utils/` 子目录
-包含工具函数：
-- `image_utils.py`: 图像处理工具
+- **功能**: 修复 airtest 框架的兼容性问题
 
 ### `env_simulator.py`
-- **地位**: 游戏环境模拟器核心
-- **功能**:
-  - 轻量级状态机，模拟游戏规则
-  - 订单生成、超时、槽位前移
-  - 烹饪、组装、上菜操作
-  - 时间推进和事件生成
-- **输入**: 游戏动作、时间推进
-- **输出**: 事件列表、状态更新
+- **地位**: 游戏环境模拟器（用于测试和调试）
+- **功能**: 轻量级状态机，模拟游戏规则
 
 ### `env_simulator_types.py`
 - **地位**: 模拟器数据类型定义
-- **功能**:
-  - Event、EventType 枚举
-  - Order、Recipe、IngredientRequirement
-  - CookerState、AssemblyState、StockpileSlot
-  - GameState、GameConfig
+- **功能**: Event、EventType、Recipe、Order 等类型
 
-### `env_bridge.py`
-- **地位**: 环境桥接器
-- **功能**:
-  - 连接 Executor（真实系统）和 GameSimulator（参考实现）
-  - 将坐标操作翻译为符号操作并验证
+### `agent/` 子目录
+- **地位**: Agent 决策逻辑
+- **功能**: 7 级优先级贪心策略，输出动作对象
+- **文件**:
+  - `agent.py`: 统一 CookingAgent，Action 类型定义
 
-## 🔗 模块间关系
+### `bridge/` 子目录
+- **地位**: Agent 与真实游戏的桥接层
+- **功能**: 扫描、状态追踪、UI 执行、生命周期管理
+- **文件**:
+  - `bridge.py`: RealGameBridge，三循环并行架构
+  - `environment.py`: GameEnvironment，程序逻辑追踪状态
+  - `scanner.py`: OrderScanner，图像检测订单
+  - `ui_runner.py`: UIRunner，swipe 坐标执行
+
+### `services/` 子目录
+- **地位**: 服务层
+- **文件**:
+  - `recipe_manager.py`: 从 JSON 加载配方数据
+
+### `utils/` 子目录
+- **功能**: 图像处理工具
+- **文件**:
+  - `image_utils.py`: 模板匹配
+
+---
+
+## 🔗 架构
 
 ```
 main.py
-    ↓
-CookingBotApp (app.py) - 生命周期管理
-    ↓
-    ├─→ DetectionService (订单检测)
-    ├─→ Scheduler (唯一决策中心)
-    │       ├─→ OrderPolicy (订单优先级)
-    │       └─→ StockpilePolicy (库存策略)
-    ├─→ Executor (原子动作执行)
-    ├─→ ResourceGuards (物理资源锁)
-    └─→ GameState / SessionState (全局状态)
+  ↓
+RealGameBridge (bridge/bridge.py)
+  │
+  ├─ 三个并行循环:
+  │   ├─ scan_loop (0.5s)    → OrderScanner → GameEnvironment.add_order()
+  │   ├─ timeout_loop (0.3s) → GameEnvironment.check_and_remove_timed_out_orders()
+  │   └─ agent_loop (0.1s)   → CookingAgent.step() → _execute_action()
+  │
+  ├─ GameEnvironment (bridge/environment.py)
+  │     └─ 程序逻辑追踪: 灶台、组装站、库存、订单、调料
+  │
+  ├─ OrderScanner (bridge/scanner.py)
+  │     └─ Airtest 图像检测: 只检测订单
+  │
+  ├─ UIRunner (bridge/ui_runner.py)
+  │     └─ swipe 坐标映射和执行
+  │
+  └─ CookingAgent (agent/agent.py)
+        └─ 7 级优先级贪心策略
 ```
 
-## 架构设计原则
+### Agent 决策优先级
 
-1. **Scheduler是唯一大脑**: 所有业务决策都在scheduler层
-2. **Executor只执行**: 不做决策，只执行UI动作
-3. **State是唯一真相**: 所有组件通过GameState同步状态
-4. **ResourceGuards只保护**: 不包含任何业务策略
+```
+1. 送餐 (ServeOrderAction)        ← 组装完成立即送
+2. 移到组装站 (MoveToAssemblyAction) ← 完成烹饪尽快移走
+3. 开始烹饪 (CookAction)          ← 尽早开始，让灶台异步工作
+4. 添加调料 (AddCondimentAction)   ← 可在烹饪期间进行
+5. 从库存取用 (PullFromStockpileAction) ← 库存有则直接用
+6. 清理过期 (ClearCookerAction)    ← 5s 未取走则清理
+7. 存入库存 (MoveToStockpileAction) ← 多余食材缓冲
+```
+
+### 数据流
+
+```
+屏幕截图
+  ↓
+OrderScanner.scan_new_orders()
+  ↓
+GameEnvironment.add_order()
+  ↓
+CookingAgent.step()  ← 按优先级选最优动作
+  ↓
+Action
+  ↓
+RealGameBridge._execute_action()
+  ├─→ UIRunner.swipe()        ← 执行 UI 操作
+  └─→ GameEnvironment.*()      ← 更新内部状态
+```
+
+---
+
+## 🚀 运行
+
+```bash
+python main.py
+```
+
+选择配方后自动运行游戏，结束后显示统计。
+日志输出到 `logs/game_YYYYMMDD_HHmmss.log`。

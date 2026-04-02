@@ -6,50 +6,11 @@ episode_duration: 90
 
 cookers: ["grill", "oven", "skillet", "pot"]
 
-recipes:
-  0: Gilded Shore Risotto
-  1: Farmstead Feast Roast
-  2: Woodland Mushroom Risotto
-  3: Braised Venison Stew
-  4: Hearty Custard Pie
-  5: Paleleaf Meat Roll
-  6: Saltbaked Shrimp
-  7: Hearthroast Chicken
-  8: Simple Seared Scallops
-  9: Wild Herb Tomahawk
-  10: Deepwater Ink Pasta
-  11: Golden Cream Pasta
-
-ingredients:
-  - hearthspice
-  - acacia_honey
-  - midsummer_onion
-  - sunkissed_lemon
-  - fleur_de_sel
-  - buttermilk_cream
-  - elderberry_liqueur
-  - pliant_pasta
-  - creamfield_rice
-  - clearwater_fish
-  - prime_cut_beef
-  - farmstead_pork
-  - whiteshore_scallop
-  - wild_mushroom
-  - roasting_chicken
-  - golden_crab_roe
-  - succulent_cut
-  - shoreline_shrimp
-  - forest_venison
-  - blanquette_fig
-  - hearty_egg
-  - deepwater_tentacle
-  - vining_marjoram
-  - paleleaf_laurel
-
 screen:
   resolution: [1920, 1080]
   save_screenshots: False
   assembly_station_position: [1375, 865]
+  timer_region: [0, 0, 400, 140]
 
   raw_ingredients_positions:
     - [115, 930]
@@ -90,10 +51,10 @@ screen:
     - [1565, 250, 1905, 385]
 
   pickup_stations_positions:
-    - [610, 145]
-    - [990, 145]
-    - [1360, 145]
-    - [1740, 145]
+    - [610, 135]
+    - [990, 135]
+    - [1360, 135]
+    - [1740, 135]
 
   stockpile_positions:
     - [800, 900]

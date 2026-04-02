@@ -20,6 +20,7 @@ class ScreenConfig(BaseModel):
     resolution: tuple[int, int]
     save_screenshots: bool
     assembly_station_position: tuple[int, int]
+    timer_region: tuple[int, int, int, int] = (0, 0, 400, 140)
     raw_ingredients_positions: list[tuple[int, int]]
     cookers_positions: list[tuple[int, int]]
     stockpile_positions: list[tuple[int, int]]
@@ -42,8 +43,6 @@ class AppConfig(BaseModel):
     recipes_data_path: str
     episode_duration: int
     cookers: tuple[str, ...]
-    ingredients: set[str]
-    recipes: dict[int, str]
     screen: ScreenConfig
     matching: MatchingConfig
 

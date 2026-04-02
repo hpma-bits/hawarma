@@ -17,7 +17,7 @@ import json
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 from .env_simulator_types import (
     Event,
@@ -45,8 +45,8 @@ class ActionResult:
     使用 frozen=True 确保结果不可变，避免意外修改
     """
     success: bool
-    events: Tuple[Event, ...] = field(default_factory=tuple)
-    error_message: Optional[str] = None
+    events: tuple[Event, ...] = field(default_factory=tuple)
+    error_message: str | None = None
     score_earned: int = 0  # 如果是 serve_order，记录得分
     
     def __bool__(self) -> bool:
@@ -63,7 +63,7 @@ class ActionResult:
         return self.error_message or "Unknown error"
     
     @classmethod
-    def success_result(cls, events: List[Event] = None, score: int = 0) -> ActionResult:
+    def success_result(cls, events: list[Event] = None, score: int = 0) -> ActionResult:
         """快速创建成功结果"""
         return cls(
             success=True,
@@ -72,7 +72,7 @@ class ActionResult:
         )
     
     @classmethod
-    def failure_result(cls, error_message: str, events: List[Event] = None) -> ActionResult:
+    def failure_result(cls, error_message: str, events: list[Event] = None) -> ActionResult:
         """快速创建失败结果"""
         return cls(
             success=False,
@@ -134,16 +134,16 @@ class GameSimulator:
         self._state = GameState()
         
         # 配方数据
-        self._recipes: Dict[str, Recipe] = {}
+        self._recipes: dict[str, Recipe] = {}
         
         # 事件历史（完整记录，用于调试和重放）
-        self._event_history: List[Event] = []
+        self._event_history: list[Event] = []
         
         # 动画窗口结束时间
         self._animation_until: float = 0.0
         
         # 待处理订单（用于延迟生成）
-        self._pending_orders: List[Tuple[Order, float]] = []  # (order, appear_at)
+        self._pending_orders: list[tuple[Order, float]] = []  # (order, appear_at)
         
         # 订单ID计数器
         self._next_order_id: int = 1
@@ -173,7 +173,7 @@ class GameSimulator:
         """获取当前游戏配置"""
         return self._game_config
     
-    def select_recipes(self, count: int = 4, random_seed: Optional[int] = None) -> List[str]:
+    def select_recipes(self, count: int = 4, random_seed: int | None = None) -> list[str]:
         """
         从所有菜谱中随机选择指定数量的菜谱
         
@@ -209,7 +209,7 @@ class GameSimulator:
         
         return selected
     
-    def setup_from_recipes(self, recipe_slugs: List[str]) -> GameConfig:
+    def setup_from_recipes(self, recipe_slugs: list[str]) -> GameConfig:
         """
         根据选中的菜谱自动配置游戏
         
@@ -275,7 +275,7 @@ class GameSimulator:
         
         return self._game_config
     
-    def load_recipes(self, filepath: Union[str, Path]) -> None:
+    def load_recipes(self, filepath: str | Path) -> None:
         """
         从 JSON 文件加载配方数据
         
@@ -350,7 +350,7 @@ class GameSimulator:
         if self._debug:
             print(f"Loaded {len(self._recipes)} recipes")
     
-    def setup_cookers(self, names: List[str]) -> None:
+    def setup_cookers(self, names: list[str]) -> None:
         """
         初始化灶台
         
@@ -362,7 +362,7 @@ class GameSimulator:
         if self._debug:
             print(f"Setup {len(names)} cookers: {names}")
     
-    def setup_stockpile(self, slots: List[str]) -> None:
+    def setup_stockpile(self, slots: list[str]) -> None:
         """
         初始化库存区
         
@@ -393,12 +393,12 @@ class GameSimulator:
         return self._state.time
     
     @property
-    def recipes(self) -> Dict[str, Recipe]:
+    def recipes(self) -> dict[str, Recipe]:
         """获取所有配方"""
         return dict(self._recipes)  # 返回副本
     
     @property
-    def events(self) -> List[Event]:
+    def events(self) -> list[Event]:
         """获取当前步骤的事件列表"""
         return list(self._event_history)
     
@@ -410,7 +410,7 @@ class GameSimulator:
         """检查游戏是否已结束（到达90秒）"""
         return self._state.time >= self.GAME_DURATION
     
-    def get_order(self, slot_idx: int) -> Optional[Order]:
+    def get_order(self, slot_idx: int) -> Order | None:
         """
         获取指定槽位的订单
         
@@ -425,11 +425,11 @@ class GameSimulator:
             return order
         return None
     
-    def get_cooker_state(self, cooker_name: str) -> Optional[CookerState]:
+    def get_cooker_state(self, cooker_name: str) -> CookerState | None:
         """获取指定灶台的状态"""
         return self._state.cookers.get(cooker_name)
     
-    def get_stockpile_slot(self, slot_name: str) -> Optional[StockpileSlot]:
+    def get_stockpile_slot(self, slot_name: str) -> StockpileSlot | None:
         """获取指定库存槽位的状态"""
         return self._state.stockpile.get(slot_name)
     
@@ -442,7 +442,7 @@ class GameSimulator:
         slot_idx: int,
         recipe: Recipe,
         is_rush: bool = False,
-        condiments: Optional[Dict[str, int]] = None
+        condiments: dict[str, int] | None = None
     ) -> ActionResult:
         """
         将订单注入指定槽位
@@ -1156,7 +1156,7 @@ class GameSimulator:
         
         return ActionResult.success_result([event], score=score)
     
-    def _calculate_score(self, order: Order, assembly_condiments: Dict[str, int]) -> int:
+    def _calculate_score(self, order: Order, assembly_condiments: dict[str, int]) -> int:
         """
         计算订单得分
         
@@ -1239,7 +1239,7 @@ class GameSimulator:
     # 时间管理和订单生成
     # ============================================================================
     
-    def tick(self, dt: float) -> List[Event]:
+    def tick(self, dt: float) -> list[Event]:
         """
         推进游戏时间并触发自动事件
         
@@ -1259,7 +1259,7 @@ class GameSimulator:
         if self.is_game_over():
             return []
         
-        events: List[Event] = []
+        events: list[Event] = []
         
         # 计算新时间，但不能超过游戏结束时间
         new_time = min(self._state.time + dt, self.GAME_DURATION)
@@ -1285,7 +1285,7 @@ class GameSimulator:
         
         return events
     
-    def _check_order_timeouts(self, current_time: float) -> List[Event]:
+    def _check_order_timeouts(self, current_time: float) -> list[Event]:
         """检查并处理订单超时"""
         events = []
         
@@ -1311,7 +1311,7 @@ class GameSimulator:
         
         return events
     
-    def _check_cooking_progress(self, current_time: float) -> List[Event]:
+    def _check_cooking_progress(self, current_time: float) -> list[Event]:
         """检查烹饪完成和食材过期"""
         events = []
         
@@ -1348,7 +1348,7 @@ class GameSimulator:
         
         return events
     
-    def _generate_orders(self, current_time: float) -> List[Event]:
+    def _generate_orders(self, current_time: float) -> list[Event]:
         """生成新订单
         
         刷新规则：
@@ -1392,7 +1392,7 @@ class GameSimulator:
         
         return events
     
-    def _create_new_order(self, created_at: float) -> Optional[Event]:
+    def _create_new_order(self, created_at: float) -> Event | None:
         """
         创建一个新订单
         

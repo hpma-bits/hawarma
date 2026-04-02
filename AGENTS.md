@@ -3,6 +3,32 @@
 ## Overview
 This is a Python-based automation bot for a cooking game. The project uses asyncio for concurrent processing, Pydantic for data validation, and Airtest for UI automation.
 
+## ⚠️ 重要原则
+
+### 文档优先原则
+
+**必须把 `docs/` 作为真实信息源**：
+- 所有游戏规则、算法设计、策略分析都以 `docs/` 中的文档为准
+- 思考问题时，**从文档出发**，而不是从代码出发
+- 代码要与文档保持一致，如果代码与文档冲突，以文档为准
+
+**关键文档**：
+- `docs/game_rules.md` - 游戏规则（唯一依据）
+- `docs/agent_strategy.md` - Agent策略和实验结果
+- `docs/agent_architecture.md` - Agent架构设计
+
+### 模拟器局限性
+
+- 模拟器可能不能完全反映真实游戏的行为（如并行性）
+- 重要结论需要在真实环境中验证
+- 不要过度依赖模拟器的测试结果
+
+### 实验验证
+
+- 重要结论需要多局测试验证（建议30局以上）
+- 考虑不同recipes组合的差异
+- 从文档中的游戏规则出发分析问题
+
 ## Build/Test Commands
 
 ### Running the Application

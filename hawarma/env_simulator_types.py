@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Optional, List, Dict, Tuple, Set
+from typing import Any
 
 
 # ============================================================================
@@ -53,7 +53,7 @@ class Event:
     """
     timestamp: float                    # 事件发生时间
     event_type: EventType               # 事件类型
-    details: Dict[str, Any] = field(default_factory=dict)  # 附加详情
+    details: dict[str, Any] = field(default_factory=dict)  # 附加详情
     
     def __repr__(self) -> str:
         return f"Event({self.timestamp:.2f}s, {self.event_type.name})"
@@ -87,8 +87,8 @@ class Recipe:
     """
     name: str                                           # 配方名称
     slug: str                                           # 配方唯一标识
-    ingredients: Tuple[IngredientRequirement, ...]       # 所需食材列表
-    condiments: Dict[str, int] = field(default_factory=dict)  # 调料需求 {名称: 数量}
+    ingredients: tuple[IngredientRequirement, ...]       # 所需食材列表
+    condiments: dict[str, int] = field(default_factory=dict)  # 调料需求 {名称: 数量}
     
     def __post_init__(self):
         """验证配方数据有效性"""
@@ -117,8 +117,8 @@ class Order:
     is_rush: bool = False               # 是否为紧急订单
     created_at: float = 0.0             # 订单创建时间
     timeout_at: float = 0.0             # 订单超时时间
-    served_at: Optional[float] = None   # 订单完成时间
-    condiments_applied: Dict[str, int] = field(default_factory=dict)  # 已添加的调料
+    served_at: float | None = None   # 订单完成时间
+    condiments_applied: dict[str, int] = field(default_factory=dict)  # 已添加的调料
     
     @property
     def is_completed(self) -> bool:
@@ -148,11 +148,11 @@ class CookerState:
     跟踪单个灶台的当前状态
     """
     busy: bool = False                  # 是否正在使用
-    ingredient_name: Optional[str] = None   # 当前食材名称
-    cooker_type: Optional[str] = None       # 厨具类型（grill, oven等）
-    started_at: Optional[float] = None      # 烹饪开始时间
-    done_at: Optional[float] = None         # 烹饪完成时间
-    expired_at: Optional[float] = None      # 食材过期时间
+    ingredient_name: str | None = None   # 当前食材名称
+    cooker_type: str | None = None       # 厨具类型（grill, oven等）
+    started_at: float | None = None      # 烹饪开始时间
+    done_at: float | None = None         # 烹饪完成时间
+    expired_at: float | None = None      # 食材过期时间
     
     def is_done(self, current_time: float) -> bool:
         """检查烹饪是否已完成"""
@@ -184,9 +184,9 @@ class AssemblyState:
     
     跟踪组装站上的食材和调料
     """
-    target_recipe: Optional[Recipe] = None   # 当前正在组装的配方
-    ingredients: List[Tuple[str, str, float]] = field(default_factory=list)  # (食材名, 厨具, 添加时间)
-    condiments: Dict[str, int] = field(default_factory=dict)  # 已添加的调料 {名称: 数量}
+    target_recipe: Recipe | None = None   # 当前正在组装的配方
+    ingredients: list[tuple[str, str, float]] = field(default_factory=list)  # (食材名, 厨具, 添加时间)
+    condiments: dict[str, int] = field(default_factory=dict)  # 已添加的调料 {名称: 数量}
     
     @property
     def is_complete(self) -> bool:
@@ -229,8 +229,8 @@ class StockpileSlot:
     
     跟踪单个库存槽位中的食材
     """
-    ingredient_name: Optional[str] = None   # 食材名称
-    cooker_type: Optional[str] = None       # 烹饪使用的厨具
+    ingredient_name: str | None = None   # 食材名称
+    cooker_type: str | None = None       # 烹饪使用的厨具
     count: int = 0                          # 当前数量 (max 5)
     
     def can_add(self, ing_name: str, cooker: str) -> bool:
@@ -282,10 +282,10 @@ class GameState:
     代表游戏某一时刻的完整状态快照
     使用 dataclass 便于创建不可变副本
     """
-    orders: List[Optional[Order]] = field(default_factory=lambda: [None] * 4)
-    cookers: Dict[str, CookerState] = field(default_factory=dict)
+    orders: list[Order | None] = field(default_factory=lambda: [None] * 4)
+    cookers: dict[str, CookerState] = field(default_factory=dict)
     assembly: AssemblyState = field(default_factory=AssemblyState)
-    stockpile: Dict[str, StockpileSlot] = field(default_factory=dict)
+    stockpile: dict[str, StockpileSlot] = field(default_factory=dict)
     time: float = 0.0
     
     def copy(self) -> GameState:
@@ -305,10 +305,10 @@ class GameConfig:
     
     记录当前游戏局的具体配置：选中的菜谱、可用的道具等
     """
-    selected_recipes: List[str] = field(default_factory=list)
-    available_cookers: List[str] = field(default_factory=list)
-    available_ingredients: List[str] = field(default_factory=list)
-    available_condiments: List[str] = field(default_factory=list)
+    selected_recipes: list[str] = field(default_factory=list)
+    available_cookers: list[str] = field(default_factory=list)
+    available_ingredients: list[str] = field(default_factory=list)
+    available_condiments: list[str] = field(default_factory=list)
     
     @property
     def is_configured(self) -> bool:
