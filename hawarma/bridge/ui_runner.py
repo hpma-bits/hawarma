@@ -131,20 +131,21 @@ class UIRunner:
     # 核心操作
     # ========================================================================
     
-    async def swipe(self, start: tuple[int, int], end: tuple[int, int], duration: float = 0.05) -> None:
+    async def swipe(self, start: tuple[int, int], end: tuple[int, int], duration: float = 0.1) -> None:
         """
         执行 swipe 操作
         
         Args:
             start: 起始坐标
             end: 结束坐标
-            duration: 持续时间（默认0.05秒）
+            duration: 持续时间（默认0.1秒）
         """
         async with self._lock:
             logger.debug(f"Swipe: {start} -> {end}")
-            # 使用 to_thread 避免阻塞事件循环
-            # 注意：Airtest会在swipe后自动执行delay_after_operation() (ST.OPDELAY)
-            await asyncio.to_thread(swipe, start, end, duration)
+            # 直接调用 swipe，不使用 to_thread 以避免线程切换开销
+            swipe(start, end, duration)
+            # 短暂等待，确保操作完全完成
+            await asyncio.sleep(0.05)
     
     async def cook(self, ingredient: str, cooker: str) -> None:
         """
