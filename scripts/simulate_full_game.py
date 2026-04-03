@@ -107,7 +107,6 @@ def _execute_and_log(env: SimulatorEnvironment, action: Action, game_time: float
     elif isinstance(action, MoveToAssemblyAction):
         ok = env.move_to_assembly(action.cooker)
         if ok:
-            state = env.cookers[action.cooker]
             print(f"[t={game_time:.1f}s] MOVE {action.cooker} -> assembly")
     
     elif isinstance(action, MoveToStockpileAction):
