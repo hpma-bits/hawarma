@@ -91,7 +91,32 @@ def run_full_simulation(seed: int = 42, recipe_file: str = "data/recipes.json"):
     print(f"Orders timeout: {orders_timeout}")
     print(f"Total score:    {total_score}")
     print(f"Total actions:  {action_count}")
-    print(f"Efficiency:     {orders_served/18*100:.0f}% (of theoretical max 18)")
+    
+    # Calculate efficiency metrics
+    game_duration = sim.time
+    
+    # Calculate theoretical max score
+    # Base score for each order type:
+    # - RUSH: 218 (fast serve bonus)
+    # - Normal: ~165 (base)
+    # Perfect play: serve every order immediately when ready
+    total_orders = orders_served + orders_timeout
+    theoretical_max_score = 0
+    for event in sim._event_history:
+        if event.event_type.name == "ORDER_APPEARED":
+            if event.details.get('rush'):
+                theoretical_max_score += 218
+            else:
+                theoretical_max_score += 166
+    
+    # Efficiency: actual score / theoretical max score
+    score_efficiency = (total_score / theoretical_max_score * 100) if theoretical_max_score > 0 else 0
+    
+    # Order success rate
+    success_rate = (orders_served / total_orders * 100) if total_orders > 0 else 0
+    
+    print(f"Success rate:   {success_rate:.0f}% ({orders_served}/{total_orders} orders)")
+    print(f"Score eff:      {score_efficiency:.0f}% (actual vs optimal)")
 
 
 def _execute_and_log(env: SimulatorEnvironment, action: Action, game_time: float, sim) -> dict:
