@@ -640,16 +640,28 @@ class GameSimulator:
         # 移动到组装站
         self._state.assembly.ingredients.append((ingredient_name, cooker_type, self._state.time))
         
-        # 设置目标配方（如果是第一个食材）
+        # 设置目标配方 - use current order if exists, otherwise search for matching recipe
         if self._state.assembly.target_recipe is None:
-            # 查找匹配的配方
-            for recipe in self._recipes.values():
-                for ing in recipe.ingredients:
-                    if ing.name == ingredient_name and ing.cooker_type == cooker_type:
-                        self._state.assembly.target_recipe = recipe
+            # First, try to find the recipe from current orders that need this ingredient
+            for order in self._state.orders:
+                if order and not order.is_completed:
+                    # Check if this ingredient is part of the order's recipe
+                    for ing in order.recipe.ingredients:
+                        if ing.name == ingredient_name and ing.cooker_type == cooker_type:
+                            self._state.assembly.target_recipe = order.recipe
+                            break
+                    if self._state.assembly.target_recipe:
                         break
-                if self._state.assembly.target_recipe:
-                    break
+            
+            # Fallback: search for any recipe that has this ingredient (original behavior)
+            if self._state.assembly.target_recipe is None:
+                for recipe in self._recipes.values():
+                    for ing in recipe.ingredients:
+                        if ing.name == ingredient_name and ing.cooker_type == cooker_type:
+                            self._state.assembly.target_recipe = recipe
+                            break
+                    if self._state.assembly.target_recipe:
+                        break
         
         # 清空灶台
         cooker_state.clear()

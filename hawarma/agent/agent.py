@@ -1,17 +1,22 @@
 """
 统一烹饪 Agent
 
-地位：基于优先级的贪心策略，在 90 秒内最大化订单完成数
+地位：基于多订单并行策略，在 90 秒内最大化订单完成数
       通过 GameEnvironment 与真实游戏交互
 
-决策模型：按优先级顺序选择动作
+策略核心思想：
+1. 收集所有订单需要的食材
+2. 为空闲灶台分配烹饪任务（即使不是当前订单需要的）
+3. 完成后存入stockpile，供后续订单使用
+
+优先级顺序：
 1. 送餐
-2. 移动完成食材
-3. 开始烹饪（让灶台尽早异步工作）
-4. 添加调料（食材齐全时）
-5. 从库存取用
-6. 清理过期食材
-7. 存入库存
+2. 开始烹饪（动画窗口期间允许，尽早启动灶台）
+3. 移动完成食材（当前订单需要的）
+4. 添加调料
+5. 存入stockpile（非当前订单需要的食材）
+6. 从库存取用
+7. 清理过期食材
 
 输入：GameEnvironment、配方列表
 输出：动作对象供执行器执行
@@ -103,9 +108,9 @@ class CookingAgent:
     统一烹饪 Agent
 
     贪心策略（按优先级）：
-    1. 送餐
-    2. 移动完成食材
-    3. 开始烹饪
+    1. 送餐（动画窗口期间跳过）
+    2. 开始烹饪（动画窗口期间允许，尽早启动灶台）
+    3. 移动完成食材
     4. 添加调料
     5. 从库存取用
     6. 清理过期食材
@@ -115,29 +120,40 @@ class CookingAgent:
     def __init__(self, env, recipes: list):
         self.env = env
         self.recipes = recipes
-
+        
         # 配方 slug -> Recipe 映射
         self._recipe_by_slug: dict = {}
         for r in recipes:
+            # 如果环境有get_recipe_adapter方法，使用适配器
+            if hasattr(env, 'get_recipe_adapter') and hasattr(r, 'slug'):
+                adapter = env.get_recipe_adapter(r.slug)
+                if adapter:
+                    self._recipe_by_slug[r.slug] = adapter
+                    continue
+            
+            # 否则直接使用recipe
             slug = r.slug if hasattr(r, 'slug') else r.get('slug')
             self._recipe_by_slug[slug] = r
-
+        
+        # 检查是否有适配器
+        self._use_adapters = hasattr(env, 'get_recipe_adapter')
+        
         # 食材 -> (灶台, 时长) 映射
-        self._ingredient_info: dict[str, tuple[str, float]] = {}
+        self._ingredient_info_dict: dict[str, tuple[str, float]] = {}
         self._build_ingredient_info()
-
-        # 配方 slug -> 调料需求 dict（每个名字 -> 所需数量，默认每个1份）
+        
+        # 配方 slug -> 调料需求 dict
         self._recipe_condiments: dict[str, dict[str, int]] = {}
         for r in recipes:
             slug = r.slug if hasattr(r, 'slug') else r.get('slug')
-            raw = r.condiments if hasattr(r, 'condiments') else r.get('condiments', [])
-            if isinstance(raw, list):
-                self._recipe_condiments[slug] = {c: 1 for c in raw}
-            elif isinstance(raw, dict):
-                self._recipe_condiments[slug] = dict(raw)
+            condiments = self._get_recipe_attr(r, 'condiments', [])
+            if isinstance(condiments, list):
+                self._recipe_condiments[slug] = {c: 1 for c in condiments}
+            elif isinstance(condiments, dict):
+                self._recipe_condiments[slug] = dict(condiments)
             else:
                 self._recipe_condiments[slug] = {}
-
+        
         # 统计
         self.stats = {
             "orders_served": 0,
@@ -145,74 +161,109 @@ class CookingAgent:
             "orders_timeout": 0,
             "actions_taken": 0,
         }
-
-        logger.info(f"CookingAgent ready | {len(recipes)} recipes | {len(self._ingredient_info)} ingredients")
-
-    # ========================================================================
-    # 初始化辅助
-    # ========================================================================
-
+        
+        logger.info(f"CookingAgent ready | {len(recipes)} recipes | {len(self._ingredient_info_dict)} ingredients")
+    
+    def _get_recipe_attr(self, recipe, attr_name, default=None):
+        """
+        获取recipe属性，支持多种格式
+        
+        Args:
+            recipe: recipe对象
+            attr_name: 属性名
+            default: 默认值
+            
+        Returns:
+            属性值或默认值
+        """
+        # Handle Recipe objects from simulator - convert ingredients to raw_ingredients/cookers/cook_durations
+        if hasattr(recipe, 'ingredients') and attr_name == 'raw_ingredients':
+            return [ing.name for ing in recipe.ingredients]
+        if hasattr(recipe, 'ingredients') and attr_name == 'cookers':
+            return [ing.cooker_type for ing in recipe.ingredients]
+        if hasattr(recipe, 'ingredients') and attr_name == 'cook_durations':
+            return [ing.duration for ing in recipe.ingredients]
+        
+        # If it's a Recipe object, also check for the attribute directly
+        if hasattr(recipe, attr_name):
+            return getattr(recipe, attr_name)
+        
+        # 如果是字典，使用get
+        if isinstance(recipe, dict):
+            return recipe.get(attr_name, default)
+        
+        return default
+    
+    @property
+    def _ingredient_info(self) -> dict:
+        """食材信息映射"""
+        return self._ingredient_info_dict
+    
     def _build_ingredient_info(self) -> None:
         """构建食材 -> (灶台, 时长) 映射"""
         for recipe in self.recipes:
-            raw_ingredients = recipe.raw_ingredients if hasattr(recipe, 'raw_ingredients') else recipe.get('raw_ingredients', [])
-            cookers = recipe.cookers if hasattr(recipe, 'cookers') else recipe.get('cookers', [])
-            cook_durations = recipe.cook_durations if hasattr(recipe, 'cook_durations') else recipe.get('cook_durations', [])
+            raw_ingredients = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+            cookers = self._get_recipe_attr(recipe, 'cookers', [])
+            cook_durations = self._get_recipe_attr(recipe, 'cook_durations', [])
 
             for i, ing in enumerate(raw_ingredients):
-                if ing not in self._ingredient_info:
+                if ing not in self._ingredient_info_dict:
                     cooker = cookers[i] if i < len(cookers) else None
                     duration = cook_durations[i] if i < len(cook_durations) else 3.0
                     if cooker:
-                        self._ingredient_info[ing] = (cooker, duration)
-
+                        self._ingredient_info_dict[ing] = (cooker, duration)
+  
     # ========================================================================
     # 决策入口
     # ========================================================================
 
     def step(self) -> Optional[Action]:
         """
-        单步决策：按优先级选择最优动作
+        单步决策：多订单并行策略
         
-        优先级顺序（文档定义）：
-        1. 送餐
-        2. 移动完成食材
-        3. 开始烹饪
+        策略核心思想：
+        1. 收集所有订单需要的食材
+        2. 为空闲灶台分配烹饪任务（即使不是当前订单需要的）
+        3. 完成后存入stockpile，供后续订单使用
+        
+        优先级顺序：
+        1. 送餐（动画窗口期间跳过）
+        2. 开始烹饪（动画窗口期间允许，尽早启动灶台）
+        3. 移动完成食材（当前订单需要的）
         4. 添加调料
-        5. 从库存取用
-        6. 清理过期食材
-        7. 存入库存
+        5. 存入stockpile（非当前订单需要的食材）
+        6. 从库存取用
+        7. 清理过期食材
         """
-        # 检查动画窗口
-        if self.env.is_in_animation_window():
-            return None
+        assembly = self.env.assembly
+        assembly_ings = [ing[0] for ing in assembly.ingredients]
         
-        # 1. 送餐
+        # 1. 送餐（内部有动画窗口检查）
         if action := self._try_serve():
             return action
         
-        # 2. 移动完成食材
+        # 2. 移动完成食材到组装站（当前订单需要的）- 优先于开始新烹饪
         if action := self._try_move_to_assembly():
             return action
         
-        # 3. 开始烹饪
-        if action := self._try_start_cooking():
+        # 3. 开始烹饪（动画窗口期间允许，尽早启动灶台）
+        if action := self._try_parallel_cooking():
             return action
         
         # 4. 添加调料
         if action := self._try_add_condiment():
             return action
         
-        # 5. 从库存取用
+        # 5. 存入stockpile（非当前订单需要的食材）
+        if action := self._try_store_to_stockpile():
+            return action
+        
+        # 6. 从库存取用
         if action := self._try_pull_from_stockpile():
             return action
         
-        # 6. 清理过期食材
+        # 7. 清理过期食材
         if action := self._try_clear_expired():
-            return action
-        
-        # 7. 存入库存
-        if action := self._try_store_to_stockpile():
             return action
         
         return None
@@ -328,12 +379,12 @@ class CookingAgent:
             if not cooker.busy or cooker.done_at is None:
                 continue
 
-            # 烹饪未完成（done_at 是绝对时间戳）
-            if time.time() < cooker.done_at:
+            # 烹饪未完成（done_at 是相对于游戏开始的时间）
+            if self.env.time < cooker.done_at:
                 continue
 
             # 食材过期，跳过（由清理步骤处理）
-            if time.time() >= cooker.done_at + COOKER_EXPIRE_SECONDS:
+            if self.env.time >= cooker.done_at + COOKER_EXPIRE_SECONDS:
                 continue
 
             if cooker.ingredient_name not in needed_ings:
@@ -375,6 +426,99 @@ class CookingAgent:
     # 开始烹饪
     # ========================================================================
 
+    def _try_parallel_cooking(self) -> Optional[CookAction]:
+        """
+        多订单并行烹饪 - 利用所有订单需要的食材保证cooker忙碌
+        
+        核心思想：
+        1. 收集当前订单需要的食材
+        2. 收集所有订单需要的食材
+        3. 优先烹饪当前订单需要的食材
+        4. 其次烹饪其他订单需要的食材（如果stockpile中没有）
+        """
+        free_cookers = self._get_free_cookers()
+        if not free_cookers:
+            return None
+        
+        assembly = self.env.assembly
+        assembly_ings = [ing[0] for ing in assembly.ingredients]
+        
+        # 收集当前订单需要的食材 - 使用优先级排序（rush优先）
+        needed_current = []
+        for _, order in self._prioritized_orders():
+            recipe = self._recipe_by_slug.get(order.recipe_slug)
+            if recipe:
+                raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+                cookers = self._get_recipe_attr(recipe, 'cookers', [])
+                for i, ing_name in enumerate(raw):
+                    cooker = cookers[i] if i < len(cookers) else None
+                    if cooker and ing_name not in [n for n, _ in needed_current]:
+                        needed_current.append((ing_name, cooker))
+                break  # 只取第一个优先级最高的订单
+        
+        # 收集所有订单需要的食材
+        needed_all = []
+        seen = set()
+        for order in self.env.orders:
+            if order and not order.done:
+                recipe = self._recipe_by_slug.get(order.recipe_slug)
+                if recipe:
+                    raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+                    cookers = self._get_recipe_attr(recipe, 'cookers', [])
+                    for i, ing_name in enumerate(raw):
+                        cooker = cookers[i] if i < len(cookers) else None
+                        if cooker and ing_name not in seen:
+                            seen.add(ing_name)
+                            needed_all.append((ing_name, cooker))
+        
+        # 检查哪些食材已在stockpile中
+        stockpile_counts = {}
+        for slot in self.env.stockpile.values():
+            if slot.count > 0 and slot.ingredient_name:
+                stockpile_counts[slot.ingredient_name] = stockpile_counts.get(slot.ingredient_name, 0) + slot.count
+        
+        # 优先烹饪当前订单需要的食材
+        for ing_name, cooker_type in needed_current:
+            if cooker_type not in free_cookers:
+                continue
+            if self._is_cooking(ing_name):
+                continue
+            if ing_name in assembly_ings:
+                continue
+            if stockpile_counts.get(ing_name, 0) > 0:
+                continue
+            
+            _, duration = self._ingredient_info.get(ing_name, (None, 3.0))
+            order_id = self._get_order_id_for_ingredient(ing_name)
+            return CookAction(
+                ingredient=ing_name,
+                cooker=cooker_type,
+                duration=duration,
+                order_id=order_id,
+            )
+        
+        # 然后烹饪其他订单需要的食材（如果stockpile中没有）
+        for ing_name, cooker_type in needed_all:
+            if cooker_type not in free_cookers:
+                continue
+            if self._is_cooking(ing_name):
+                continue
+            if ing_name in assembly_ings:
+                continue
+            if stockpile_counts.get(ing_name, 0) > 0:
+                continue
+            
+            _, duration = self._ingredient_info.get(ing_name, (None, 3.0))
+            order_id = self._get_order_id_for_ingredient(ing_name)
+            return CookAction(
+                ingredient=ing_name,
+                cooker=cooker_type,
+                duration=duration,
+                order_id=order_id,
+            )
+        
+        return None
+    
     def _try_start_cooking(self) -> Optional[CookAction]:
         """为空闲灶台分配烹饪任务（按需响应，不预烹饪）"""
         free_cookers = self._get_free_cookers()
@@ -416,7 +560,7 @@ class CookingAgent:
         """清理过期食材（完成烹饪后超过 5 秒未取走）"""
         for cooker_name, cooker in self.env.cookers.items():
             if cooker.busy and cooker.done_at:
-                if time.time() >= cooker.done_at + COOKER_EXPIRE_SECONDS:
+                if self.env.time >= cooker.done_at + COOKER_EXPIRE_SECONDS:
                     return ClearCookerAction(cooker=cooker_name)
         return None
 
@@ -436,7 +580,7 @@ class CookingAgent:
         for cooker_name, cooker in self.env.cookers.items():
             if not cooker.busy or cooker.done_at is None:
                 continue
-            if time.time() < cooker.done_at:
+            if self.env.time < cooker.done_at:
                 continue
 
             # 如果组装站需要这个食材，不应该存入库存
@@ -494,8 +638,16 @@ class CookingAgent:
         if target_slug:
             recipe = self._recipe_by_slug.get(target_slug)
             if recipe:
-                raw = recipe.raw_ingredients if hasattr(recipe, 'raw_ingredients') else recipe.get('raw_ingredients', [])
-                cookers = recipe.cookers if hasattr(recipe, 'cookers') else recipe.get('cookers', [])
+                # Handle Recipe objects (from simulator)
+                if hasattr(recipe, 'ingredients') and hasattr(recipe.ingredients, '__iter__'):
+                    result = []
+                    for ing in recipe.ingredients:
+                        if ing.name not in present:
+                            result.append((ing.name, ing.cooker_type))
+                    return result
+                # Handle dict format
+                raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+                cookers = self._get_recipe_attr(recipe, 'cookers', [])
                 result = []
                 for i, ing in enumerate(raw):
                     if ing not in present:
@@ -508,8 +660,15 @@ class CookingAgent:
         for _, order in self._prioritized_orders():
             recipe = self._recipe_by_slug.get(order.recipe_slug)
             if recipe:
-                raw = recipe.raw_ingredients if hasattr(recipe, 'raw_ingredients') else recipe.get('raw_ingredients', [])
-                cookers = recipe.cookers if hasattr(recipe, 'cookers') else recipe.get('cookers', [])
+                # Handle Recipe objects (from simulator)
+                if hasattr(recipe, 'ingredients') and hasattr(recipe.ingredients, '__iter__'):
+                    result = []
+                    for ing in recipe.ingredients:
+                        result.append((ing.name, ing.cooker_type))
+                    return result
+                # Handle dict format
+                raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+                cookers = self._get_recipe_attr(recipe, 'cookers', [])
                 result = []
                 for i, ing in enumerate(raw):
                     cooker = cookers[i] if i < len(cookers) else None
@@ -588,7 +747,7 @@ class CookingAgent:
         for _, order in self._prioritized_orders():
             recipe = self._recipe_by_slug.get(order.recipe_slug)
             if recipe:
-                raw = recipe.raw_ingredients if hasattr(recipe, 'raw_ingredients') else recipe.get('raw_ingredients', [])
+                raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
                 if ingredient in raw:
                     return order.order_id
         return None
