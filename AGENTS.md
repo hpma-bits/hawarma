@@ -33,6 +33,13 @@ This is a Python-based automation bot for a cooking game. The project uses async
 
 ### Running the Application
 ```bash
+# Windows: 首先激活虚拟环境
+.venv\Scripts\activate
+
+# Linux/Mac: 首先激活虚拟环境
+# source .venv/bin/activate
+
+# 运行应用
 python main.py
 ```
 
@@ -40,6 +47,12 @@ python main.py
 Tests use Python's `unittest` framework:
 
 ```bash
+# Windows: 首先激活虚拟环境
+.venv\Scripts\activate
+
+# Linux/Mac: 首先激活虚拟环境
+# source .venv/bin/activate
+
 # Run all tests
 python -m unittest discover tests
 
@@ -60,6 +73,21 @@ uv pip install -r requirements.txt  # or: python -m uv pip install .
 python -m venv .venv
 source .venv/bin/activate  # Linux/Mac
 .venv\Scripts\activate     # Windows
+```
+
+### Running Simulations
+```bash
+# Windows: 首先激活虚拟环境
+.venv\Scripts\activate
+
+# Linux/Mac: 首先激活虚拟环境
+# source .venv/bin/activate
+
+# Run a single simulation with detailed output
+python scripts/simulate_full_game.py --seed 42
+
+# Run multiple seeds for benchmark
+python scripts/benchmark_agent.py --seeds 10
 ```
 
 ### Type Checking (Manual)

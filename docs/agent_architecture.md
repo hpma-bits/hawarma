@@ -62,6 +62,8 @@
 
 ### 3.1 BaseEnvironment 抽象基类
 
+`BaseEnvironment` 定义在 `hawarma/bridge/base_environment.py`，包含统一的数据结构和抽象方法。
+
 ```python
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -70,7 +72,7 @@ from typing import Optional
 
 @dataclass
 class CookerState:
-    """灶台状态"""
+    """灶台状态（统一数据结构）"""
     busy: bool = False
     ingredient_name: Optional[str] = None
     cooker_type: Optional[str] = None
@@ -310,6 +312,187 @@ class ServeOrderAction(Action):
 class ClearCookerAction(Action):
     """清理灶台"""
     cooker: str
+```
+
+### 3.3 SimulatorEnvironment 适配器
+
+`SimulatorEnvironment` 定义在 `hawarma/bridge/simulator_environment.py`，是 `GameSimulator` 的适配器，实现 `BaseEnvironment` 接口。
+
+**设计目的**：
+- 让 `CookingAgent` 可以在模拟器和真实游戏之间无缝切换
+- 桥接两种不同的时间模型（模拟器：tick手动推进；真实环境：自动流逝）
+- 统一数据结构：将 `GameSimulator` 的内部数据转换为 `BaseEnvironment` 的统一结构
+
+**核心实现**：
+
+```python
+from hawarma.bridge.base_environment import BaseEnvironment, CookerState, AssemblyState, StockpileSlot, OrderInfo
+from hawarma.env_simulator import GameSimulator
+
+
+class SimulatorEnvironment(BaseEnvironment):
+    """
+    GameSimulator 的适配器，实现 BaseEnvironment 接口
+    
+    让 Agent 可以在模拟器和真实游戏之间无缝切换
+    """
+    
+    def __init__(self, simulator: GameSimulator):
+        self._sim = simulator
+        self._tick_interval = 0.1  # 默认tick间隔
+    
+    # ========================================================================
+    # 时间推进：模拟器特有方法
+    # ========================================================================
+    
+    @property
+    def time(self) -> float:
+        """返回模拟器内部时间"""
+        return self._sim.time
+    
+    def tick(self, dt: float = 0.1) -> list:
+        """
+        手动推进时间（模拟器特有方法）
+        
+        Args:
+            dt: 时间步长（秒）
+            
+        Returns:
+            事件列表
+        """
+        return self._sim.tick(dt)
+    
+    # ========================================================================
+    # 状态转换：模拟器数据 -> BaseEnvironment 统一数据
+    # ========================================================================
+    
+    @property
+    def orders(self) -> list[OrderInfo | None]:
+        """转换订单数据"""
+        result = []
+        for order in self._sim.state.orders:
+            if order is None:
+                result.append(None)
+            else:
+                result.append(OrderInfo(
+                    order_id=order.order_id,
+                    recipe_slug=order.recipe.slug,
+                    is_rush=order.is_rush,
+                    created_at=order.created_at,
+                    timeout_at=order.timeout_at,
+                    done=order.is_completed
+                ))
+        return result
+    
+    @property
+    def cookers(self) -> dict[str, CookerState]:
+        """转换灶台数据"""
+        result = {}
+        for name, sim_cooker in self._sim.state.cookers.items():
+            result[name] = CookerState(
+                busy=sim_cooker.busy,
+                ingredient_name=sim_cooker.ingredient_name,
+                cooker_type=sim_cooker.cooker_type,
+                started_at=sim_cooker.started_at,
+                done_at=sim_cooker.done_at
+            )
+        return result
+    
+    @property
+    def assembly(self) -> AssemblyState:
+        """转换组装站数据"""
+        sim_assembly = self._sim.state.assembly
+        ingredients = [ing[0] for ing in sim_assembly.ingredients]
+        
+        return AssemblyState(
+            ingredients=ingredients,
+            target_recipe_slug=sim_assembly.target_recipe.slug if sim_assembly.target_recipe else None,
+            owner_order_id=None,
+            condiments=sim_assembly.condiments.copy()
+        )
+    
+    @property
+    def stockpile(self) -> dict[str, StockpileSlot]:
+        """转换库存数据"""
+        result = {}
+        for name, sim_slot in self._sim.state.stockpile.items():
+            result[name] = StockpileSlot(
+                ingredient_name=sim_slot.ingredient_name,
+                cooker_type=sim_slot.cooker_type,
+                count=sim_slot.count
+            )
+        return result
+    
+    # ========================================================================
+    # BaseEnvironment 操作：调用模拟器方法
+    # ========================================================================
+    
+    def is_in_animation_window(self) -> bool:
+        return self._sim.is_in_animation_window()
+    
+    def start_cooking(self, ingredient: str, cooker: str, duration: float) -> bool:
+        result = self._sim.start_cooking(ingredient, cooker)
+        return result.success
+    
+    def move_to_assembly(self, cooker: str) -> bool:
+        result = self._sim.move_to_assembly(cooker)
+        return result.success
+    
+    def move_to_stockpile(self, cooker: str, slot: str) -> bool:
+        result = self._sim.move_to_stockpile(cooker, slot)
+        return result.success
+    
+    def pull_from_stockpile(self, slot: str) -> bool:
+        result = self._sim.pull_from_stockpile(slot)
+        return result.success
+    
+    def add_condiment(self, condiment: str) -> bool:
+        result = self._sim.add_condiment(condiment)
+        return result.success
+    
+    def serve_order(self, slot_idx: int) -> bool:
+        result = self._sim.serve_order(slot_idx)
+        return result.success
+    
+    def clear_cooker(self, cooker: str) -> bool:
+        result = self._sim.clear_cooker(cooker)
+        return result.success
+```
+
+**使用示例**：
+
+```python
+from hawarma.agent.agent import CookingAgent
+from hawarma.bridge.environment import GameEnvironment
+from hawarma.bridge.simulator_environment import SimulatorEnvironment
+from hawarma.env_simulator import GameSimulator
+
+# 情况1：在模拟器中运行
+sim = GameSimulator()
+sim.load_recipes("data/recipes.json")
+sim.setup_from_recipes(sim.select_recipes(count=4))
+
+# 使用适配器包装
+sim_env = SimulatorEnvironment(sim)
+agent = CookingAgent(sim_env, recipes)
+
+# 运行模拟
+while not sim.is_game_over():
+    action = agent.step()
+    if action:
+        _execute_action(sim_env, action)
+    sim_env.tick(0.1)  # 手动推进时间
+
+# 情况2：在真实游戏中运行（使用相同Agent）
+real_env = GameEnvironment(cooker_names=["grill", "oven", "pot", "skillet"])
+agent = CookingAgent(real_env, recipes)
+
+# 运行真实游戏
+while not real_env.is_game_over():
+    action = agent.step()
+    if action:
+        _execute_action(real_env, action)
+    # 时间自动流逝
 ```
 
 ---

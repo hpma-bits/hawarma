@@ -146,11 +146,10 @@ class RealGameBridge:
         """Agent 决策循环（每 0.1s）"""
         while self._running and not self.env.is_game_over():
             try:
-                if not self.env.is_in_animation_window():
-                    action = self.agent.step()
-                    if action:
-                        self.agent.stats["actions_taken"] += 1
-                        await self._execute_action(action)
+                action = self.agent.step()
+                if action:
+                    self.agent.stats["actions_taken"] += 1
+                    await self._execute_action(action)
                 await asyncio.sleep(0.1)
             except Exception as e:
                 logger.error(f"Agent loop error: {e}")

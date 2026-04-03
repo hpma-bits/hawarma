@@ -15,10 +15,22 @@
 - **功能**: 导出所有桥接组件
 - **导出**: `GameEnvironment`, `OrderScanner`, `UIRunner`, `RealGameBridge`
 
+### `base_environment.py`
+- **地位**: 游戏环境抽象基类
+- **状态**: ✅ 完成
+- **功能**:
+  - 定义 Agent 与环境交互的统一接口
+  - 定义统一数据结构（OrderInfo, CookerState, AssemblyState, StockpileSlot）
+  - 确保 GameEnvironment 和 SimulatorEnvironment 使用相同的数据结构
+- **输入**: 无（纯接口定义）
+- **输出**: BaseEnvironment 抽象基类和统一数据结构
+- **关键类**: `BaseEnvironment`, `OrderInfo`, `CookerState`, `AssemblyState`, `StockpileSlot`
+
 ### `environment.py`
 - **地位**: 真实游戏环境
 - **状态**: ✅ 完成
 - **功能**:
+  - 继承 BaseEnvironment，实现统一接口
   - 追踪灶台状态（通过程序逻辑）
   - 追踪组装站状态
   - 追踪库存状态
@@ -26,7 +38,7 @@
   - 管理游戏时间
 - **输入**: UI操作结果、订单检测结果
 - **输出**: 游戏状态供Agent决策
-- **关键类**: `GameEnvironment`, `CookerState`, `AssemblyState`, `StockpileSlot`, `OrderInfo`
+- **关键类**: `GameEnvironment`
 
 ### `scanner.py`
 - **地位**: 订单扫描器
