@@ -246,7 +246,8 @@ class CookingAgent:
             return action
         
         assembly = self.env.assembly
-        assembly_ings = [ing[0] for ing in assembly.ingredients]
+        # Handle both list[str] (real game) and list[tuple] (simulator)
+        assembly_ings = [ing[0] if isinstance(ing, tuple) else ing for ing in assembly.ingredients]
         
         # 1. 送餐（内部有动画窗口检查）
         if action := self._try_serve():
@@ -381,23 +382,36 @@ class CookingAgent:
 
     def _try_move_to_assembly(self) -> Optional[MoveToAssemblyAction]:
         """将完成的食材从灶台移到组装站"""
+        # 获取当前订单需要的食材
         needed_ings = self._get_needed_ingredient_names()
-        if not needed_ings:
+        
+        # 获取所有活跃订单需要的食材
+        all_needed = set()
+        for order in self.env.orders:
+            if order and not order.done:
+                recipe = self._recipe_by_slug.get(order.recipe_slug)
+                if recipe:
+                    raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+                    all_needed.update(raw)
+
+        # 使用并集：移动任何活跃订单需要的食材
+        effective_needed = needed_ings | all_needed
+        if not effective_needed:
             return None
 
         for cooker_name, cooker in self.env.cookers.items():
             if not cooker.busy or cooker.done_at is None:
                 continue
 
-            # 烹饪未完成（done_at 是相对于游戏开始的时间）
+            # 烹饪未完成
             if self.env.time < cooker.done_at:
                 continue
 
-            # 食材过期，跳过（由清理步骤处理）
+            # 食材过期，跳过
             if self.env.time >= cooker.done_at + COOKER_EXPIRE_SECONDS:
                 continue
 
-            if cooker.ingredient_name not in needed_ings:
+            if cooker.ingredient_name not in effective_needed:
                 continue
 
             if self._can_add_to_assembly(cooker.ingredient_name):
@@ -417,6 +431,15 @@ class CookingAgent:
         # 组装站已经有食材但不匹配当前订单时，不要拉取
         if assembly.ingredients and not assembly.target_recipe_slug:
             return None
+
+        # 如果组装站有目标配方，检查是否有活跃订单匹配
+        if assembly.target_recipe_slug:
+            has_active = any(
+                o and not o.done and o.recipe_slug == assembly.target_recipe_slug
+                for o in self.env.orders
+            )
+            if not has_active:
+                return None  # 目标订单已不存在，不要拉取
 
         needed_ings = self._get_needed_ingredient_names()
         if not needed_ings:
@@ -451,7 +474,20 @@ class CookingAgent:
             return None
         
         assembly = self.env.assembly
-        assembly_ings = [ing[0] for ing in assembly.ingredients]
+        # Handle both list[str] (real game) and list[tuple] (simulator)
+        assembly_ings = [ing[0] if isinstance(ing, tuple) else ing for ing in assembly.ingredients]
+        
+        # 如果组装站有目标配方，优先烹饪其缺失的食材
+        assembly_missing = []
+        if assembly.target_recipe_slug:
+            recipe = self._recipe_by_slug.get(assembly.target_recipe_slug)
+            if recipe:
+                raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+                cookers = self._get_recipe_attr(recipe, 'cookers', [])
+                for i, ing_name in enumerate(raw):
+                    cooker = cookers[i] if i < len(cookers) else None
+                    if cooker and ing_name not in assembly_ings:
+                        assembly_missing.append((ing_name, cooker))
         
         # 收集当前订单需要的食材 - 使用优先级排序（rush优先）
         needed_current = []
@@ -465,6 +501,9 @@ class CookingAgent:
                     if cooker and ing_name not in [n for n, _ in needed_current]:
                         needed_current.append((ing_name, cooker))
                 break  # 只取第一个优先级最高的订单
+        
+        # 组装站缺失的食材排最前
+        needed_current = assembly_missing + [item for item in needed_current if item not in assembly_missing]
         
         # 收集所有订单需要的食材
         needed_all = []
@@ -581,9 +620,20 @@ class CookingAgent:
     def _try_store_to_stockpile(self) -> Optional[MoveToStockpileAction]:
         """将灶台完成的多余食材存入库存"""
         assembly = self.env.assembly
+        needed = self._get_needed_ingredient_names()
 
-        # 组装站空闲时不需要存储——食材可以直接移到组装站
+        # 组装站空闲时：如果食材不是任何活跃订单需要的，存入库存
         if assembly.is_free:
+            for cooker_name, cooker in self.env.cookers.items():
+                if not cooker.busy or cooker.done_at is None:
+                    continue
+                if self.env.time < cooker.done_at:
+                    continue
+                # 食材不是任何订单需要的，存入库存
+                if cooker.ingredient_name not in needed:
+                    slot = self._find_available_slot(cooker.ingredient_name, cooker.cooker_type)
+                    if slot:
+                        return MoveToStockpileAction(cooker=cooker_name, slot=slot)
             return None
 
         # 组装站有目标配方，但灶台食材不是配方需要的 => 存入库存
@@ -594,7 +644,6 @@ class CookingAgent:
                 continue
 
             # 如果组装站需要这个食材，不应该存入库存
-            needed = self._get_needed_ingredient_names()
             if cooker.ingredient_name in needed:
                 continue
 
@@ -640,16 +689,40 @@ class CookingAgent:
         if assembly.is_free:
             return None
         
-        target_slug = assembly.target_recipe_slug
-        if not target_slug:
+        assembly_ing_names = [ing[0] if isinstance(ing, tuple) else ing for ing in assembly.ingredients]
+        if not assembly_ing_names:
             return None
         
-        # 检查是否有订单匹配这个recipe且未超时
-        for order in self.env.orders:
-            if order and not order.done and order.recipe_slug == target_slug:
-                return None  # 订单还有效，不需要清理
+        target_slug = assembly.target_recipe_slug
         
-        # 没有有效订单匹配，返回清空动作
+        # 如果有目标配方，检查对应订单是否还有效
+        if target_slug:
+            for order in self.env.orders:
+                if order and not order.done and order.recipe_slug == target_slug:
+                    return None  # 订单还有效，不需要清理
+            # 目标订单已超时/完成，清空
+            return ClearAssemblyAction()
+        
+        # 没有目标配方（target_slug为None），检查食材是否匹配任何活跃订单
+        active_slugs = set()
+        for order in self.env.orders:
+            if order and not order.done:
+                active_slugs.add(order.recipe_slug)
+        
+        if not active_slugs:
+            return ClearAssemblyAction()  # 没有活跃订单
+        
+        # 检查assembly的食材是否属于任何活跃订单
+        for order in self.env.orders:
+            if order and not order.done:
+                recipe = self._recipe_by_slug.get(order.recipe_slug)
+                if recipe:
+                    recipe_ings = set(self._get_recipe_attr(recipe, 'raw_ingredients', []))
+                    # 如果assembly的所有食材都属于这个订单的配方，保留
+                    if all(ing in recipe_ings for ing in assembly_ing_names):
+                        return None  # 食材可用于这个订单
+        
+        # 食材不匹配任何活跃订单，清空
         return ClearAssemblyAction()
 
     def on_order_served(self, score: int = 1) -> None:
@@ -732,6 +805,14 @@ class CookingAgent:
             return True
 
         if not target_slug:
+            # assembly有食材但没有target，检查ingredient是否匹配任何活跃订单
+            for order in self.env.orders:
+                if order and not order.done:
+                    recipe = self._recipe_by_slug.get(order.recipe_slug)
+                    if recipe:
+                        raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+                        if ingredient in raw:
+                            return True
             return False
 
         recipe = self._recipe_by_slug.get(target_slug)
@@ -783,7 +864,9 @@ class CookingAgent:
     def _ingredients_match(self, actual: list, recipe) -> bool:
         """检查食材是否匹配配方（忽略顺序）"""
         expected = recipe.raw_ingredients if hasattr(recipe, 'raw_ingredients') else recipe.get('raw_ingredients', [])
-        return sorted(actual) == sorted(expected)
+        # Handle tuple format (name, cooker, time) from simulator
+        actual_names = [ing[0] if isinstance(ing, tuple) else ing for ing in actual]
+        return sorted(actual_names) == sorted(expected)
 
     def _condiments_complete(self, applied: dict[str, int], needed: dict[str, int]) -> bool:
         """检查调料是否齐全"""
