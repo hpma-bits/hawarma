@@ -235,6 +235,9 @@ class CookingAgent:
         6. 从库存取用
         7. 清理过期食材
         """
+        # 0. 检查assembly是否属于已超时订单，如果是则清空
+        self._check_and_clear_expired_assembly()
+        
         assembly = self.env.assembly
         assembly_ings = [ing[0] for ing in assembly.ingredients]
         
@@ -623,6 +626,24 @@ class CookingAgent:
     def on_order_timeout(self, order_id: int) -> None:
         """订单超时时由外部调用，更新统计"""
         self.stats["orders_timeout"] += 1
+    
+    def _check_and_clear_expired_assembly(self) -> None:
+        """检查assembly的食材是否属于已超时的订单，如果是则清空"""
+        assembly = self.env.assembly
+        if assembly.is_free:
+            return
+        
+        target_slug = assembly.target_recipe_slug
+        if not target_slug:
+            return
+        
+        # 检查是否有订单匹配这个recipe且未超时
+        for order in self.env.orders:
+            if order and not order.done and order.recipe_slug == target_slug:
+                return  # 订单还有效，不需要清理
+        
+        # 没有有效订单匹配，清空assembly
+        self.env.clear_assembly()
 
     def on_order_served(self, score: int = 1) -> None:
         """订单送餐成功时由外部调用，更新统计"""

@@ -187,8 +187,13 @@ class SimulatorEnvironment(BaseEnvironment):
         return result.success
     
     def serve_order(self, slot_idx: int) -> bool:
-        """Serve order"""
+        """Serve order from slot"""
         result = self._sim.serve_order(slot_idx)
+        return result.success
+    
+    def clear_assembly(self) -> bool:
+        """Clear assembly station (discard ingredients when order expires)"""
+        result = self._sim.clear_assembly()
         return result.success
     
     def clear_cooker(self, cooker: str) -> bool:

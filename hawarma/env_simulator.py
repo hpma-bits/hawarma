@@ -1168,6 +1168,23 @@ class GameSimulator:
         
         return ActionResult.success_result([event], score=score)
     
+    def clear_assembly(self) -> ActionResult:
+        """
+        清空组装站（订单超时或配方错误时丢弃食材）
+        
+        Returns:
+            ActionResult: 操作结果
+        """
+        if not self._state.assembly.ingredients:
+            return ActionResult.failure_result("Assembly is already empty")
+        
+        discarded = [ing[0] for ing in self._state.assembly.ingredients]
+        self._state.assembly.ingredients.clear()
+        self._state.assembly.condiments.clear()
+        self._state.assembly.target_recipe = None
+        
+        return ActionResult.success_result()
+    
     def _calculate_score(self, order: Order, assembly_condiments: dict[str, int]) -> int:
         """
         计算订单得分
