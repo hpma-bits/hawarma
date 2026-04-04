@@ -269,3 +269,13 @@ class BaseEnvironment(ABC):
             是否成功
         """
         pass
+
+    @abstractmethod
+    def clear_assembly(self) -> bool:
+        """
+        清空组装站（丢弃食材）
+        
+        Returns:
+            是否成功
+        """
+        pass

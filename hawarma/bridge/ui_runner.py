@@ -231,6 +231,14 @@ class UIRunner:
         await self.swipe(cooker_pos, trash_pos)
         logger.debug(f"Cleared cooker {cooker}")
     
+    async def clear_assembly(self) -> None:
+        """
+        清空组装站（丢弃食材到垃圾桶）
+        """
+        trash_pos = (1800, 1000)
+        await self.swipe(self._assembly_position, trash_pos)
+        logger.debug(f"Cleared assembly station")
+    
     # ========================================================================
     # 坐标查询
     # ========================================================================

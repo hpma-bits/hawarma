@@ -178,6 +178,8 @@ class RealGameBridge:
                     await self._exec_serve_order(action)
                 case "ClearCookerAction":
                     await self._exec_clear_cooker(action)
+                case "ClearAssemblyAction":
+                    await self._exec_clear_assembly(action)
                 case _:
                     logger.warning(f"Unknown action: {action_type}")
         except Exception as e:
@@ -238,6 +240,13 @@ class RealGameBridge:
         await self.ui.clear_cooker(action.cooker)
         self.env.clear_cooker(action.cooker)
         logger.info(f"[t={self.env.time:.1f}s] Cleared cooker {action.cooker}")
+
+    async def _exec_clear_assembly(self, action) -> None:
+        """清空组装站"""
+        discarded = self.env.assembly.ingredients.copy()
+        await self.ui.clear_assembly()
+        self.env.clear_assembly()
+        logger.info(f"[t={self.env.time:.1f}s] Cleared assembly (discarded: {discarded})")
 
     def stop(self) -> None:
         """停止游戏"""

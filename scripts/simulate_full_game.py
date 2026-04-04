@@ -20,7 +20,7 @@ from hawarma.bridge.simulator_environment import SimulatorEnvironment
 from hawarma.agent.agent import (
     CookingAgent, Action, CookAction, MoveToAssemblyAction,
     MoveToStockpileAction, PullFromStockpileAction, AddCondimentAction,
-    ServeOrderAction, ClearCookerAction,
+    ServeOrderAction, ClearCookerAction, ClearAssemblyAction,
 )
 
 
@@ -166,6 +166,11 @@ def _execute_and_log(env: SimulatorEnvironment, action: Action, game_time: float
         ok = env.clear_cooker(action.cooker)
         if ok:
             print(f"[t={game_time:.1f}s] CLEAR {action.cooker}")
+    
+    elif isinstance(action, ClearAssemblyAction):
+        ok = env.clear_assembly()
+        if ok:
+            print(f"[t={game_time:.1f}s] CLEAR assembly")
     
     return stats
 

@@ -195,6 +195,13 @@ class GameEnvironment(BaseEnvironment):
         self._cookers[cooker].reset()
         return True
 
+    def clear_assembly(self) -> bool:
+        """清空组装站"""
+        if not self._assembly.ingredients:
+            return False
+        self._assembly.reset()
+        return True
+
     # ========================================================================
     # 扩展方法（GameEnvironment 特有）
     # ========================================================================
