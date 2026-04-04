@@ -1,7 +1,36 @@
 # AGENTS.md
 
-## Overview
-This is a Python-based automation bot for a cooking game. The project uses asyncio for concurrent processing, Pydantic for data validation, and Airtest for UI automation.
+> **上下文索引**：本文档是项目的入口索引。需要深入了解任何模块时，请先阅读对应的 `ARCHITECTURE.md` 文件获取完整上下文。
+
+## 🗺️ 上下文地图
+
+### 项目概览
+这是一个 Python 烹饪游戏自动化机器人，使用 asyncio 并发处理、Pydantic 数据验证和 Airtest UI 自动化。
+
+| 上下文 | 文件 | 何时阅读 |
+|--------|------|----------|
+| **项目总览** | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 了解整体目录结构和模块关系 |
+| **核心代码** | [`hawarma/ARCHITECTURE.md`](hawarma/ARCHITECTURE.md) | 修改核心逻辑、理解数据流和架构 |
+| **Agent 决策** | [`hawarma/agent/ARCHITECTURE.md`](hawarma/agent/ARCHITECTURE.md) | 修改 Agent 策略、动作类型、优先级 |
+| **桥接层** | [`hawarma/bridge/ARCHITECTURE.md`](hawarma/bridge/ARCHITECTURE.md) | 修改 UI 操作、状态追踪、扫描器、双循环架构 |
+| **服务层** | [`hawarma/services/ARCHITECTURE.md`](hawarma/services/ARCHITECTURE.md) | 修改配方管理等服务组件 |
+| **工具函数** | [`hawarma/utils/ARCHITECTURE.md`](hawarma/utils/ARCHITECTURE.md) | 修改图像处理工具 |
+| **文档** | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 查找游戏规则、设计文档、模拟器文档 |
+| **测试** | [`tests/ARCHITECTURE.md`](tests/ARCHITECTURE.md) | 添加或修改测试 |
+| **实验** | [`experiments/ARCHITECTURE.md`](experiments/ARCHITECTURE.md) | 运行基准测试、查看实验记录 |
+
+### 快速导航：按任务选择上下文
+
+| 任务 | 阅读顺序 |
+|------|----------|
+| 修改 Agent 策略 | `docs/game_rules.md` → `hawarma/agent/ARCHITECTURE.md` → `hawarma/ARCHITECTURE.md` |
+| 修改 UI 操作 | `hawarma/bridge/ARCHITECTURE.md` → `hawarma/ARCHITECTURE.md` |
+| 修改订单检测 | `hawarma/bridge/ARCHITECTURE.md` (scanner) → `docs/game_rules.md` |
+| 添加新测试 | `tests/ARCHITECTURE.md` → 对应模块的 ARCHITECTURE.md |
+| 运行基准测试 | `experiments/ARCHITECTURE.md` → `scripts/` 目录 |
+| 修改配置 | `configs/config.yaml` → `hawarma/config.py` |
+
+---
 
 ## ⚠️ 重要原则
 
@@ -13,9 +42,9 @@ This is a Python-based automation bot for a cooking game. The project uses async
 - 代码要与文档保持一致，如果代码与文档冲突，以文档为准
 
 **关键文档**：
-- `docs/game_rules.md` - 游戏规则（唯一依据）
-- `docs/agent_strategy.md` - Agent策略和实验结果
-- `docs/agent_architecture.md` - Agent架构设计
+- [`docs/game_rules.md`](docs/game_rules.md) - 游戏规则（唯一依据）
+- [`docs/agent_strategy.md`](docs/agent_strategy.md) - Agent策略和实验结果
+- [`docs/agent_architecture.md`](docs/agent_architecture.md) - Agent架构设计
 
 ### 模拟器局限性
 
@@ -29,289 +58,97 @@ This is a Python-based automation bot for a cooking game. The project uses async
 - 考虑不同recipes组合的差异
 - 从文档中的游戏规则出发分析问题
 
-## Build/Test Commands
+---
 
-### Running the Application
+## 🏗️ Harness 实践
+
+### 上下文加载策略
+
+1. **默认只加载 AGENTS.md**：本文档包含足够的规则和索引
+2. **按需深入**：根据任务类型，从上表的"快速导航"中选择对应的 ARCHITECTURE.md
+3. **逐层展开**：从根 `ARCHITECTURE.md` → 子目录 `ARCHITECTURE.md` → 具体源文件
+
+### 上下文完整性
+
+每个 `ARCHITECTURE.md` 文件包含：
+- 目录目的和文件列表
+- 输入/输出定义
+- 模块间关系和数据流
+- 关键设计决策和原理
+
+### 维护规则
+
+1. 任何架构变更必须更新相关的 `ARCHITECTURE.md`
+2. 每个目录必须有 `ARCHITECTURE.md`
+3. 文件头必须声明：`一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md`
+
+---
+
+## 🔧 常用命令
+
+### 运行应用
 ```bash
-# Windows: 首先激活虚拟环境
 .venv\Scripts\activate
-
-# Linux/Mac: 首先激活虚拟环境
-# source .venv/bin/activate
-
-# 运行应用
 python main.py
 ```
 
-### Running Tests
-Tests use Python's `unittest` framework:
-
+### 运行测试
 ```bash
-# Windows: 首先激活虚拟环境
 .venv\Scripts\activate
-
-# Linux/Mac: 首先激活虚拟环境
-# source .venv/bin/activate
-
-# Run all tests
-python -m unittest discover tests
-
-# Run a single test file
-python -m unittest tests.test_capture_speed
-
-# Run a single test method
-python -m unittest tests.test_capture_speed.TestCaptureSpeed.test_detection_speed
-
-# Run with verbose output
-python -m unittest discover -v tests
+python -m unittest discover tests        # 全部测试
+python -m unittest tests.test_capture_speed  # 单个文件
+python -m unittest discover -v tests     # 详细输出
 ```
 
-### Environment Setup
+### 运行模拟
 ```bash
-# Create virtual environment and install dependencies
-uv pip install -r requirements.txt  # or: python -m uv pip install .
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-.venv\Scripts\activate     # Windows
-```
-
-### Running Simulations
-```bash
-# Windows: 首先激活虚拟环境
 .venv\Scripts\activate
-
-# Linux/Mac: 首先激活虚拟环境
-# source .venv/bin/activate
-
-# Run a single simulation with detailed output
 python scripts/simulate_full_game.py --seed 42
-
-# Run multiple seeds for benchmark
 python scripts/benchmark_agent.py --seeds 10
 ```
 
-### Type Checking (Manual)
-Note: No type checker is currently configured. Run `mypy` manually if needed:
+### 环境设置
 ```bash
-python -m mypy hawarma/**/*.py
+uv pip install -r requirements.txt
+python -m venv .venv
+.venv\Scripts\activate
 ```
 
-### Code Formatting (Manual)
-No auto-formatter is configured. Follow PEP 8 style guidelines.
+---
 
-## Code Style Guidelines
+## 📝 代码规范
 
-### Import Organization
-Order imports in this sequence:
-1. Standard library imports
-2. Third-party imports (loguru, pydantic, airtest, etc.)
-3. Local imports (hawarma package)
-4. Relative imports within packages
+### 类型注解
+- Python 3.10+ 小写泛型：`list[str]`、`dict[str, int]`
+- 使用 `|` 联合运算符：`Order | None`
+- 所有公共函数/方法必须有类型提示
 
-```python
-# Standard library
-import asyncio
-import time
-from pathlib import Path
-from typing import Dict, List, Tuple
+### 命名约定
+- **变量/函数**：`snake_case`
+- **类**：`PascalCase`
+- **常量**：`UPPER_SNAKE_CASE`
+- **私有方法**：`_leading_underscore`
 
-# Third-party
-from loguru import logger
-from pydantic import BaseModel, field_validator
+### 导入顺序
+1. 标准库
+2. 第三方库
+3. 本地导入
+4. 相对导入
 
-# Local
-from hawarma.config import AppConfig
-from hawarma.models import Recipe, Order
-```
+### 并发
+- 使用 `asyncio` 和 `asyncio.Lock()`
+- 使用 `asyncio.create_task()` 并跟踪任务
+- 使用 `asyncio.gather()` 分组并发操作
 
-Use `from ... import ...` for commonly used modules. Avoid `from module import *`.
+### 错误处理
+- 使用 `loguru` 结构化日志
+- 捕获具体异常而非裸 `except:`
+- 记录错误后再 re-raise
 
-### Type Annotations
-- Use Python 3.10+ lowercase generic types: `list[str]`, `dict[str, int]`, not `List[str]`, `Dict[str, int]`
-- Use the `|` union operator: `Order | None`, not `Optional[Order]`
-- All public functions/methods must have type hints
-- Return type `None` is required for functions that don't return
-
-```python
-# Good
-def get_recipe_by_slug(self, slug: str) -> Recipe | None:
-    ...
-
-def load_recipes(self) -> None:
-    ...
-```
-
-### Naming Conventions
-- **Variables/Functions**: `snake_case` - `order_slots`, `get_recipe_by_slug()`
-- **Classes**: `PascalCase` - `CookingBotApp`, `DetectionService`
-- **Constants**: `UPPER_SNAKE_CASE` - `MAX_SLOTS`, `RECIPE_CONFIDENCE_THRESHOLD`
-- **Private methods**: `_leading_underscore` - `_detect_recipe()`, `_cook_on_single_cooker()`
-
-### File Documentation Headers
-All module files must have a header comment in Chinese with the following structure:
-
-```python
-"""
-模块名称
-
-地位：简要描述模块在系统中的职责和位置
-
-输入：模块接收的数据/参数
-输出：模块返回的数据/结果
-
-⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
-"""
-```
-
-Example from `app.py`:
-```python
-"""
-核心应用类
-
-地位：协调整个烹饪流程，管理订单队列、处理管道、库存管理和原料囤积策略
-
-输入：配置对象、配方列表
-输出：应用运行状态、订单完成统计
-
-⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
-"""
-```
-
-### Documentation Strings
-Public classes and methods must have docstrings. Use the following format:
-- **Classes**: Describe purpose and main functionality
-- **Methods**: Describe args and returns values
-- Use present tense: "Loads recipes" not "Load recipes"
-
-```python
-class RecipeManager:
-    """
-    Handles loading, accessing, and managing recipe data from a JSON file.
-    """
-
-    def get_recipe_by_slug(self, slug: str) -> Recipe | None:
-        """
-        Finds a recipe by its unique slug.
-
-        Args:
-            slug: The slug of the recipe to find.
-
-        Returns:
-            The Recipe object if found, otherwise None.
-        """
-```
-
-### Error Handling
-- Use structured logging with `loguru` for all errors
-- Provide context in error messages
-- Catch specific exceptions (`FileNotFoundError`, `ValueError`) before generic `Exception`
-- Always log errors before re-raising if appropriate
-
-```python
-try:
-    with open(self._recipes_path, "r", encoding="utf-8") as f:
-        recipes_data = json.load(f)
-except FileNotFoundError:
-    logger.error(f"Recipe file not found at: {self._recipes_path}")
-    raise
-except json.JSONDecodeError as e:
-    logger.error(f"Error decoding JSON from recipe file: {self._recipes_path}")
-    raise
-```
-
-### Logging
-- Use `loguru.logger` for all logging
-- Log levels: `DEBUG`, `INFO`, `SUCCESS`, `WARNING`, `ERROR`
-- Include context and variable values
-- Use f-strings for formatting
-
-```python
-logger.info(f"Application setup complete.")
-logger.debug(f"Checking slot {slot_idx} for new orders")
-logger.error(f"Failed to initialize Airtest device: {e}")
-```
-
-### Concurrency and Async
-- Use `asyncio` for concurrent operations
-- Use `asyncio.Lock()` for thread-safe access to shared resources
-- Create tasks with `asyncio.create_task()` and track them for cleanup
-- Group concurrent operations with `asyncio.gather()`
-
-```python
-# Lock usage
-async with self.order_slots_lock:
-    self.order_slots[slot_idx] = new_order
-
-# Task management
-tasks = []
-for cooker_name, ingredients in cooker_schedule.items():
-    task = self._cook_on_single_cooker(cooker_name, ingredients, destination)
-    tasks.append(task)
-
-await asyncio.gather(*tasks)
-```
-
-### Pydantic Models
-- Use Pydantic `BaseModel` for data validation
-- Use `@field_validator` for custom validation
-- Define all required fields without default values
-
-```python
-class Recipe(BaseModel):
-    """Represents a cooking recipe."""
-
-    slug: str
-    name: str
-    raw_ingredients: list[str]
-    cookers: list[str]
-    cook_durations: list[float]
-
-    @field_validator("cook_durations")
-    def check_durations_length(cls, v, values):
-        if "cookers" in values.data and len(v) != len(values.data["cookers"]):
-            raise ValueError("cook_durations length must match cookers length")
-        return v
-```
-
-### Code Organization
-- **Core application**: `hawarma/app.py` - main `CookingBotApp` class
-- **Services**: `hawarma/services/` - business logic (`detection_service.py`, `cooking_service.py`, `recipe_manager.py`)
-- **Models**: `hawarma/models.py` - data structures using Pydantic
-- **Utils**: `hawarma/utils/` - utility functions (`image_utils.py`)
-- **Config**: `hawarma/config.py` - YAML-based configuration with Pydantic validation
-
-### Directory Architecture
-Each directory must contain an `ARCHITECTURE.md` file documenting:
-- Directory purpose
-- All files with their status/role and functionality
-- Input/output for each file
-- Warning: "⚠️ 一旦本目录有变化（新增/删除/重命名文件），请立即更新本文档！"
-
-### Configuration
-- All configuration in `configs/config.yaml`
-- Load with `AppConfig.model_validate()` through `load_config()` function
-- Access configuration attributes: `config.screen.resolution`, `config.matching.ingredients_threshold`
-
-### Airtest/Screenshot Handling
-- Use `G.DEVICE.snapshot()` to capture screen
-- Use `local_match()` from `image_utils.py` for template matching in specific regions
-- Template images stored in `static/img/` directory with pattern: `ingredient-{name}.jpg`, `icon-{name}.jpg`
-
-### Chinese Language Guidelines
-- Module headers and architecture docs use Chinese
-- Function docstrings and code comments can be English or Chinese
-- Keep technical terms in English: "订单" = "order", "配方" = "recipe", "检测" = "detection"
-
-### Must-Do Rules (from README.md)
-1. Any architectural changes must update relevant directory documentation after completion
-2. Every explicit directory must have a concise architecture `ARCHITECTURE.md` file including file names, status, and functionality. File header must declare: "一旦我所属的目录有变化，请更新我"
-3. Every module must have header comments indicating input/output and system role, with declaration: "一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md"
-4. Maintain project fractal structure throughout development
-
-### Anti-Patterns to Avoid
-- Don't use `List[Type]` - use `list[Type]` (Python 3.10+)
-- Don't use `Optional[Type]` - use `Type | None`
-- Don't use bare `except:` - catch specific exceptions
-- Don't use `asyncio.get_event_loop().time()` multiple times - cache the result
-- Don't create untracked asyncio tasks - use task tracking sets for cleanup
-- Don't import from private Airtest methods (`_cv_match`) - prefer public APIs
+### 反模式
+- 不使用 `List[Type]` → 用 `list[Type]`
+- 不使用 `Optional[Type]` → 用 `Type | None`
+- 不使用裸 `except:` → 捕获具体异常
+- 不重复调用 `asyncio.get_event_loop().time()` → 缓存结果
+- 不创建未跟踪的 asyncio 任务 → 使用任务跟踪集合
+- 不导入 Airtest 私有方法 → 使用公共 API

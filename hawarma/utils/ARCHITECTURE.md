@@ -3,6 +3,9 @@
 ## 📁 目录概述
 此目录包含hawarma项目的工具函数，提供通用的辅助功能。
 
+## ⚠️ 重要提示
+**一旦本目录有变化（新增/删除/重命名文件），请立即更新本文档！**
+
 ## 📄 文件列表
 
 ### `image_utils.py`
@@ -16,10 +19,7 @@
 
 ## 🔗 模块间关系
 ```
-DetectionService (detection_service.py)
+OrderScanner (bridge/scanner.py)
     ↓
-    └─→ local_match (image_utils.py)
+local_match (image_utils.py)
 ```
-
-## ⚠️ 重要提示
-**一旦本目录有变化（新增/删除/重命名文件），请立即更新本文档！**

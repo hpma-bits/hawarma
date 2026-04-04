@@ -1,42 +1,85 @@
 # Hawarma 项目架构
 
+> **上下文索引**：本文档是项目的入口索引。需要深入了解任何模块时，请先阅读对应的子目录 `ARCHITECTURE.md` 文件获取完整上下文。
+
+## 🗺️ 上下文地图
+
+| 上下文 | 文件 | 何时阅读 |
+|--------|------|----------|
+| **核心代码** | [`hawarma/ARCHITECTURE.md`](hawarma/ARCHITECTURE.md) | 修改核心逻辑、理解数据流和架构 |
+| **Agent 决策** | [`hawarma/agent/ARCHITECTURE.md`](hawarma/agent/ARCHITECTURE.md) | 修改 Agent 策略、动作类型、优先级 |
+| **桥接层** | [`hawarma/bridge/ARCHITECTURE.md`](hawarma/bridge/ARCHITECTURE.md) | 修改 UI 操作、状态追踪、扫描器、双循环架构 |
+| **服务层** | [`hawarma/services/ARCHITECTURE.md`](hawarma/services/ARCHITECTURE.md) | 修改配方管理等服务组件 |
+| **工具函数** | [`hawarma/utils/ARCHITECTURE.md`](hawarma/utils/ARCHITECTURE.md) | 修改图像处理工具 |
+| **文档** | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 查找游戏规则、设计文档、模拟器文档 |
+| **测试** | [`tests/ARCHITECTURE.md`](tests/ARCHITECTURE.md) | 添加或修改测试 |
+| **实验** | [`experiments/ARCHITECTURE.md`](experiments/ARCHITECTURE.md) | 运行基准测试、查看实验记录 |
+
 ## 📁 目录结构
 
 ```
 hawarma/
 ├── hawarma/           # 核心代码
-│   ├── agent/         # Agent决策逻辑
-│   ├── bridge/        # 桥接层
-│   ├── services/      # 服务层
-│   └── utils/         # 工具函数
-├── scripts/           # 脚本文件
+│   ├── agent/         # Agent 决策逻辑
+│   ├── bridge/        # 桥接层（UI 操作、状态追踪、扫描器）
+│   ├── services/      # 服务层（配方管理等）
+│   └── utils/         # 工具函数（图像处理）
+├── scripts/           # 脚本文件（模拟、基准测试）
 ├── experiments/       # 实验代码和报告
-├── docs/              # 文档
+├── docs/              # 文档（游戏规则、策略设计、架构说明）
 ├── configs/           # 配置文件
-├── data/              # 数据文件
-└── static/            # 静态资源
+├── data/              # 数据文件（recipes.json）
+├── static/            # 静态资源（模板图片、APK）
+├── tests/             # 测试代码
+├── logs/              # 运行日志
+├── main.py            # 入口文件
+└── AGENTS.md          # 上下文索引（入口文档）
 ```
 
 ## 📄 关键目录说明
 
-### `experiments/`
+### `hawarma/` — 核心代码
+- **地位**: Agent 自动化烹饪游戏的全部逻辑
+- **架构**: `main.py` → `RealGameBridge` → 双循环（scan_loop + agent_loop）
+- **深入阅读**: [`hawarma/ARCHITECTURE.md`](hawarma/ARCHITECTURE.md)
+
+### `docs/` — 项目文档
+- **地位**: 游戏规则、策略设计、架构说明
+- **关键文件**:
+  - `game_rules.md` — 游戏规则（唯一依据）
+  - `agent_strategy.md` — Agent 策略和实验结果
+  - `agent_architecture.md` — Agent 架构设计
+- **深入阅读**: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+
+### `tests/` — 测试代码
+- **地位**: 单元测试和集成测试
+- **深入阅读**: [`tests/ARCHITECTURE.md`](tests/ARCHITECTURE.md)
+
+### `scripts/` — 脚本文件
+| 文件 | 功能 |
+|------|------|
+| `simulate_full_game.py` | 单局模拟运行 |
+| `simulate_game.py` | 简化版模拟 |
+| `benchmark_agent.py` | 多局基准测试 |
+| `benchmark_utils.py` | 基准测试工具函数 |
+| `base_strategies.py` | 标准策略定义 |
+| `test_minitouch_speed.py` | minitouch 速度测试 |
+
+### `experiments/` — 实验代码和报告
 - **地位**: 实验代码和报告
-- **功能**: 保存基准测试脚本和实验历史
-- **关键文件**:
-  - `benchmark_agent.py`: 基准测试脚本
-  - `README.md`: 实验记录
+- **结构**: 每个实验一个子目录，包含 `design.md`、`script.py`、`report.md`
+- **现有实验**: `parallel_strategy/`、`quick_serve/`
+- **深入阅读**: [`experiments/ARCHITECTURE.md`](experiments/ARCHITECTURE.md)
 
-### `docs/`
-- **地位**: 项目文档
-- **功能**: 游戏规则、策略设计、架构说明
-- **关键文件**:
-  - `game_rules.md`: 游戏规则
-  - `agent_strategy.md`: Agent策略和实验结果
-  - `agent_architecture.md`: Agent架构设计
+### `configs/` — 配置文件
+- `config.yaml` — YAML 配置，通过 `hawarma/config.py` 加载
 
-### `hawarma/`
-- **地位**: 核心代码
-- **功能**: Agent、环境、桥接层
+### `data/` — 数据文件
+- `recipes.json` — 配方数据
+
+### `static/` — 静态资源
+- `img/` — 模板图片（`ingredient-{name}.jpg`、`icon-{name}.jpg`）
+- `apk/` — APK 文件
 
 ## ⚠️ 重要原则
 
