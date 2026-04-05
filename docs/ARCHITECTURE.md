@@ -101,17 +101,36 @@
 - **输入**: 无
 - **输出**: 开发指南
 
+### `assembly_deadlock_analysis.md`
+- **地位**: 组装站死锁事件分析报告
+- **状态**: ✅ 新增
+- **功能**:
+  - 记录 2026-04-05 真实游戏中 35 秒 Agent 瘫痪事件的完整分析
+  - 根因：`target_recipe_slug` 状态缺失导致决策链断裂
+  - 修复方案：环境层预防 + Agent 层恢复的双层防御
+  - 优化方向：停滞检测、组装站超时清理、日志增强
+- **输入**: 真实游戏日志
+- **输出**: 事件分析报告和教训总结
+
 ## 🔗 文档关系
 
 ```
 agent_architecture.md (核心)
     ├── 引用 game_rules.md
     ├── 引用 env_simulator.md
-    └── 引用 recipe_selection_design.md
+    ├── 引用 recipe_selection_design.md
+    └── 引用 assembly_deadlock_analysis.md (状态完整性教训)
+
+agent_strategy.md (策略)
+    ├── 引用 assembly_deadlock_analysis.md (经验教训 5.7)
+    └── 引用 game_rules.md
 
 env_simulator.md
     ├── 包含 env_simulator_impl.md
     └── 包含 env_simulator_debug.md
+
+assembly_deadlock_analysis.md (事件分析)
+    └── 提出优化方向：停滞检测、超时清理、日志增强
 ```
 
 ## 📝 文档维护规范

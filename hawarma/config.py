@@ -20,6 +20,7 @@ class ScreenConfig(BaseModel):
     resolution: tuple[int, int]
     save_screenshots: bool
     assembly_station_position: tuple[int, int]
+    trash_position: tuple[int, int]
     timer_region: tuple[int, int, int, int] = (0, 0, 400, 140)
     raw_ingredients_positions: list[tuple[int, int]]
     cookers_positions: list[tuple[int, int]]

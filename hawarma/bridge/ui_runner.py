@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 from typing import Optional
 
-from airtest.core.api import swipe
 from loguru import logger
 
 from hawarma.config import AppConfig
@@ -47,6 +46,7 @@ class UIRunner:
         self._condiment_positions: dict[str, tuple[int, int]] = {}
         self._stockpile_positions: dict[str, tuple[int, int]] = {}
         self._assembly_position: tuple[int, int] = tuple(config.screen.assembly_station_position)
+        self._trash_position: tuple[int, int] = tuple(config.screen.trash_position)
         self._pickup_positions: list[tuple[int, int]] = [
             tuple(pos) for pos in config.screen.pickup_stations_positions
         ]
@@ -54,10 +54,23 @@ class UIRunner:
         # 异步锁
         self._lock = asyncio.Lock()
         
+        # minitouch 快速触摸（由外部注入）
+        self._minitouch = None
+        
         # 构建坐标映射
         self._build_mappings()
         
         logger.info(f"UIRunner initialized with {len(self._ingredient_positions)} ingredients")
+    
+    def set_minitouch(self, minitouch_swipe) -> None:
+        """
+        设置 minitouch 实例以加速触摸操作
+        
+        Args:
+            minitouch_swipe: MinitouchSwipe 实例
+        """
+        self._minitouch = minitouch_swipe
+        logger.info("UIRunner using minitouch for fast swipe")
     
     def _build_mappings(self) -> None:
         """
@@ -131,7 +144,7 @@ class UIRunner:
     # 核心操作
     # ========================================================================
     
-    async def swipe(self, start: tuple[int, int], end: tuple[int, int], duration: float = 0.06) -> None:
+    async def swipe(self, start: tuple[int, int], end: tuple[int, int], duration: float = 0.06, steps: int = 2) -> None:
         """
         执行 swipe 操作
         
@@ -139,13 +152,16 @@ class UIRunner:
             start: 起始坐标
             end: 结束坐标
             duration: 持续时间（默认0.06秒）
+            steps: 滑动步数（越多越平滑，但越慢，仅对minitouch生效）
         """
         async with self._lock:
             logger.debug(f"Swipe: {start} -> {end}")
-            # 直接调用 swipe，不使用 to_thread 以避免线程切换开销
-            swipe(start, end, duration)
-            # 短暂等待，确保操作完全完成
-            await asyncio.sleep(0.02)
+            if self._minitouch is not None:
+                self._minitouch.swipe(start, end, duration=duration, steps=steps)
+            else:
+                from airtest.core.api import swipe
+                swipe(start, end, duration)
+            await asyncio.sleep(0.01)
     
     async def cook(self, ingredient: str, cooker: str) -> None:
         """
@@ -215,7 +231,7 @@ class UIRunner:
             slot_idx: 订单槽位索引
         """
         pickup_pos = self._pickup_positions[slot_idx]
-        await self.swipe(self._assembly_position, pickup_pos)
+        await self.swipe(self._assembly_position, pickup_pos, duration=0.15, steps=5)
         logger.debug(f"Served order to slot {slot_idx}")
     
     async def clear_cooker(self, cooker: str) -> None:
@@ -226,17 +242,14 @@ class UIRunner:
             cooker: 灶台名称
         """
         cooker_pos = self._get_cooker_position(cooker)
-        # 丢弃到屏幕外（假设右下角是垃圾桶）
-        trash_pos = (1800, 1000)
-        await self.swipe(cooker_pos, trash_pos)
+        await self.swipe(cooker_pos, self._trash_position, duration=0.4, steps=8)
         logger.debug(f"Cleared cooker {cooker}")
     
     async def clear_assembly(self) -> None:
         """
         清空组装站（丢弃食材到垃圾桶）
         """
-        trash_pos = (1800, 1000)
-        await self.swipe(self._assembly_position, trash_pos)
+        await self.swipe(self._assembly_position, self._trash_position, duration=0.4, steps=8)
         logger.debug(f"Cleared assembly station")
     
     # ========================================================================

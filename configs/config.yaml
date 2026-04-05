@@ -10,6 +10,7 @@ screen:
   resolution: [1920, 1080]
   save_screenshots: False
   assembly_station_position: [1375, 865]
+  trash_position: [25, 590]
   timer_region: [0, 0, 400, 140]
 
   raw_ingredients_positions:

@@ -16,12 +16,15 @@
 
 ### `agent.py`
 - **地位**: 统一烹饪 Agent
-- **状态**: ✅ 完成
+- **状态**: ✅ 完成（含停滞检测和超时清理）
 - **功能**:
   - 基于优先级的贪心策略决策
   - 支持与 GameEnvironment（真实游戏）交互
   - 7级优先级动作选择
   - 调料追踪、订单优先级排序（rush 优先）
+  - **停滞检测**：`step_with_diagnostics()` 追踪连续无行动时间，5秒后输出诊断日志
+  - **组装站超时清理**：`_check_stale_assembly()` 检测食材齐全但调料缺失超过15秒的情况，自动清空
+  - **配方推断**：`_infer_recipe_from_assembly()` 从食材反推目标配方
 - **输入**: GameEnvironment 实例、配方列表
 - **输出**: 动作对象供执行器执行
 - **关键类**: `CookingAgent`, 各种 `Action` 子类
@@ -226,6 +229,51 @@ Agent 通过 `self.env` 访问 GameEnvironment 提供的状态接口：
 - `self._get_needed_ingredients()` - 获取当前订单需要的食材
 - `self._is_cooking(ingredient)` - 检查食材是否正在烹饪
 - `self._has_in_stockpile(ingredient)` - 检查库存是否有食材
+- `self._infer_recipe_from_assembly()` - 根据组装站食材推断匹配的配方
+
+---
+
+## 🔧 配方推断机制
+
+### 问题背景
+
+当 `assembly.target_recipe_slug` 为 `None` 时（可能由状态同步延迟或边缘操作序列导致），`_try_add_condiment()` 和 `_try_serve()` 需要能够根据已有食材推断出目标配方，避免 Agent 决策瘫痪。
+
+### 推断策略
+
+```python
+def _infer_recipe_from_assembly(self) -> Optional[str]:
+    """根据组装站食材推断匹配的配方"""
+    assembly = self.env.assembly
+    if not assembly.ingredients:
+        return None
+    
+    assembly_names = [ing[0] if isinstance(ing, tuple) else ing for ing in assembly.ingredients]
+    
+    for _, order in self._prioritized_orders():
+        recipe = self._recipe_by_slug.get(order.recipe_slug)
+        if recipe:
+            raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+            if all(ing in raw for ing in assembly_names):
+                return order.recipe_slug
+    return None
+```
+
+**设计原则**：
+- 按订单优先级遍历（rush 优先、timeout 近的优先）
+- 只要组装站所有食材都属于某个订单的配方，即认为匹配
+- 返回第一个匹配的订单配方
+
+### 使用场景
+
+| 方法 | 何时使用推断 |
+|------|-------------|
+| `_try_add_condiment()` | `target_recipe_slug` 为 None 时，推断后检查食材是否齐全并添加调料 |
+| `_try_serve()` | 不依赖推断，直接遍历订单匹配（已有容错） |
+
+### 与环境层推断的关系
+
+环境层（`GameEnvironment`）在 `pull_from_stockpile()` 和 `add_to_assembly()` 中也做推断，这是**预防层**。Agent 层的推断是**恢复层**。两层配合确保即使环境层推断失败，Agent 仍能正常工作。
 
 ---
 

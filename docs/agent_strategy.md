@@ -206,6 +206,28 @@ t=15.5s  移动 clearwater_fish 到组装站
 - 重要结论需要在真实环境中验证
 - 从文档出发思考问题，而不是从代码出发
 
+### 5.7 状态完整性比逻辑正确性更重要（2026-04-05 新增）
+
+**事件**：真实游戏日志显示 Agent 在 t=43.8s 到 t=78.9s 之间完全停止行动（35秒静默），37个订单只完成6个。
+
+**根因**：`assembly.target_recipe_slug` 在特定操作序列下（先 pull_from_stockpile 再 add_to_assembly）未被正确设置，导致：
+- `_try_serve()` → 调料不完整，无法送餐
+- `_try_add_condiment()` → `target_slug` 为 None，直接返回 None
+- `_try_parallel_cooking()` → 无食材可烹饪
+- Agent 循环 700+ 次全部返回 None，完全瘫痪
+
+**教训**：
+1. **关键状态字段必须在所有写入路径上保持一致**，不能只覆盖"主要路径"
+2. **瀑布式优先级决策需要安全网**：当所有检查都返回 None 且持续一定时间时，应触发诊断或恢复
+3. **防御性编程需要多层**：环境层预防 + Agent 层恢复
+4. **日志需要覆盖"为什么没做"**，而不仅仅是"做了什么"
+
+**修复方案**：
+- 环境层：`pull_from_stockpile()` 和 `add_to_assembly()` 自动推断 `target_recipe_slug`
+- Agent 层：`_try_add_condiment()` 在 `target_slug` 为空时通过 `_infer_recipe_from_assembly()` 推断
+
+详见 `docs/assembly_deadlock_analysis.md`。
+
 ## 6. 结论
 
 ### 6.1 当前最优策略

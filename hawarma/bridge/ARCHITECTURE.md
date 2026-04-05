@@ -25,28 +25,33 @@
 - **输入**: 无（纯接口定义）
 - **输出**: BaseEnvironment 抽象基类和统一数据结构
 - **关键类**: `BaseEnvironment`, `OrderInfo`, `CookerState`, `AssemblyState`, `StockpileSlot`
+- **CookerState 字段**: `busy`, `ingredient_name`, `cooker_type`, `started_at`, `done_at`, `expired_at`
+- **CookerState 方法**: `reset()`, `is_done(current_time)`, `is_expired(current_time)`
 
 ### `environment.py`
 - **地位**: 真实游戏环境
 - **状态**: ✅ 完成
 - **功能**:
   - 继承 BaseEnvironment，实现统一接口
-  - 追踪灶台状态（通过程序逻辑）
-  - 追踪组装站状态
+  - 追踪灶台状态（通过程序逻辑，含过期时间管理）
+  - 追踪组装站状态（含配方校验）
   - 追踪库存状态
   - 追踪订单状态
   - 管理游戏时间
-- **输入**: UI操作结果、订单检测结果
+  - **食材过期强制阻止**：`move_to_assembly` / `move_to_stockpile` 拒绝过期食材
+  - **组装站配方校验**：`add_to_assembly` / `add_condiment` 校验食材和调料是否属于目标配方
+- **输入**: UI操作结果、订单检测结果、配方字典
 - **输出**: 游戏状态供Agent决策
 - **关键类**: `GameEnvironment`
 
 ### `scanner.py`
 - **地位**: 订单扫描器
-- **状态**: ✅ 完成
+- **状态**: ✅ 完成（异步化 snapshot）
 - **功能**:
   - 检测屏幕上的订单
   - 识别配方和加急状态
   - 检测游戏开始（timer图标）
+  - **异步截图**：`detect_timer()`, `scan_orders()`, `scan_new_orders()` 均为 async 方法，使用 `asyncio.to_thread()` 避免阻塞事件循环
 - **输入**: 屏幕截图、配置对象
 - **输出**: 检测到的订单信息
 - **关键类**: `OrderScanner`, `DetectedOrder`
@@ -59,9 +64,25 @@
   - 从config.yaml读取坐标配置
   - 提供异步执行接口
   - **动态坐标映射**：根据菜谱选择顺序确定元素位置
+  - **minitouch支持**：可注入MinitouchSwipe实例以加速触摸操作
+  - **垃圾桶坐标配置化**：`clear_cooker()` 和 `clear_assembly()` 使用 `config.screen.trash_position`
+  - **clear_assembly 增强**：使用 `steps=5` 确保拖拽动作被游戏识别
 - **输入**: 符号化操作（食材名、灶台名等）
 - **输出**: swipe操作执行结果
 - **关键类**: `UIRunner`
+- **方法**: `set_minitouch(minitouch_swipe)` - 注入minitouch实例
+
+### `minitouch_swipe.py`
+- **地位**: Minitouch快速触摸封装
+- **状态**: ✅ 新增
+- **功能**:
+  - 使用minitouch协议直接发送触摸指令
+  - 避免ADB shell调用的进程创建开销
+  - 将单次swipe从~0.93s降至~0.1s
+- **输入**: 坐标、持续时间
+- **输出**: 触摸操作执行结果
+- **关键类**: `MinitouchSwipe`
+- **关键方法**: `setup()`, `swipe()`, `touch()`
 
 #### 坐标映射规则
 
@@ -83,12 +104,14 @@ UIRunner根据菜谱选择顺序动态确定各元素坐标：
 
 ### `bridge.py`
 - **地位**: 真实游戏桥接器
-- **状态**: ✅ 完成
+- **状态**: ✅ 完成（含停滞检测集成 + 异步扫描）
 - **功能**:
   - 协调Agent、环境、扫描器和UI执行器
   - 管理游戏生命周期
   - 运行扫描和决策循环
   - 执行Agent动作
+  - **停滞检测集成**：`_agent_loop()` 使用 `step_with_diagnostics()` 替代 `step()`
+  - **异步扫描**：`_sync_orders_from_scan()` 为 async 方法，await scanner 的异步截图
 - **输入**: 配置对象、配方列表
 - **输出**: 游戏统计结果
 - **关键类**: `RealGameBridge`
@@ -131,6 +154,8 @@ GameEnvironment状态更新
 | 时间推进 | tick()方法 | 真实时间 |
 | 操作执行 | 符号操作 | UI swipe操作 |
 | 订单生成 | 随机生成 | 屏幕检测 |
+| 食材过期 | expired_at 字段，强制阻止 | expired_at 字段，move_to_assembly/stockpile 拒绝过期 |
+| 配方校验 | 模拟器内部校验 | add_to_assembly/add_condiment 校验目标配方 |
 | 用途 | 测试、算法优化 | 实际游戏 |
 
 ---
@@ -166,69 +191,63 @@ async def run(self) -> dict:
 
 **职责**：检测屏幕上新出现的订单，更新环境状态
 
-**频率**：每 0.5 秒扫描一次
+**频率**：自适应（0.5s ~ 2.0s）
 
 ```python
 async def _scan_loop(self) -> None:
-    """订单扫描循环"""
+    """订单扫描循环（自适应频率）"""
     while self._running and not self.env.is_game_over():
         try:
-            # 检查是否在动画窗口期（避免冲突）
             if not self.env.is_in_animation_window():
-                # 扫描新订单
-                new_orders = self.scanner.scan_new_orders()
-                
-                # 添加到环境状态
-                for order in new_orders:
-                    recipe = self._recipe_by_slug.get(order.recipe_slug)
-                    if recipe:
-                        self.env.add_order(
-                            slot_idx=order.slot_idx,
-                            recipe_slug=order.recipe_slug,
-                            is_rush=order.is_rush,
-                        )
-            
-            await asyncio.sleep(0.5)  # 扫描间隔
+                await self._sync_orders_from_scan()
+            interval = self._compute_scan_interval()
+            await asyncio.sleep(interval)
         except Exception as e:
             logger.error(f"Scan loop error: {e}")
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1.0)
 ```
+
+**自适应频率策略**：
+
+| 游戏状态 | 扫描间隔 | 原因 |
+|----------|----------|------|
+| 有灶台空闲 + 有活跃订单 | 0.5s | 快速发现新订单，立即启动烹饪 |
+| 所有灶台都在忙 | 2.0s | 等烹饪完成再处理，减少不必要的扫描 |
+| 无活跃订单 | 1.0s | 中速等待新订单出现 |
 
 **关键点**：
 - 使用 `OrderScanner` 进行图像检测
 - 只检测订单，其他状态通过程序逻辑维护
 - 在动画窗口期暂停扫描，避免误判
+- **`_sync_orders_from_scan()` 是 async 方法**，内部 `await self.scanner.scan_new_orders()`
+- **`G.DEVICE.snapshot()` 通过 `asyncio.to_thread()` 异步执行**，不阻塞 agent_loop
+- **扫描不会重叠**：每次扫描完成后才计算间隔并 sleep，确保同一时间只有一个扫描在进行
 
 ### 决策循环 (_agent_loop)
 
-**职责**：调用 Agent 进行决策，执行动作
+**职责**：调用 Agent 进行决策，执行动作，检测停滞状态
 
-**频率**：每 0.1 秒决策一次
+**频率**：每 0.05 秒决策一次
 
 ```python
 async def _agent_loop(self) -> None:
-    """Agent 决策循环"""
+    """Agent 决策循环（每 0.05s），带停滞检测"""
     while self._running and not self.env.is_game_over():
         try:
-            # 检查是否在动画窗口期
-            if not self.env.is_in_animation_window():
-                # 获取 Agent 决策
-                action = self.agent.step()
-                
-                if action:
-                    # 执行动作
-                    await self._execute_action(action)
-            
-            await asyncio.sleep(0.1)  # 决策间隔
+            action = self.agent.step_with_diagnostics()
+            if action:
+                self.agent.stats["actions_taken"] += 1
+                await self._execute_action(action)
+            await asyncio.sleep(0.05)
         except Exception as e:
             logger.error(f"Agent loop error: {e}")
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.05)
 ```
 
 **关键点**：
-- 决策频率（0.1s）高于扫描频率（0.5s）
-- 确保对状态变化的快速响应
-- Agent 每次只返回一个动作
+- 使用 `step_with_diagnostics()` 替代 `step()`，启用自动停滞检测
+- 连续 5 秒无行动时输出 WARNING 级别诊断日志，包含组装站状态、订单列表、停滞原因
+- 连续 10 秒无行动时再次输出诊断（仅输出一次，避免日志洪水）
 
 ### 为什么采用双循环？
 
@@ -360,11 +379,20 @@ class CookerState:
     cooker_type: Optional[str] = None
     started_at: Optional[float] = None
     done_at: Optional[float] = None
+    expired_at: Optional[float] = None
+
+    def is_done(self, current_time: float) -> bool:
+        return self.done_at is not None and current_time >= self.done_at
+
+    def is_expired(self, current_time: float) -> bool:
+        return self.expired_at is not None and current_time >= self.expired_at
 ```
 
 **状态更新时机**：
-- 开始烹饪时：`env.start_cooking(ingredient, cooker, duration)`
-- 移动食材时：`env.clear_cooker(cooker)` 或 `env.move_to_stockpile()`
+- 开始烹饪时：`env.start_cooking(ingredient, cooker, duration)` → 设置 `done_at` 和 `expired_at`
+- 移动食材时：`env.move_to_assembly(cooker)` → 过期食材被拒绝，返回 False
+- 存入库存时：`env.move_to_stockpile(cooker, slot)` → 过期食材被拒绝，返回 False
+- 清理灶台时：`env.clear_cooker(cooker)` → 重置所有字段
 
 ### 组装站状态追踪
 
@@ -375,11 +403,27 @@ class AssemblyState:
     ingredients: list[str] = field(default_factory=list)
     target_recipe_slug: Optional[str] = None
     owner_order_id: Optional[int] = None
+    condiments: dict[str, int] = field(default_factory=dict)
 ```
 
 **状态更新时机**：
 - 添加食材时：`env.add_to_assembly(ingredient, cooker, order_id, recipe_slug)`
+- 从库存取用时：`env.pull_from_stockpile(slot)` — 若组装站为空，自动推断 `target_recipe_slug`
 - 送餐时：`env.serve_order(slot_idx)` 内部清空组装站
+
+**⚠️ target_recipe_slug 完整性保证**（2026-04-05 修复）：
+
+`target_recipe_slug` 是组装站的"灵魂"字段，缺失会导致 Agent 决策链完全瘫痪（参见 `docs/assembly_deadlock_analysis.md`）。以下方法会自动推断配方：
+
+| 方法 | 推断时机 | 推断依据 |
+|------|----------|----------|
+| `pull_from_stockpile()` | 组装站为空时拉取食材 | 单食材匹配活跃订单 |
+| `add_to_assembly()` | 组装站有食材但无目标时 | 多食材集合匹配活跃订单 |
+| `add_to_assembly()` | 组装站为空且无 order_id/recipe_slug | 单食材匹配活跃订单 |
+
+推断方法：
+- `_infer_recipe_slug_from_ingredient(ingredient)` — 单食材匹配第一个活跃订单
+- `_infer_recipe_slug_from_ingredients(ingredients)` — 多食材集合匹配活跃订单
 
 ### 库存状态追踪
 

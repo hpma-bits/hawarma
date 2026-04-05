@@ -98,14 +98,6 @@ class ClearAssemblyAction(Action):
 
 
 # ============================================================================
-# 常量配置
-# ============================================================================
-
-# 灶台过期时间（秒，完成烹饪后）
-COOKER_EXPIRE_SECONDS = 5.0
-
-
-# ============================================================================
 # Agent 核心类
 # ============================================================================
 
@@ -167,6 +159,14 @@ class CookingAgent:
             "orders_timeout": 0,
             "actions_taken": 0,
         }
+        
+        # 停滞检测
+        self._consecutive_none = 0
+        self._last_action_time = 0.0
+        self._stagnation_warned = False
+        
+        # 组装站停滞计时
+        self._assembly_stale_since: float | None = None
         
         logger.info(f"CookingAgent ready | {len(recipes)} recipes | {len(self._ingredient_info_dict)} ingredients")
     
@@ -234,15 +234,19 @@ class CookingAgent:
         
         优先级顺序：
         1. 送餐（动画窗口期间跳过）
-        2. 开始烹饪（动画窗口期间允许，尽早启动灶台）
+        2. 清理过期食材（防止灶台被占用）
         3. 移动完成食材（当前订单需要的）
-        4. 添加调料
-        5. 存入stockpile（非当前订单需要的食材）
-        6. 从库存取用
-        7. 清理过期食材
+        4. 开始烹饪（动画窗口期间允许，尽早启动灶台）
+        5. 添加调料
+        6. 存入stockpile（非当前订单需要的食材）
+        7. 从库存取用
         """
         # 0. 检查assembly是否属于已超时订单，如果是则清空
         if action := self._check_and_clear_expired_assembly():
+            return action
+        
+        # 0.5. 检查组装站是否长时间停滞
+        if action := self._check_stale_assembly():
             return action
         
         assembly = self.env.assembly
@@ -253,31 +257,98 @@ class CookingAgent:
         if action := self._try_serve():
             return action
         
-        # 2. 移动完成食材到组装站（当前订单需要的）- 优先于开始新烹饪
-        if action := self._try_move_to_assembly():
-            return action
-        
-        # 3. 开始烹饪（动画窗口期间允许，尽早启动灶台）
-        if action := self._try_parallel_cooking():
-            return action
-        
-        # 4. 添加调料
-        if action := self._try_add_condiment():
-            return action
-        
-        # 5. 存入stockpile（非当前订单需要的食材）
-        if action := self._try_store_to_stockpile():
-            return action
-        
-        # 6. 从库存取用
-        if action := self._try_pull_from_stockpile():
-            return action
-        
-        # 7. 清理过期食材
+        # 2. 清理过期食材（优先于移动，防止移动过期食材）
         if action := self._try_clear_expired():
             return action
         
+        # 3. 移动完成食材到组装站（当前订单需要的）- 内部有过期检查
+        if action := self._try_move_to_assembly():
+            return action
+        
+        # 4. 开始烹饪（动画窗口期间允许，尽早启动灶台）
+        if action := self._try_parallel_cooking():
+            return action
+        
+        # 5. 添加调料
+        if action := self._try_add_condiment():
+            return action
+        
+        # 6. 存入stockpile（非当前订单需要的食材）
+        if action := self._try_store_to_stockpile():
+            return action
+        
+        # 7. 从库存取用
+        if action := self._try_pull_from_stockpile():
+            return action
+        
         return None
+
+    def step_with_diagnostics(self) -> Optional[Action]:
+        """带诊断的单步决策，记录各优先级检查失败原因"""
+        action = self.step()
+        
+        if action:
+            self._consecutive_none = 0
+            self._last_action_time = self.env.time
+            self._stagnation_warned = False
+            return action
+        
+        self._consecutive_none += 1
+        stagnant_duration = self._consecutive_none * 0.05
+        
+        if stagnant_duration >= 5.0 and not self._stagnation_warned:
+            self._stagnation_warned = True
+            self._log_stagnation_diagnostic(stagnant_duration)
+        
+        return action
+
+    def _log_stagnation_diagnostic(self, stagnant_duration: float) -> None:
+        """记录停滞诊断信息"""
+        assembly = self.env.assembly
+        assembly_ings = [ing[0] if isinstance(ing, tuple) else ing for ing in assembly.ingredients]
+        
+        active_orders = [(i, o) for i, o in enumerate(self.env.orders) if o and not o.done]
+        free_cookers = self._get_free_cookers()
+        cooking = [c.ingredient_name for c in self.env.cookers.values() if c.busy]
+        stockpile = {n: s.ingredient_name for n, s in self.env.stockpile.items() if s.count > 0}
+        
+        reasons = []
+        
+        if self.env.is_in_animation_window():
+            reasons.append("animation_window")
+        
+        if assembly_ings:
+            if assembly.target_recipe_slug:
+                condiments_needed = self._recipe_condiments.get(assembly.target_recipe_slug, {})
+                if condiments_needed and not self._condiments_complete(assembly.condiments, condiments_needed):
+                    missing_c = [c for c in condiments_needed if assembly.condiments.get(c, 0) < condiments_needed[c]]
+                    reasons.append(f"condiments_incomplete(missing={missing_c})")
+            else:
+                inferred = self._infer_recipe_from_assembly()
+                if inferred:
+                    condiments_needed = self._recipe_condiments.get(inferred, {})
+                    if condiments_needed:
+                        reasons.append(f"condiments_incomplete(inferred={inferred}, missing={list(condiments_needed.keys())})")
+                else:
+                    reasons.append("no_target_recipe")
+        
+        if not free_cookers:
+            reasons.append("no_free_cookers")
+        
+        if cooking:
+            reasons.append(f"cooking={cooking}")
+        
+        if stockpile:
+            reasons.append(f"stockpile={list(stockpile.values())}")
+        
+        order_summary = [f"{o.recipe_slug}({o.timeout_at - self.env.time:.0f}s)" for _, o in active_orders]
+        
+        logger.warning(
+            f"[t={self.env.time:.1f}s] Agent stagnation: {stagnant_duration:.1f}s without action | "
+            f"assembly=[{', '.join(assembly_ings)}] target={assembly.target_recipe_slug} | "
+            f"orders=[{', '.join(order_summary)}] | "
+            f"reasons=[{', '.join(reasons) if reasons else 'unknown'}]"
+        )
     
     def _get_assembly_stage(self) -> str:
         """
@@ -354,8 +425,11 @@ class CookingAgent:
         assembly = self.env.assembly
         target_slug = assembly.target_recipe_slug
 
+        # 如果没有目标配方，尝试从食材推断
         if not target_slug:
-            return None
+            target_slug = self._infer_recipe_from_assembly()
+            if not target_slug:
+                return None
 
         recipe = self._recipe_by_slug.get(target_slug)
         if not recipe:
@@ -408,7 +482,7 @@ class CookingAgent:
                 continue
 
             # 食材过期，跳过
-            if self.env.time >= cooker.done_at + COOKER_EXPIRE_SECONDS:
+            if cooker.is_expired(self.env.time):
                 continue
 
             if cooker.ingredient_name not in effective_needed:
@@ -608,9 +682,8 @@ class CookingAgent:
     def _try_clear_expired(self) -> Optional[ClearCookerAction]:
         """清理过期食材（完成烹饪后超过 5 秒未取走）"""
         for cooker_name, cooker in self.env.cookers.items():
-            if cooker.busy and cooker.done_at:
-                if self.env.time >= cooker.done_at + COOKER_EXPIRE_SECONDS:
-                    return ClearCookerAction(cooker=cooker_name)
+            if cooker.busy and cooker.is_expired(self.env.time):
+                return ClearCookerAction(cooker=cooker_name)
         return None
 
     # ========================================================================
@@ -724,6 +797,53 @@ class CookingAgent:
         
         # 食材不匹配任何活跃订单，清空
         return ClearAssemblyAction()
+
+    def _check_stale_assembly(self) -> Optional[ClearAssemblyAction]:
+        """
+        检查组装站是否长时间停滞（食材齐全但无法完成）。
+        
+        当组装站食材齐全但调料无法添加（如调料灶台被长期占用），
+        超过 STALE_THRESHOLD 秒后清空组装站，释放资源重新开始。
+        """
+        STALE_THRESHOLD = 15.0
+        
+        assembly = self.env.assembly
+        if assembly.is_free or not assembly.ingredients:
+            self._assembly_stale_since = None
+            return None
+        
+        target_slug = assembly.target_recipe_slug
+        if not target_slug:
+            target_slug = self._infer_recipe_from_assembly()
+        
+        if not target_slug:
+            self._assembly_stale_since = None
+            return None
+        
+        recipe = self._recipe_by_slug.get(target_slug)
+        if not recipe:
+            self._assembly_stale_since = None
+            return None
+        
+        ingredients_complete = self._ingredients_match(assembly.ingredients, recipe)
+        condiments_needed = self._recipe_condiments.get(target_slug, {})
+        condiments_complete = self._condiments_complete(assembly.condiments, condiments_needed)
+        
+        if ingredients_complete and not condiments_complete:
+            if self._assembly_stale_since is None:
+                self._assembly_stale_since = self.env.time
+            elif self.env.time - self._assembly_stale_since >= STALE_THRESHOLD:
+                logger.warning(
+                    f"[t={self.env.time:.1f}s] Assembly stale for {STALE_THRESHOLD}s: "
+                    f"{target_slug} ingredients complete but condiments missing "
+                    f"({list(condiments_needed.keys())}), clearing"
+                )
+                self._assembly_stale_since = None
+                return ClearAssemblyAction()
+        else:
+            self._assembly_stale_since = None
+        
+        return None
 
     def on_order_served(self, score: int = 1) -> None:
         """订单送餐成功时由外部调用，更新统计"""
@@ -874,6 +994,22 @@ class CookingAgent:
             if applied.get(condiment, 0) < count:
                 return False
         return True
+
+    def _infer_recipe_from_assembly(self) -> Optional[str]:
+        """根据组装站食材推断匹配的配方"""
+        assembly = self.env.assembly
+        if not assembly.ingredients:
+            return None
+        
+        assembly_names = [ing[0] if isinstance(ing, tuple) else ing for ing in assembly.ingredients]
+        
+        for _, order in self._prioritized_orders():
+            recipe = self._recipe_by_slug.get(order.recipe_slug)
+            if recipe:
+                raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+                if all(ing in raw for ing in assembly_names):
+                    return order.recipe_slug
+        return None
 
     def get_stats(self) -> dict:
         """获取统计信息"""

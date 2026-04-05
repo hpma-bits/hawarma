@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-import time
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -56,19 +56,16 @@ class OrderScanner:
         # 配方 slug -> Recipe 映射
         self._recipe_by_slug = {r.slug: r for r in recipes}
         
-        # 上次检测的订单（用于去重）
-        self._last_detected: dict[int, DetectedOrder] = {}
-        
         logger.info(f"OrderScanner initialized with {len(recipes)} recipes")
     
-    def detect_timer(self) -> bool:
+    async def detect_timer(self) -> bool:
         """
         检测 timer 图标（游戏开始标志）
 
         Returns:
             是否检测到 timer
         """
-        screen = G.DEVICE.snapshot()
+        screen = await asyncio.to_thread(G.DEVICE.snapshot)
         if screen is None:
             return False
 
@@ -81,14 +78,14 @@ class OrderScanner:
         match = local_match(Template(str(timer_path)), roi, screen)
         return match is not None
     
-    def scan_orders(self) -> list[Optional[DetectedOrder]]:
+    async def scan_orders(self) -> list[Optional[DetectedOrder]]:
         """
         扫描所有订单槽位
         
         Returns:
             4个槽位的检测结果列表
         """
-        screen = G.DEVICE.snapshot()
+        screen = await asyncio.to_thread(G.DEVICE.snapshot)
         if screen is None:
             return [None] * 4
         
@@ -99,38 +96,20 @@ class OrderScanner:
         
         return results
     
-    def scan_new_orders(self) -> list[DetectedOrder]:
+    async def scan_new_orders(self) -> list[DetectedOrder]:
         """
-        扫描新出现的订单（与上次检测结果对比）
+        扫描当前屏幕上的所有订单（返回快照，不做去重）
+        去重由调用方（bridge）根据 environment 的订单状态决定。
         
         Returns:
-            新出现的订单列表
+            当前屏幕上的所有订单列表
         """
-        current_orders = self.scan_orders()
-        new_orders = []
-        
+        current_orders = await self.scan_orders()
+        result = []
         for slot_idx, order in enumerate(current_orders):
-            last_order = self._last_detected.get(slot_idx)
-            
-            # 新订单出现
-            if order is not None and last_order is None:
-                new_orders.append(order)
-                logger.info(f"New order detected in slot {slot_idx}: {order.recipe_slug}")
-            
-            # 订单变化（配方不同）
-            elif order is not None and last_order is not None:
-                if order.recipe_slug != last_order.recipe_slug:
-                    new_orders.append(order)
-                    logger.info(f"Order changed in slot {slot_idx}: {order.recipe_slug}")
-        
-        # 更新缓存
-        self._last_detected = {
-            slot_idx: order
-            for slot_idx, order in enumerate(current_orders)
-            if order is not None
-        }
-        
-        return new_orders
+            if order is not None:
+                result.append(order)
+        return result
     
     def _detect_order(self, slot: int, screen) -> Optional[DetectedOrder]:
         """
