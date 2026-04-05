@@ -242,14 +242,14 @@ class UIRunner:
             cooker: 灶台名称
         """
         cooker_pos = self._get_cooker_position(cooker)
-        await self.swipe(cooker_pos, self._trash_position, duration=0.4, steps=8)
+        await self.swipe(cooker_pos, self._trash_position, duration=0.4, steps=16)
         logger.debug(f"Cleared cooker {cooker}")
     
     async def clear_assembly(self) -> None:
         """
         清空组装站（丢弃食材到垃圾桶）
         """
-        await self.swipe(self._assembly_position, self._trash_position, duration=0.4, steps=8)
+        await self.swipe(self._assembly_position, self._trash_position, duration=0.4, steps=16)
         logger.debug(f"Cleared assembly station")
     
     # ========================================================================

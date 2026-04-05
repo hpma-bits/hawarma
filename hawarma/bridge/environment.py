@@ -279,6 +279,8 @@ class GameEnvironment(BaseEnvironment):
                 order = self.get_order_by_id(order_id)
                 if order:
                     self._assembly.target_recipe_slug = order.recipe_slug
+                else:
+                    self._assembly.target_recipe_slug = self._infer_recipe_slug_from_ingredient(ingredient)
             else:
                 self._assembly.target_recipe_slug = self._infer_recipe_slug_from_ingredient(ingredient)
 

@@ -315,7 +315,7 @@ class RealGameBridge:
         """
         for attempt in range(max_retries + 1):
             await self.ui.serve_order(slot_idx)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.1)
 
             if self.verifier.is_assembly_empty():
                 if attempt > 0:

@@ -56,6 +56,19 @@
 - **输出**: 检测到的订单信息
 - **关键类**: `OrderScanner`, `DetectedOrder`
 
+### `assembly_verifier.py`
+- **地位**: 组装站提交验证器（可插拔组件）
+- **状态**: ✅ 新增
+- **功能**:
+  - 通过模板匹配检测组装站区域是否为空
+  - 验证送餐操作是否成功提交菜品
+  - ROI: `(1150, 720, 1600, 1030)`
+  - 模板: `static/img/empty_assembly.jpg`
+- **输入**: 配置对象
+- **输出**: 验证结果（成功/失败）
+- **关键类**: `AssemblyVerifier`
+- **关键方法**: `is_assembly_empty()` — 返回 True 表示提交成功
+
 ### `ui_runner.py`
 - **地位**: UI操作执行器
 - **状态**: ✅ 完成
@@ -66,7 +79,7 @@
   - **动态坐标映射**：根据菜谱选择顺序确定元素位置
   - **minitouch支持**：可注入MinitouchSwipe实例以加速触摸操作
   - **垃圾桶坐标配置化**：`clear_cooker()` 和 `clear_assembly()` 使用 `config.screen.trash_position`
-  - **clear_assembly 增强**：使用 `steps=5` 确保拖拽动作被游戏识别
+  - **clear_assembly 增强**：使用 `duration=0.4, steps=8` 确保拖拽动作被游戏识别
 - **输入**: 符号化操作（食材名、灶台名等）
 - **输出**: swipe操作执行结果
 - **关键类**: `UIRunner`
@@ -144,7 +157,30 @@ RealGameBridge._execute_action()
 UIRunner.swipe()
     ↓
 GameEnvironment状态更新
+    ↓
+AssemblyVerifier.is_assembly_empty() (仅送餐后)
 ```
+
+### 送餐验证流程
+
+`_exec_serve_order()` 使用 `_serve_with_verify()` 执行带验证的送餐：
+
+```
+1. 执行 UI 送餐操作
+2. 等待 0.5s（动画窗口）
+3. AssemblyVerifier.is_assembly_empty() 验证
+   ├── 为空 → 成功 → env.serve_order() 更新状态
+   └── 不为空 → 警告 → 重新扫描订单找匹配槽位
+       ├── 找到匹配槽位 → 重试送餐（最多 2 次重试）
+       └── 无匹配 → 重试原槽位
+           └── 全部失败 → 清理组装站，继续游戏
+```
+
+**设计原则**：
+- `env.serve_order()` 只在验证成功后调用，保证环境状态一致性
+- 最多重试 2 次，避免无限循环
+- 重试时重新扫描订单，处理订单槽位偏移问题
+- 最终失败时清理组装站，防止卡死
 
 ## 与模拟器的区别
 
