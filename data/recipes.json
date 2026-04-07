@@ -313,5 +313,189 @@
       "buttermilk_cream",
       "acacia_honey"
     ]
+  },
+  {
+    "slug": "midsummerLambRoast",
+    "name": "Midsummer Lamb Roast",
+    "raw_ingredients": [
+      "tender_lamb"
+    ],
+    "cookers": [
+      "oven"
+    ],
+    "cookers_layout": [
+      "oven"
+    ],
+    "cook_durations": [
+      4.0
+    ],
+    "condiments": [
+      "acacia_honey",
+      "hearthspice"
+    ]
+  },
+  {
+    "slug": "honeyGlazedWings",
+    "name": "Honey-Glazed Wings",
+    "raw_ingredients": [
+      "plump_wing"
+    ],
+    "cookers": [
+      "grill"
+    ],
+    "cookers_layout": [
+      "grill"
+    ],
+    "cook_durations": [
+      4.0
+    ],
+    "condiments": [
+      "granulated_sugar",
+      "acacia_honey"
+    ]
+  },
+  {
+    "slug": "charredMysterySteak",
+    "name": "Charred Mystery Steak",
+    "raw_ingredients": [
+      "mystery_meat",
+      "charred_cinnamon_tree"
+    ],
+    "cookers": [
+      "skillet",
+      "grill"
+    ],
+    "cookers_layout": [
+      "grill",
+      "skillet"
+    ],
+    "cook_durations": [
+      5.0,
+      4.0
+    ],
+    "condiments": [
+      "fleur_de_sel",
+      "hearthspice"
+    ]
+  },
+  {
+    "slug": "cinnamonSearedFoieGras",
+    "name": "Cinnamon-Seared Foie Gras",
+    "raw_ingredients": [
+      "foie_gras",
+      "charred_cinnamon_tree"
+    ],
+    "cookers": [
+      "skillet",
+      "pot"
+    ],
+    "cookers_layout": [
+      "skillet",
+      "pot"
+    ],
+    "cook_durations": [
+      5.0,
+      4.0
+    ],
+    "condiments": [
+      "midsummer_onion",
+      "sunkissed_lemon"
+    ]
+  },
+  {
+    "slug": "feastOfCourageAndChivalry",
+    "name": "Feast of Courage and Chivalry",
+    "raw_ingredients": [
+      "scorched_sunchaser_paw",
+      "prime_cut_beef"
+    ],
+    "cookers": [
+      "skillet",
+      "pot"
+    ],
+    "cookers_layout": [
+      "skillet",
+      "pot"
+    ],
+    "cook_durations": [
+      5.0,
+      4.0
+    ],
+    "condiments": [
+      "sunkissed_lemon",
+      "fleur_de_sel"
+    ]
+  },
+  {
+    "slug": "feastOfCunningAndAmbition",
+    "name": "Feast of Cunning and Ambition",
+    "raw_ingredients": [
+      "coiled_gold_brew",
+      "hearty_egg"
+    ],
+    "cookers": [
+      "grill",
+      "pot"
+    ],
+    "cookers_layout": [
+      "grill",
+      "pot"
+    ],
+    "cook_durations": [
+      5.0,
+      4.0
+    ],
+    "condiments": [
+      "buttermilk_cream",
+      "midsummer_onion"
+    ]
+  },
+  {
+    "slug": "feastOfLoyaltyAndDedication",
+    "name": "Feast of Loyalty and Dedication",
+    "raw_ingredients": [
+      "hearty_harvest_gravy",
+      "clearwater_fish"
+    ],
+    "cookers": [
+      "pot",
+      "grill"
+    ],
+    "cookers_layout": [
+      "grill",
+      "pot"
+    ],
+    "cook_durations": [
+      5.0,
+      4.0
+    ],
+    "condiments": [
+      "sunkissed_lemon",
+      "elderberry_liqueur"
+    ]
+  },
+  {
+    "slug": "theFoundersFeast",
+    "name": "The Founders Feast",
+    "raw_ingredients": [
+      "oathborne_dew",
+      "roasting_chicken"
+    ],
+    "cookers": [
+      "oven",
+      "grill"
+    ],
+    "cookers_layout": [
+      "grill",
+      "oven"
+    ],
+    "cook_durations": [
+      5.0,
+      4.0
+    ],
+    "condiments": [
+      "hearthspice",
+      "elderberry_liqueur"
+    ]
   }
 ]
