@@ -160,9 +160,19 @@ class OrderScanner:
         
         return None
     
+    RUSH_DETECTION_POSITIONS = [
+        (480, 195),
+        (860, 195),
+        (1230, 195),
+        (1600, 195),
+    ]
+    RUSH_RED_THRESHOLD = 180
+
     def _detect_rush(self, slot: int, screen) -> bool:
         """
         检测是否 rush 订单
+        
+        Rush 订单背景为红色，通过检测特定像素点的红色值判断。
         
         Args:
             slot: 槽位索引
@@ -171,13 +181,17 @@ class OrderScanner:
         Returns:
             是否 rush
         """
-        timer_path = self.image_dir / "icon-timer.jpg"
-        if not timer_path.exists():
+        if slot >= len(self.RUSH_DETECTION_POSITIONS):
             return False
         
-        roi = self.config.screen.orders_regions[slot]
-        match = local_match(Template(str(timer_path), threshold=0.8), roi, screen)
-        return match is not None
+        x, y = self.RUSH_DETECTION_POSITIONS[slot]
+        h, w = screen.shape[:2]
+        
+        if 0 <= y < h and 0 <= x < w:
+            red_value = int(screen[y, x, 2])
+            return red_value < self.RUSH_RED_THRESHOLD
+        
+        return False
     
     def get_recipe_by_slug(self, slug: str) -> Optional[Recipe]:
         """根据 slug 获取配方"""
