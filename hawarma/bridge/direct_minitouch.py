@@ -1,8 +1,8 @@
 """
 DirectMinitouch - 高性能触摸驱动
 
-通过 Unix socket 直接与设备上的 minitouch 守护进程通信，
-绕过 ADB shell 的固有开销，实现真正的亚毫秒级 swipe 操作。
+通过 ADB forward TCP 连接与设备上的 minitouch 守护进程通信，
+绕过 ADB shell 的固有开销，实现精确的 swipe duration。
 
 ⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
 """
@@ -10,7 +10,6 @@ DirectMinitouch - 高性能触摸驱动
 from __future__ import annotations
 
 import socket
-import struct
 from pathlib import Path
 
 from loguru import logger
@@ -20,15 +19,15 @@ class DirectMinitouch:
     """
     直接连接 minitouch 守护进程，执行高速触摸操作。
     
-    minitouch 通过 abstract Unix socket 通信，协议格式：
-    - 命令行：d <contact> <x> <y> [<pressure>]    (down/touch)
-    - c                                              (commit)
-    - u <contact>                                    (up)
-    - w <contact> <duration_ms>                      (wait)
-    - r                                              (reset)
+    minitouch 协议格式：
+    - d <contact> <x> <y> [<pressure>]    (down/touch)
+    - c                              (commit)
+    - u <contact>                    (up)
+    - w <contact> <duration_ms>      (wait)
+    - r                              (reset)
+    算法：interval = duration // (steps - 1)，确保总等待时间 = duration
     """
     
-    MINITOUCH_SOCKET = "minitouch"
     DEFAULT_ABI = "arm64-v8a"
     
     def __init__(self, android_device):
@@ -39,9 +38,13 @@ class DirectMinitouch:
             android_device: Airtest Android 设备对象 (airtest.core.android.device.Device)
         """
         self._android = android_device
-        self._serial = android_device.serial
+        self._serial = getattr(android_device, 'serialno', None) or getattr(android_device.adb, 'serialno', 'unknown')
         self._sock: socket.socket | None = None
+        self._localport: int | None = None
         self._contact = 0
+        self._max_x = 32768
+        self._max_y = 32768
+        self._android_size_info: dict | None = None
         self._connect()
     
     def _connect(self) -> None:
@@ -52,7 +55,44 @@ class DirectMinitouch:
         logger.info(f"DirectMinitouch connected to {self._serial}")
     
     def _push_and_start_minitouch(self) -> None:
-        """推送 minitouch 二进制到设备并启动守护进程"""
+        """尝试复用 Airtest 已启动的 minitouch"""
+        from airtest.core.android.touch_methods.minitouch import Minitouch
+        
+        android = self._android
+        
+        try:
+            touch_proxy = getattr(android, 'touch', None)
+            if touch_proxy:
+                base = getattr(touch_proxy, 'base_touch', None)
+                if isinstance(base, Minitouch):
+                    self._minitouch_base = base
+                    logger.info("Using Airtest minitouch base")
+                    return
+        except Exception as e:
+            logger.warning(f"Failed to get Airtest minitouch: {e}")
+        
+        raise RuntimeError("Airtest minitouch not initialized. Ensure device uses touch_method='minitouch'")
+    
+    def _reuse_airtest_minitouch(self, base) -> None:
+        """复用 Airtest 已初始化的 minitouch"""
+        from airtest.utils.safesocket import SafeSocket
+        
+        self._sock = SafeSocket()
+        self._sock.sock = base.client.sock
+        self._localport = base.localport
+        self._max_x = base.max_x
+        self._max_y = base.max_y
+        
+        size_info = {"width": 1920, "height": 1080}
+        if hasattr(base, 'size_info') and base.size_info:
+            size_info = base.size_info
+        self._android_size_info = size_info
+        
+        _ = self._read_header()
+        logger.info("Reusing Airtest minitouch connection")
+    
+    def _start_minitouch_fresh(self) -> None:
+        """从头启动 minitouch"""
         import airtest.core.android.static as static_pkg
         
         abi = self._get_device_abi()
@@ -66,16 +106,22 @@ class DirectMinitouch:
                     local_binary = alt_path
                     break
         
-        remote_binary = f"/data/local/tmp/minitouch_{self._serial.replace(':', '_')}"
-        self._android.adb.push(str(local_binary), remote_binary)
-        self._android.adb.shell(f"chmod 755 {remote_binary}")
+        self.remote_binary = f"/data/local/tmp/minitouch"
+        self._android.adb.push(str(local_binary), self.remote_binary)
+        self._android.adb.shell(f"chmod 755 {self.remote_binary}")
         
-        self._android.adb.shell(
-            f"STOPMINITOUCH=1 {remote_binary} -d 'abstract:{self.MINITOUCH_SOCKET}' &",
-            adb_shell=False,
+        self._localport, deviceport = self._android.adb.setup_forward(
+            f"localabstract:minitouch_{self._serial[:8]}"
         )
+        deviceport = deviceport[len("localabstract:"):]
+        self._deviceport = deviceport
+        
+        self._android.adb.start_shell(
+            f"{self.remote_binary} -n '{deviceport}' 2>&1",
+        )
+        
         import time
-        time.sleep(0.1)
+        time.sleep(0.2)
     
     def _get_device_abi(self) -> str:
         """获取设备 ABI"""
@@ -86,17 +132,17 @@ class DirectMinitouch:
             return self.DEFAULT_ABI
     
     def _create_socket_connection(self) -> socket.socket:
-        """创建 Unix socket 连接到 minitouch"""
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        """创建 TCP socket 连接到 minitouch（通过 ADB forward）"""
+        import socket
+        
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5.0)
         try:
-            sock.settimeout(5.0)
-            sock.connect(f"\0minitouch")
-        except OSError:
+            sock.connect(("127.0.0.1", self._localport))
+            return sock
+        except OSError as e:
             sock.close()
-            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            sock.settimeout(5.0)
-            sock.connect(f"\0{self.MINITOUCH_SOCKET}")
-        return sock
+            raise RuntimeError(f"Failed to connect to minitouch: {e}")
     
     def _read_header(self) -> dict:
         """读取 minitouch 头信息"""
@@ -128,10 +174,10 @@ class DirectMinitouch:
     
     def touch(self, x: int, y: int, pressure: int = 50) -> None:
         """按下并释放（点击）"""
-        self._send_command(f"d 0 {x} {y} {pressure}")
-        self._send_command("c")
-        self._send_command("u 0")
-        self._send_command("c")
+        if hasattr(self, '_minitouch_base') and self._minitouch_base:
+            self._minitouch_base.touch((x, y), duration=0.01)
+        else:
+            raise RuntimeError("minitouch not initialized")
     
     def swipe(
         self,
@@ -143,50 +189,26 @@ class DirectMinitouch:
         """
         执行 swipe 操作
         
-        duration 在设备端执行，Python 端几乎即时返回。
+        使用 Airtest minitouch 的 swipe 方法。
+        duration 在设备端执行，Python 端等待命令发送完成。
         
         Args:
             start: 起始坐标 (x, y)
             end: 结束坐标 (x, y)
             duration: 持续时间（秒）
-            steps: 路径步数（越多越平滑，建议5以上）
+            steps: 路径步数
         """
-        sx, sy = start
-        ex, ey = end
-        duration_ms = int(duration * 1000)
-        
-        self._send_command(f"d 0 {sx} {sy} 50")
-        
-        if steps <= 1 or duration_ms <= 0:
-            self._send_command(f"m 0 {ex} {ey} 50")
+        if hasattr(self, '_minitouch_base') and self._minitouch_base:
+            self._minitouch_base.swipe(start, end, duration=duration, steps=steps)
         else:
-            interval_ms = duration_ms // (steps - 1)
-            for i in range(1, steps + 1):
-                ratio = i / steps
-                x = int(sx + (ex - sx) * ratio)
-                y = int(sy + (ey - sy) * ratio)
-                self._send_command(f"m 0 {x} {y} 50")
-                if i < steps and interval_ms > 0:
-                    self._send_command(f"w 0 {interval_ms}")
-        
-        self._send_command("c")
-        self._send_command("u 0")
-        self._send_command("c")
+            raise RuntimeError("minitouch not initialized")
     
-    def long_press(
-        self,
-        x: int,
-        y: int,
-        duration: float = 0.5,
-        pressure: int = 50,
-    ) -> None:
+    def long_press(self, x: int, y: int, duration: float = 0.5, pressure: int = 50) -> None:
         """长按"""
-        duration_ms = int(duration * 1000)
-        self._send_command(f"d 0 {x} {y} {pressure}")
-        self._send_command(f"w 0 {duration_ms}")
-        self._send_command("c")
-        self._send_command("u 0")
-        self._send_command("c")
+        if hasattr(self, '_minitouch_base') and self._minitouch_base:
+            self._minitouch_base.touch((x, y), duration=duration)
+        else:
+            raise RuntimeError("minitouch not initialized")
     
     def multi_swipe(
         self,
@@ -226,15 +248,10 @@ class DirectMinitouch:
         self._send_command("c")
     
     def disconnect(self) -> None:
-        """断开连接"""
-        if self._sock:
-            try:
-                self._send_command("r")
-                self._sock.close()
-            except Exception:
-                pass
-            self._sock = None
-            logger.info("DirectMinitouch disconnected")
+        """断开连接（仅清理引用）"""
+        if hasattr(self, '_minitouch_base'):
+            self._minitouch_base = None
+        logger.info("DirectMinitouch disconnected")
     
     def __del__(self):
         """析构时确保关闭连接"""

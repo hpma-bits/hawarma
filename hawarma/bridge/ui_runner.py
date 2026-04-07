@@ -67,10 +67,10 @@ class UIRunner:
         设置 minitouch 实例以加速触摸操作
         
         Args:
-            minitouch_swipe: MinitouchSwipe 实例
+            minitouch_swipe: MinitouchSwipe 实例 (ignored, we use Airtest's built-in minitouch)
         """
         self._minitouch = minitouch_swipe
-        logger.info("UIRunner using minitouch for fast swipe")
+        logger.info("UIRunner configured to use minitouch via Airtest")
     
     def _build_mappings(self) -> None:
         """
@@ -144,23 +144,23 @@ class UIRunner:
     # 核心操作
     # ========================================================================
     
-    async def swipe(self, start: tuple[int, int], end: tuple[int, int], duration: float = 0.06, steps: int = 2) -> None:
+    async def swipe(self, start: tuple[int, int], end: tuple[int, int], duration: float = 0.06, steps: int = 5) -> None:
         """
         执行 swipe 操作
+        
+        直接使用 Airtest 的 swipe API。
+        注意：设备使用的是 Maxtouch（Android 10+），实际 duration 会比设置值略长。
         
         Args:
             start: 起始坐标
             end: 结束坐标
-            duration: 持续时间（默认0.06秒）
-            steps: 滑动步数（越多越平滑，但越慢，仅对minitouch生效）
+            duration: 持续时间
+            steps: 滑动步数（建议5）
         """
         async with self._lock:
-            logger.debug(f"Swipe: {start} -> {end}")
-            if self._minitouch is not None:
-                self._minitouch.swipe(start, end, duration=duration, steps=steps)
-            else:
-                from airtest.core.api import swipe
-                swipe(start, end, duration)
+            logger.debug(f"Swipe: {start} -> {end} duration={duration}s steps={steps}")
+            from airtest.core.api import swipe
+            swipe(start, end, duration=duration, steps=steps)
             await asyncio.sleep(0.01)
     
     async def cook(self, ingredient: str, cooker: str) -> None:

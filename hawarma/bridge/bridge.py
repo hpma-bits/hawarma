@@ -63,15 +63,12 @@ class RealGameBridge:
         self._game_started = False
 
     def _init_minitouch(self) -> None:
-        """Initialize DirectMinitouch and inject into UIRunner"""
-        try:
-            android_device = G.DEVICE
-            self._minitouch = DirectMinitouch(android_device)
-            self.ui.set_minitouch(self._minitouch)
-            logger.info("DirectMinitouch initialized and injected into UIRunner")
-        except Exception as e:
-            logger.warning(f"Failed to initialize minitouch: {e}")
-            self._minitouch = None
+        """初始化 minitouch（直接使用，已在设备初始化时配置）"""
+        device = G.DEVICE
+        if hasattr(device, 'touch') and device.touch:
+            logger.info(f"Using device touch: {type(device.touch).__name__}")
+        else:
+            logger.warning("No touch method configured")
 
     def set_agent(self, agent) -> None:
         """设置 Agent"""
