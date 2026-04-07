@@ -322,18 +322,25 @@ class GameEnvironment(BaseEnvironment):
     # 订单操作
     # ========================================================================
 
-    def add_order(self, slot_idx: int, recipe_slug: str, is_rush: bool) -> int | None:
-        """添加新订单"""
-        if slot_idx < 0 or slot_idx >= len(self._orders):
+    def add_order(self, recipe_slug: str, is_rush: bool) -> int | None:
+        """添加新订单到最左边的空槽位"""
+        # 找到最左边的空槽位
+        target_slot = None
+        for i, order in enumerate(self._orders):
+            if order is None:
+                target_slot = i
+                break
+        
+        if target_slot is None:
             return None
-
+        
         order_id = self._next_order_id
         self._next_order_id += 1
 
         now = time.time()
         timeout = 40.0 if is_rush else 70.0
 
-        self._orders[slot_idx] = OrderInfo(
+        self._orders[target_slot] = OrderInfo(
             order_id=order_id,
             recipe_slug=recipe_slug,
             is_rush=is_rush,
@@ -341,7 +348,7 @@ class GameEnvironment(BaseEnvironment):
             timeout_at=now + timeout,
         )
 
-        logger.info(f"[t={self.time:.1f}s] New order {order_id}: {recipe_slug} ({'RUSH' if is_rush else 'normal'}) slot {slot_idx}")
+        logger.info(f"[t={self.time:.1f}s] New order {order_id}: {recipe_slug} ({'RUSH' if is_rush else 'normal'}) slot {target_slot}")
         return order_id
 
     def check_and_remove_timed_out_orders(self) -> list[int]:

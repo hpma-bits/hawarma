@@ -144,7 +144,7 @@ class UIRunner:
     # 核心操作
     # ========================================================================
     
-    async def swipe(self, start: tuple[int, int], end: tuple[int, int], duration: float = 0.06, steps: int = 5) -> None:
+    async def swipe(self, start: tuple[int, int], end: tuple[int, int], duration: float = 0.1, steps: int = 5) -> None:
         """
         执行 swipe 操作
         
@@ -174,7 +174,7 @@ class UIRunner:
         ing_pos = self._get_ingredient_position(ingredient)
         cooker_pos = self._get_cooker_position(cooker)
         
-        await self.swipe(ing_pos, cooker_pos)
+        await self.swipe(ing_pos, cooker_pos, duration=0.1)
         logger.debug(f"Cooking {ingredient} on {cooker}")
     
     async def move_to_assembly(self, cooker: str) -> None:
@@ -185,7 +185,7 @@ class UIRunner:
             cooker: 灶台名称
         """
         cooker_pos = self._get_cooker_position(cooker)
-        await self.swipe(cooker_pos, self._assembly_position)
+        await self.swipe(cooker_pos, self._assembly_position, duration=0.1)
         logger.debug(f"Moved from {cooker} to assembly")
     
     async def move_to_stockpile(self, cooker: str, slot: str) -> None:
@@ -220,7 +220,7 @@ class UIRunner:
             condiment: 调料名称
         """
         condiment_pos = self._get_condiment_position(condiment)
-        await self.swipe(condiment_pos, self._assembly_position)
+        await self.swipe(condiment_pos, self._assembly_position, duration=0.1)
         logger.debug(f"Added condiment {condiment}")
     
     async def serve_order(self, slot_idx: int) -> None:
@@ -231,7 +231,7 @@ class UIRunner:
             slot_idx: 订单槽位索引
         """
         pickup_pos = self._pickup_positions[slot_idx]
-        await self.swipe(self._assembly_position, pickup_pos, duration=0.15, steps=5)
+        await self.swipe(self._assembly_position, pickup_pos, duration=0.25, steps=12)
         logger.debug(f"Served order to slot {slot_idx}")
     
     async def clear_cooker(self, cooker: str) -> None:

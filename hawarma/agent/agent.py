@@ -731,7 +731,7 @@ class CookingAgent:
     # ========================================================================
 
     def _prioritized_orders(self) -> list[tuple[int, object]]:
-        """按优先级排序订单：rush 优先，timeout 近的优先"""
+        """按优先级排序订单：rush 优先，timeout 近的优先，创建早的优先"""
         orders_with_idx = []
         for i, order in enumerate(self.env.orders):
             if order is not None and not order.done:
@@ -743,7 +743,9 @@ class CookingAgent:
             rush_priority = 0 if order.is_rush else 1
             # timeout 越近越优先
             timeout_remaining = order.timeout_at - self.env.time
-            return (rush_priority, timeout_remaining)
+            # 创建越早越优先
+            created_at = order.created_at
+            return (rush_priority, timeout_remaining, created_at)
 
         orders_with_idx.sort(key=sort_key)
         return orders_with_idx

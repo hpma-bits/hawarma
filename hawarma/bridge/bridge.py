@@ -161,36 +161,46 @@ class RealGameBridge:
         """
         扫描屏幕并与 env.orders 对比，只添加真正的新订单。
         
-        env.orders 在 serve 后已经左移补位，所以直接按 slot 对比即可。
-        同一个 recipe_slug 的多个订单按出现顺序匹配。
+        按 slot 位置匹配：如果扫描到的 slot 有订单，但 env 中该 slot 无订单，
+        认为是新订单。如果该 recipe_slug 已在 env 中存在（从其他 slot 左移过来），
+        则不创建新订单，只是更新位置（env 的左移逻辑会自动处理）。
+        
+        关键改进：不再按 recipe_slug 数量判断，而是按 slot 位置精确匹配。
         """
         scanned = await self.scanner.scan_new_orders()
         
-        # 统计 env 中已有的订单（按 recipe_slug 计数）
-        env_counts: dict[str, int] = {}
-        for order in self.env.orders:
-            if order is not None:
-                env_counts[order.recipe_slug] = env_counts.get(order.recipe_slug, 0) + 1
+        # 标记每个 env 订单是否已被扫描结果匹配
+        env_matched = [False] * len(self.env.orders)
         
-        # 统计扫描结果中每个 recipe_slug 的数量
-        scan_counts: dict[str, int] = {}
+        # 尝试将扫描结果与 env 订单按 slot 位置匹配
         for detected in scanned:
-            scan_counts[detected.recipe_slug] = scan_counts.get(detected.recipe_slug, 0) + 1
-        
-        # 找出真正新增的订单
-        for detected in scanned:
-            slug = detected.recipe_slug
-            env_n = env_counts.get(slug, 0)
-            scan_n = scan_counts.get(slug, 0)
+            slot_idx = detected.slot_idx
+            if slot_idx >= len(self.env.orders):
+                continue
             
-            # 如果扫描到的数量 > env 中的数量，说明有新订单
-            if scan_n > env_n:
+            env_order = self.env.orders[slot_idx]
+            
+            # 如果该 slot 已有匹配的订单（recipe 相同），标记为已匹配
+            if env_order is not None and env_order.recipe_slug == detected.recipe_slug:
+                env_matched[slot_idx] = True
+                continue
+            
+            # 该 slot 没有匹配的订单，检查 recipe_slug 是否在其他 slot 存在
+            # 这可能是左移过来的情况
+            found_match = False
+            for i, (other_order, matched) in enumerate(zip(self.env.orders, env_matched)):
+                if other_order is not None and not matched and other_order.recipe_slug == detected.recipe_slug:
+                    # 找到了匹配，这是左移，不需要新建订单
+                    env_matched[i] = True
+                    found_match = True
+                    break
+            
+            if not found_match:
+                # 真正的新订单，添加到 env（会自动找到最左边的空槽位）
                 self.env.add_order(
-                    slot_idx=detected.slot_idx,
                     recipe_slug=detected.recipe_slug,
                     is_rush=detected.is_rush,
                 )
-                env_counts[slug] = env_n + 1
 
     # ========================================================================
     # 超时检测循环
