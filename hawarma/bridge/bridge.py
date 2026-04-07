@@ -132,8 +132,7 @@ class RealGameBridge:
         """订单扫描循环（自适应频率）"""
         while self._running and not self.env.is_game_over():
             try:
-                if not self.env.is_in_animation_window():
-                    await self._sync_orders_from_scan()
+                await self._sync_orders_from_scan()
 
                 interval = self._compute_scan_interval()
                 await asyncio.sleep(interval)
@@ -146,20 +145,20 @@ class RealGameBridge:
         根据游戏状态自适应计算扫描间隔。
 
         策略：
-        - 有灶台空闲且有活跃订单：快速扫描（0.5s），尽快发现新订单启动烹饪
-        - 所有灶台都在忙：慢速扫描（2.0s），等烹饪完成再处理
-        - 无活跃订单：中速扫描（1.0s），等待新订单出现
+        - 有灶台空闲且有活跃订单：快速扫描（0.2s），尽快发现新订单启动烹饪
+        - 所有灶台都在忙：中速扫描（0.5s），等烹饪完成再处理
+        - 无活跃订单：中速扫描（0.5s），等待新订单出现
         """
         active_orders = [o for o in self.env.orders if o and not o.done]
         free_cookers = [c for c in self.env.cookers.values() if not c.busy]
 
         if not active_orders:
-            return 1.0
-
-        if free_cookers:
             return 0.5
 
-        return 2.0
+        if free_cookers:
+            return 0.2
+
+        return 0.5
 
     async def _sync_orders_from_scan(self) -> None:
         """

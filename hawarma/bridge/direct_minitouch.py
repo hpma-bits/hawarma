@@ -138,7 +138,7 @@ class DirectMinitouch:
         start: tuple[int, int],
         end: tuple[int, int],
         duration: float = 0.06,
-        steps: int = 2,
+        steps: int = 5,
     ) -> None:
         """
         执行 swipe 操作
@@ -149,7 +149,7 @@ class DirectMinitouch:
             start: 起始坐标 (x, y)
             end: 结束坐标 (x, y)
             duration: 持续时间（秒）
-            steps: 路径步数（越多越平滑）
+            steps: 路径步数（越多越平滑，建议5以上）
         """
         sx, sy = start
         ex, ey = end
@@ -157,15 +157,17 @@ class DirectMinitouch:
         
         self._send_command(f"d 0 {sx} {sy} 50")
         
-        for i in range(1, steps + 1):
-            ratio = i / steps
-            x = int(sx + (ex - sx) * ratio)
-            y = int(sy + (ey - sy) * ratio)
-            self._send_command(f"m 0 {x} {y} 50")
-            if i < steps:
-                wait_ms = duration_ms // steps
-                if wait_ms > 0:
-                    self._send_command(f"w 0 {wait_ms}")
+        if steps <= 1 or duration_ms <= 0:
+            self._send_command(f"m 0 {ex} {ey} 50")
+        else:
+            interval_ms = duration_ms // (steps - 1)
+            for i in range(1, steps + 1):
+                ratio = i / steps
+                x = int(sx + (ex - sx) * ratio)
+                y = int(sy + (ey - sy) * ratio)
+                self._send_command(f"m 0 {x} {y} 50")
+                if i < steps and interval_ms > 0:
+                    self._send_command(f"w 0 {interval_ms}")
         
         self._send_command("c")
         self._send_command("u 0")
