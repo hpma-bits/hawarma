@@ -30,6 +30,7 @@ class CookerState:
     cooker_type: Optional[str] = None
     started_at: Optional[float] = None
     done_at: Optional[float] = None
+    expired_at: Optional[float] = None
 
     def reset(self) -> None:
         """重置灶台状态"""
@@ -38,10 +39,15 @@ class CookerState:
         self.cooker_type = None
         self.started_at = None
         self.done_at = None
+        self.expired_at = None
 
     def is_done(self, current_time: float) -> bool:
         """检查烹饪是否已完成"""
         return self.done_at is not None and current_time >= self.done_at
+
+    def is_expired(self, current_time: float) -> bool:
+        """检查食材是否已过期"""
+        return self.expired_at is not None and current_time >= self.expired_at
 
 
 @dataclass

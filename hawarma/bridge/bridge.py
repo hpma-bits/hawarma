@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 
+from airtest.core.api import G
 from loguru import logger
 
 from hawarma.config import AppConfig
@@ -23,6 +24,7 @@ from .environment import GameEnvironment
 from .scanner import OrderScanner
 from .ui_runner import UIRunner
 from .assembly_verifier import AssemblyVerifier
+from .direct_minitouch import DirectMinitouch
 
 
 class RealGameBridge:
@@ -36,7 +38,7 @@ class RealGameBridge:
     - Agent: 决策逻辑
     """
 
-    def __init__(self, config: AppConfig, recipes: list[Recipe]):
+    def __init__(self, config: AppConfig, recipes: list[Recipe], use_minitouch: bool | None = None):
         self.config = config
         self.recipes = recipes
         self._recipe_by_slug = {r.slug: r for r in recipes}
@@ -53,8 +55,23 @@ class RealGameBridge:
         self.verifier = AssemblyVerifier(config)
         self.agent = None
 
+        self._minitouch: DirectMinitouch | None = None
+        if use_minitouch if use_minitouch is not None else config.device.use_minitouch:
+            self._init_minitouch()
+
         self._running = False
         self._game_started = False
+
+    def _init_minitouch(self) -> None:
+        """Initialize DirectMinitouch and inject into UIRunner"""
+        try:
+            android_device = G.DEVICE
+            self._minitouch = DirectMinitouch(android_device)
+            self.ui.set_minitouch(self._minitouch)
+            logger.info("DirectMinitouch initialized and injected into UIRunner")
+        except Exception as e:
+            logger.warning(f"Failed to initialize minitouch: {e}")
+            self._minitouch = None
 
     def set_agent(self, agent) -> None:
         """设置 Agent"""
@@ -86,6 +103,9 @@ class RealGameBridge:
             pass
         finally:
             self._running = False
+            if self._minitouch:
+                self._minitouch.disconnect()
+                logger.info("DirectMinitouch disconnected")
 
         # 3. 返回统计
         return self.agent.get_stats()
@@ -200,7 +220,7 @@ class RealGameBridge:
         """Agent 决策循环（每 0.05s），带停滞检测"""
         while self._running and not self.env.is_game_over():
             try:
-                action = self.agent.step_with_diagnostics()
+                action = await asyncio.to_thread(self.agent.step_with_diagnostics)
                 if action:
                     self.agent.stats["actions_taken"] += 1
                     await self._execute_action(action)
@@ -378,3 +398,6 @@ class RealGameBridge:
     def stop(self) -> None:
         """停止游戏"""
         self._running = False
+        if self._minitouch:
+            self._minitouch.disconnect()
+            self._minitouch = None

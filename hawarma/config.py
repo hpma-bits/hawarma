@@ -31,6 +31,10 @@ class ScreenConfig(BaseModel):
     pickup_stations_positions: list[tuple[int, int]]
 
 
+class DeviceConfig(BaseModel):
+    use_minitouch: bool = True
+
+
 class MatchingConfig(BaseModel):
     ingredients_strategy: list[str]
     ingredients_threshold: float
@@ -46,6 +50,7 @@ class AppConfig(BaseModel):
     cookers: tuple[str, ...]
     screen: ScreenConfig
     matching: MatchingConfig
+    device: DeviceConfig = Field(default_factory=DeviceConfig)
 
 
 def load_config(config_path: Path | str = "configs/config.yaml") -> AppConfig:
