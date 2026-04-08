@@ -22,6 +22,10 @@ def setup_logging(log_level: str = "INFO") -> None:
     终端：带颜色，显示 INFO 及以上。
     文件：logs/game_{时间戳}.log，纯文本，包含所有级别。
     """
+    import logging
+    logging.getLogger("airtest").setLevel(logging.WARNING)
+    logging.getLogger("pocoui").setLevel(logging.WARNING)
+
     logger.remove()
 
     # 终端输出
