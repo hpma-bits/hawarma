@@ -1,0 +1,289 @@
+# 真实游戏交互实现文档
+
+> 本文档梳理当前与真实游戏交互的技术栈、数据结构、算法和性能优化策略。
+> 供后续讨论如何进一步提升游戏性能。
+
+---
+
+## 1. 技术栈概览
+
+| 类别 | 技术/库 | 用途 |
+|------|---------|------|
+| **UI 自动化** | Airtest (Poco) | 屏幕截图、图像识别、触摸操作 |
+| **并发框架** | asyncio | 双循环并行、异步操作 |
+| **数据验证** | Pydantic | 配置加载、类型安全 |
+| **日志系统** | loguru | 结构化日志、彩色输出 |
+| **触摸加速** | minitouch 协议 | 将 swipe 从 ~0.93s 降至 ~0.1s |
+| **配置管理** | YAML | config.yaml 统一配置管理 |
+| **图像匹配** | Template Matching (Airtest) | 订单检测、组装站验证 |
+
+---
+
+## 2. 核心数据结构
+
+### 2.1 配置层 (config.py + config.yaml)
+
+```python
+AppConfig
+├── image_directory: str           # 图像资源目录
+├── log_directory: str             # 日志输出目录
+├── recipes_data_path: str        # 配方数据路径
+├── episode_duration: int         # 游戏时长 (90s, 可配置)
+├── cookers: tuple[str]            # 可用灶台 ["grill","oven","skillet","pot"]
+├── screen: ScreenConfig           # 屏幕坐标配置
+│   ├── raw_ingredients_positions  # 食材区坐标 (动态映射)
+│   ├── cookers_positions         # 灶台区坐标
+│   ├── condiments_positions      # 调料区坐标
+│   ├── orders_regions            # 订单区域 ROI
+│   ├── pickup_stations_positions  # 取餐台坐标
+│   └── trash_position            # 垃圾桶坐标
+├── matching: MatchingConfig      # 图像匹配配置
+└── device: DeviceConfig          # 设备配置 (minitouch开关)
+```
+
+**动态坐标映射规则** (见 `docs/game_rules.md` 第2节):
+- **灶台**: 按菜谱顺序收集 `cookers_layout` 并去重，根据数量选择槽位
+- **食材**: 收集 `raw_ingredients` 并去重，**反转顺序**后分配索引
+- **调料**: 收集 `condiments` 并去正序分配索引
+
+### 2.2 环境状态层 (environment.py)
+
+```python
+GameEnvironment
+├── orders: list[Order | None]           # 4个订单槽位
+├── cookers: dict[str, CookerState]      # 灶台状态
+├── assembly: AssemblyState              # 组装站状态
+├── stockpile: list[StockpileSlot]       # 3个库存槽位
+├── _game_start_time: float | None       # 游戏开始时间
+├── _game_duration: float               # 游戏时长 (默认90s)
+└── _animation_until: float              # 动画窗口截止时间
+```
+
+```python
+@dataclass
+class CookerState:
+    busy: bool                           # 是否正在烹饪
+    ingredient_name: str | None         # 食材名称
+    cooker_type: str | None             # 灶台类型
+    started_at: float | None           # 开始时间
+    done_at: float | None              # 烹饪完成时间
+    expired_at: float | None           # 过期时间 (5秒后)
+
+@dataclass
+class AssemblyState:
+    ingredients: list[str]              # 已添加食材
+    target_recipe_slug: str | None     # 目标配方 (关键!)
+    owner_order_id: int | None         # 关联订单
+    condiments: dict[str, int]         # 调料计数
+
+@dataclass  
+class Order:
+    id: int
+    recipe_slug: str
+    created_at: float
+    is_rush: bool
+    done: bool = False
+```
+
+### 2.3 检测层 (scanner.py)
+
+```python
+@dataclass
+class DetectedOrder:
+    slot_idx: int        # 槽位索引 (0-3)
+    recipe_slug: str     # 配方标识
+    is_rush: bool        # 是否加急
+    confidence: float    # 匹配置信度
+```
+
+---
+
+## 3. 核心算法
+
+### 3.1 订单检测算法
+
+**流程**:
+1. 截图 (async via `asyncio.to_thread`)
+2. 对每个 slot ROI 进行模板匹配
+3. 遍历所有 recipe，取置信度最高者
+4. 检测 rush 状态 (像素红色值 < 180)
+
+**复杂度**: O(4 × R), R = 配方数量
+
+### 3.2 动态扫描频率算法
+
+```python
+def _compute_scan_interval(self) -> float:
+    active_orders = [o for o in self.env.orders if o and not o.done]
+    free_cookers = [c for c in self.env.cookers.values() if not c.busy]
+    
+    if active_orders and free_cookers:
+        return 0.5   # 有订单且有空闲灶台 → 快扫
+    elif not active_orders:
+        return 1.0   # 无订单 → 中速
+    else:
+        return 2.0   # 灶台全忙 → 慢扫
+```
+
+| 游戏状态 | 扫描间隔 | 原因 |
+|----------|----------|------|
+| 有空闲灶台 + 有活跃订单 | 0.5s | 快速发现新订单 |
+| 无活跃订单 | 1.0s | 等待新订单 |
+| 所有灶台都忙 | 2.0s | 减少不必要的扫描 |
+
+### 3.3 送餐验证 + 重试算法
+
+```
+_serve_with_verify(slot_idx):
+    for attempt in max_retries+1:
+        1. 执行 UI 送餐操作
+        2. 验证组装站是否为空 (模板匹配)
+        3. 为空 → 成功返回
+        4. 不为空 → 重新扫描订单找匹配槽位
+           - 找到匹配 → 切换槽位重试
+           - 未找到 → 原槽位重试
+    5. 全部失败 → 清理组装站
+```
+
+### 3.4 食材过期检测
+
+```python
+def move_to_assembly(self, cooker: str) -> bool:
+    cooker_state = self.cookers[cooker]
+    if cooker_state.is_expired(self.time):
+        logger.warning(f"拒绝过期食材: {cooker}")
+        return False
+    # ... 添加到组装站
+```
+
+**关键设计**: 过期食材被 **程序逻辑拒绝**，而非依赖 UI 反馈。
+
+---
+
+## 4. 与 game_rules.md 的对应关系
+
+| 游戏规则 | 实现方式 | 性能影响 |
+|----------|----------|----------|
+| **订单刷新间隔 4s** | 扫描循环 + 环境状态追踪 | 自适应频率减少无效扫描 |
+| **Rush 订单时限 40s** | Order.is_rush + 过期检测 | 程序逻辑判断 |
+| **普通订单时限 70s** | 同上 | 同上 |
+| **烹饪完成后 5s 过期** | CookerState.expired_at | 拒绝过期食材操作 |
+| **灶台并行烹饪** | GameEnvironment 维护多个 CookerState | 完全并行，无冲突 |
+| **组装站单一配方** | AssemblyState.target_recipe_slug 校验 | 校验失败则拒绝添加 |
+| **订单位移动画 1.5s** | set_animation_window() | 两个循环都检查动画窗口 |
+| **游戏时长 90s** | env.is_game_over() | 动态可配置 |
+| **食材区/调料区动态位置** | UIRunner 动态坐标映射 | 与游戏界面一致 |
+| **最多 4 个订单** | 扫描检测 + 环境维护 | 检测到则添加 |
+
+---
+
+## 5. 性能优化策略
+
+### 5.1 已实施的优化
+
+| 优化项 | 效果 |
+|--------|------|
+| **minitouch 加速** | swipe 从 ~0.93s → ~0.1s (9x 提升) |
+| **异步截图** | `asyncio.to_thread(G.DEVICE.snapshot)` 不阻塞事件循环 |
+| **自适应扫描频率** | 根据灶台/订单状态动态调整，减少无效检测 |
+| **双循环并行** | 扫描和决策独立运行，互不阻塞 |
+| **动画窗口检查** | 两个循环都检查，避免操作冲突 |
+| **UI 操作锁** | asyncio.Lock() 防止并发 swipe 冲突 |
+
+### 5.2 潜在优化方向
+
+1. **模板匹配优化**
+   - 当前: 对每个 slot 遍历所有 recipe
+   - 思路: 预建 recipe 索引，只匹配相关区域
+
+2. **状态缓存**
+   - 当前: 每次决策都重新计算可用灶台、可用食材
+   - 思路: 增量更新，只在状态变化时重算
+
+3. **预测性烹饪**
+   - 当前: 有订单才烹饪
+   - 思路: 基于订单历史预测下一步需求，提前烹饪
+
+4. **多级验证**
+   - 当前: 送餐后模板匹配验证
+   - 思路: 操作前/中/后多级检查，提前发现问题
+
+---
+
+## 6. 数据流总览
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        真实游戏屏幕                              │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ snapshot (async)
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  OrderScanner (scan_orders)                                     │
+│  ├── ROI 模板匹配 (食材图标)                                    │
+│  ├── Rush 检测 (像素红色值)                                      │
+│  └── 返回: list[DetectedOrder]                                  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ add_order()
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  GameEnvironment                                                │
+│  ├── 订单状态维护                                               │
+│  ├── 灶台/组装站/库存状态追踪                                    │
+│  └── 时间/动画窗口管理                                          │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ step_with_diagnostics()
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  CookingAgent                                                   │
+│  ├── 订单优先级排序                                             │
+│  ├── 动作生成 (烹饪/移动/调味/送餐)                             │
+│  └── 返回: Action                                               │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ _execute_action()
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  RealGameBridge                                                 │
+│  ├── 校验 (过期食材、动画窗口、游戏结束)                         │
+│  ├── UIRunner.swipe() → minitouch                              │
+│  └── 状态更新 (env.move_to_assembly, env.serve_order)           │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ is_assembly_empty()
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  AssemblyVerifier                                               │
+│  ├── 截图 (assembly ROI)                                        │
+│  └── 模板匹配 (empty_assembly.jpg)                              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 7. 关键设计决策
+
+1. **只检测订单，其他状态程序维护**
+   - 原因: 订单来自屏幕，变化不可预测；灶台/组装站/库存由 Agent 控制
+   - 效果: 减少图像检测开销，提高响应速度
+
+2. **双循环并行架构**
+   - 扫描循环 (0.5-2s): 订单变化慢，低频检测
+   - 决策循环 (0.05s): 状态变化快，高频决策
+   - 效果: 平衡检测开销和响应延迟
+
+3. **实时时间 vs 模拟 tick**
+   - 选择: 实时时间 (time.time())
+   - 原因: 与游戏实际时间同步，简化超时处理
+
+4. **目标配方推断机制**
+   - 问题: pull_from_stockpile() 可能使 assembly.target_recipe_slug 为 None
+   - 解决: 多处自动推断逻辑，防止决策链断裂
+
+---
+
+## 8. 待讨论问题
+
+1. **预测性烹饪的可行性**: 基于历史订单预测下一步需求，提前烹饪高概率食材
+2. **多灶台协同优化**: 多个灶台同时烹饪时的任务分配策略
+3. **库存利用率提升**: 何时存入/取出库存以最大化效率
+4. **Rush 订单优先级**: 是否应该为 rush 订单调整整个任务队列
+5. **组装站批量操作**: 能否在食材烹饪完成前预判并规划组装路径

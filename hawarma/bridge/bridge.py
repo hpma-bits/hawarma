@@ -241,6 +241,11 @@ class RealGameBridge:
 
     async def _execute_action(self, action) -> None:
         """执行 Agent 动作"""
+        if self.env.is_game_over():
+            logger.info(f"[t={self.env.time:.1f}s] Game over, skipping action: {type(action).__name__}")
+            self._running = False
+            return
+
         action_type = type(action).__name__
         try:
             match action_type:
