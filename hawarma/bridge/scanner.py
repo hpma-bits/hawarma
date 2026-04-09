@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -103,16 +102,16 @@ class OrderScanner:
             return [None] * 4
         
         results = []
-        has_new_order = False
+        detected_orders = []
         for slot_idx in range(4):
             order = self._detect_order(slot_idx, screen)
             results.append(order)
             if order is not None:
-                has_new_order = True
+                detected_orders.append(order)
         
         # 如果检测到新订单且开启了调试选项，保存截图
-        if has_new_order and self._save_screenshots:
-            self._save_screenshot("scan_orders")
+        if detected_orders and self._save_screenshots:
+            self._save_screenshot(detected_orders)
         
         return results
     
@@ -221,18 +220,33 @@ class OrderScanner:
         """根据 slug 获取配方"""
         return self._recipe_by_slug.get(slug)
     
-    def _save_screenshot(self, prefix: str) -> None:
+    def _save_screenshot(self, orders: list[DetectedOrder]) -> None:
         """保存调试截图"""
         if not self._save_screenshots:
             return
         
         try:
-            import cv2
             screen = G.DEVICE.snapshot()
             if screen is not None:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-                filename = f"{prefix}_{timestamp}.jpg"
+                import cv2
+                
+                # 生成文件名: slotX-recipe-rush_time.jpg
+                parts = []
+                for order in orders:
+                    rush_str = "rush" if order.is_rush else "normal"
+                    parts.append(f"slot{order.slot_idx}_{order.recipe_slug}_{rush_str}")
+                
+                filename = "_".join(parts) + ".jpg"
                 filepath = self._screenshot_dir / filename
+                
+                # 如果文件已存在，添加序号
+                if filepath.exists():
+                    counter = 1
+                    while filepath.exists():
+                        name_parts = filename.rsplit(".jpg", 1)
+                        filepath = self._screenshot_dir / f"{name_parts[0]}_{counter}.jpg"
+                        counter += 1
+                
                 cv2.imwrite(str(filepath), screen)
                 logger.debug(f"Saved debug screenshot: {filepath}")
         except Exception as e:
