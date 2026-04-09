@@ -25,8 +25,6 @@ from .base_environment import (
     OrderInfo,
 )
 
-COOKER_RETENTION = 5.0  # 灶台食材保留时间（秒）
-
 
 class GameEnvironment(BaseEnvironment):
     """
@@ -41,7 +39,9 @@ class GameEnvironment(BaseEnvironment):
         stockpile_slots: int = 3,
         game_duration: float = 90.0,
         recipes: Optional[dict[str, object]] = None,
+        cooker_retention: float = 5.0,
     ):
+        self._cooker_retention = cooker_retention
         self._cookers: dict[str, CookerState] = {
             name: CookerState(cooker_type=name) for name in cooker_names
         }
@@ -114,7 +114,7 @@ class GameEnvironment(BaseEnvironment):
         cooker_state.ingredient_name = ingredient
         cooker_state.started_at = self.time
         cooker_state.done_at = self.time + duration
-        cooker_state.expired_at = self.time + duration + COOKER_RETENTION
+        cooker_state.expired_at = self.time + duration + self._cooker_retention
         return True
 
     def move_to_assembly(self, cooker: str) -> bool:

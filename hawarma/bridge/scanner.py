@@ -56,6 +56,10 @@ class OrderScanner:
         # 配方 slug -> Recipe 映射
         self._recipe_by_slug = {r.slug: r for r in recipes}
         
+        # Rush 检测配置
+        self._rush_detection_positions = config.game.rush_detection_positions
+        self._rush_red_threshold = config.game.rush_red_threshold
+        
         logger.info(f"OrderScanner initialized with {len(recipes)} recipes")
     
     async def detect_timer(self) -> bool:
@@ -181,15 +185,19 @@ class OrderScanner:
         Returns:
             是否 rush
         """
-        if slot >= len(self.RUSH_DETECTION_POSITIONS):
+        # 使用配置中的值，如果没有则使用默认值
+        positions = self._rush_detection_positions if self._rush_detection_positions else self.RUSH_DETECTION_POSITIONS
+        threshold = self._rush_red_threshold if self._rush_red_threshold else self.RUSH_RED_THRESHOLD
+        
+        if slot >= len(positions):
             return False
         
-        x, y = self.RUSH_DETECTION_POSITIONS[slot]
+        x, y = positions[slot]
         h, w = screen.shape[:2]
         
         if 0 <= y < h and 0 <= x < w:
             red_value = int(screen[y, x, 2])
-            return red_value < self.RUSH_RED_THRESHOLD
+            return red_value < threshold
         
         return False
     

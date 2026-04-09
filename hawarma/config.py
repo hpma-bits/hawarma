@@ -42,6 +42,12 @@ class MatchingConfig(BaseModel):
     default_strategy: list[str] = Field(default_factory=list)
 
 
+class GameConfig(BaseModel):
+    cooker_retention: float = 5.0
+    rush_red_threshold: int = 180
+    rush_detection_positions: list[tuple[int, int]] = Field(default_factory=list)
+
+
 class AppConfig(BaseModel):
     image_directory: str
     log_directory: str
@@ -51,6 +57,7 @@ class AppConfig(BaseModel):
     screen: ScreenConfig
     matching: MatchingConfig
     device: DeviceConfig = Field(default_factory=DeviceConfig)
+    game: GameConfig = Field(default_factory=GameConfig)
 
 
 def load_config(config_path: Path | str = "configs/config.yaml") -> AppConfig:

@@ -48,6 +48,7 @@ class RealGameBridge:
             stockpile_slots=len(config.screen.stockpile_positions),
             game_duration=config.episode_duration,
             recipes={r.slug: r for r in recipes},
+            cooker_retention=config.game.cooker_retention,
         )
 
         self.scanner = OrderScanner(config, recipes)
@@ -61,6 +62,7 @@ class RealGameBridge:
 
         self._running = False
         self._game_started = False
+        self._executing_action = False  # 是否正在执行 UI 操作
 
     def _init_minitouch(self) -> None:
         """初始化 minitouch（直接使用，已在设备初始化时配置）"""
@@ -126,10 +128,11 @@ class RealGameBridge:
     # ========================================================================
 
     async def _scan_loop(self) -> None:
-        """订单扫描循环（自适应频率）"""
+        """订单扫描循环（自适应频率），动画窗口期间暂停"""
         while self._running and not self.env.is_game_over():
             try:
-                await self._sync_orders_from_scan()
+                if not self.env.is_in_animation_window():
+                    await self._sync_orders_from_scan()
 
                 interval = self._compute_scan_interval()
                 await asyncio.sleep(interval)
@@ -223,16 +226,23 @@ class RealGameBridge:
     # ========================================================================
 
     async def _agent_loop(self) -> None:
-        """Agent 决策循环（每 0.05s），带停滞检测"""
+        """Agent 决策循环（每 0.05s），带停滞检测，动画窗口期间暂停"""
         while self._running and not self.env.is_game_over():
             try:
+                if self.env.is_in_animation_window() or self._executing_action:
+                    await asyncio.sleep(0.05)
+                    continue
+
                 action = await asyncio.to_thread(self.agent.step_with_diagnostics)
                 if action:
                     self.agent.stats["actions_taken"] += 1
+                    self._executing_action = True
                     await self._execute_action(action)
+                    self._executing_action = False
                 await asyncio.sleep(0.05)
             except Exception as e:
                 logger.error(f"Agent loop error: {e}")
+                self._executing_action = False
                 await asyncio.sleep(0.05)
 
     # ========================================================================
