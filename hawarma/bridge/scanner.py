@@ -68,6 +68,15 @@ class OrderScanner:
         if self._save_screenshots and not self._screenshot_dir.exists():
             self._screenshot_dir.mkdir(parents=True, exist_ok=True)
         
+        # 预热：首次截取屏幕，避免懒加载延迟
+        try:
+            import cv2
+            initial_screen = G.DEVICE.snapshot()
+            if initial_screen is not None:
+                logger.debug("OrderScanner: Initial screenshot cached")
+        except Exception as e:
+            logger.warning(f"OrderScanner: Failed to capture initial screenshot: {e}")
+        
         logger.info(f"OrderScanner initialized with {len(recipes)} recipes")
     
     async def detect_timer(self) -> bool:
