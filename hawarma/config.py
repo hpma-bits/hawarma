@@ -48,6 +48,11 @@ class GameConfig(BaseModel):
     rush_detection_positions: list[tuple[int, int]] = Field(default_factory=list)
 
 
+class DebugConfig(BaseModel):
+    save_order_screenshots: bool = False
+    screenshot_directory: str = "logs/order_screenshots"
+
+
 class AppConfig(BaseModel):
     image_directory: str
     log_directory: str
@@ -58,6 +63,7 @@ class AppConfig(BaseModel):
     matching: MatchingConfig
     device: DeviceConfig = Field(default_factory=DeviceConfig)
     game: GameConfig = Field(default_factory=GameConfig)
+    debug: DebugConfig = Field(default_factory=DebugConfig)
 
 
 def load_config(config_path: Path | str = "configs/config.yaml") -> AppConfig:

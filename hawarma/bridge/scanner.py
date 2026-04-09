@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -60,6 +61,14 @@ class OrderScanner:
         self._rush_detection_positions = config.game.rush_detection_positions
         self._rush_red_threshold = config.game.rush_red_threshold
         
+        # 调试配置
+        self._save_screenshots = config.debug.save_order_screenshots
+        self._screenshot_dir = Path(config.debug.screenshot_directory)
+        
+        # 创建截图目录
+        if self._save_screenshots and not self._screenshot_dir.exists():
+            self._screenshot_dir.mkdir(parents=True, exist_ok=True)
+        
         logger.info(f"OrderScanner initialized with {len(recipes)} recipes")
     
     async def detect_timer(self) -> bool:
@@ -94,9 +103,16 @@ class OrderScanner:
             return [None] * 4
         
         results = []
+        has_new_order = False
         for slot_idx in range(4):
             order = self._detect_order(slot_idx, screen)
             results.append(order)
+            if order is not None:
+                has_new_order = True
+        
+        # 如果检测到新订单且开启了调试选项，保存截图
+        if has_new_order and self._save_screenshots:
+            self._save_screenshot("scan_orders")
         
         return results
     
@@ -204,3 +220,20 @@ class OrderScanner:
     def get_recipe_by_slug(self, slug: str) -> Optional[Recipe]:
         """根据 slug 获取配方"""
         return self._recipe_by_slug.get(slug)
+    
+    def _save_screenshot(self, prefix: str) -> None:
+        """保存调试截图"""
+        if not self._save_screenshots:
+            return
+        
+        try:
+            import cv2
+            screen = G.DEVICE.snapshot()
+            if screen is not None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                filename = f"{prefix}_{timestamp}.jpg"
+                filepath = self._screenshot_dir / filename
+                cv2.imwrite(str(filepath), screen)
+                logger.debug(f"Saved debug screenshot: {filepath}")
+        except Exception as e:
+            logger.warning(f"Failed to save debug screenshot: {e}")
