@@ -30,9 +30,26 @@ def setup_airtest():
             platform="Android",
             uuid="127.0.0.1:16384",
             cap_method="minicap_apk",
-            # touch_method="adbtouch",
+            # touch_method="minitouch",
         )
         touch((0, 0))
+
+        # 打印截图方法
+        if hasattr(device, 'screen_proxy') and device.screen_proxy:
+            logger.info(f"Screenshot method: {device.screen_proxy.method_name}")
+        else:
+            logger.warning("Screenshot method: not initialized")
+
+        # 打印触控方法
+        if hasattr(device, 'touch') and device.touch:
+            touch_method = type(device.touch).__name__
+            logger.info(f"Touch method: {touch_method}")
+            if hasattr(device.touch, 'base_touch'):
+                base_touch = type(device.touch.base_touch).__name__ if device.touch.base_touch else "None"
+                logger.info(f"Touch base: {base_touch}")
+        else:
+            logger.warning("Touch method: not initialized")
+
         logger.info("Airtest device connected.")
         return device
     except Exception as e:
