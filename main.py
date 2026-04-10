@@ -34,19 +34,22 @@ def setup_airtest():
         )
         touch((0, 0))
 
-        # 打印截图方法
+        # 打印截图方法 (精确检测)
         if hasattr(device, 'screen_proxy') and device.screen_proxy:
-            logger.info(f"Screenshot method: {device.screen_proxy.method_name}")
+            screen_impl = device.screen_proxy.screen_method
+            screen_class = type(screen_impl).__name__
+            logger.info(f"Screenshot method: {screen_class}")
         else:
             logger.warning("Screenshot method: not initialized")
 
-        # 打印触控方法
-        if hasattr(device, 'touch') and device.touch:
-            touch_method = type(device.touch).__name__
-            logger.info(f"Touch method: {touch_method}")
-            if hasattr(device.touch, 'base_touch'):
-                base_touch = type(device.touch.base_touch).__name__ if device.touch.base_touch else "None"
-                logger.info(f"Touch base: {base_touch}")
+        # 打印触控方法 (精确检测)
+        if hasattr(device, 'touch_proxy') and device.touch_proxy:
+            touch_impl = device.touch_proxy.touch_method
+            if hasattr(touch_impl, 'base_touch') and touch_impl.base_touch:
+                touch_class = type(touch_impl.base_touch).__name__
+                logger.info(f"Touch method: {touch_class}")
+            else:
+                logger.warning("Touch base: not initialized")
         else:
             logger.warning("Touch method: not initialized")
 
