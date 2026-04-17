@@ -643,23 +643,38 @@ class CookingAgent:
         return None
     
     def _try_start_cooking(self) -> Optional[CookAction]:
-        """为空闲灶台分配烹饪任务（按需响应，不预烹饪）"""
+        """为空闲灶台分配烹饪任务（前瞻性策略 + 按需响应）"""
         free_cookers = self._get_free_cookers()
         if not free_cookers:
             return None
 
-        to_cook = self._get_ingredients_to_cook()
+        # 前瞻性烹饪：优先处理紧迫订单的食材
+        urgent = self._get_urgent_ingredients()
+        for ing_name, cooker_type, remaining in urgent:
+            if cooker_type not in free_cookers:
+                continue
+            
+            if self._is_cooking(ing_name):
+                continue
+            if self._has_in_stockpile(ing_name):
+                continue
+            
+            _, duration = self._ingredient_info.get(ing_name, (None, 3.0))
+            order_id = self._get_order_id_for_ingredient(ing_name)
+            return CookAction(
+                ingredient=ing_name,
+                cooker=cooker_type,
+                duration=duration,
+                order_id=order_id,
+            )
 
-        # 烹饪订单需要的食材
+        # 按需响应：如果没有紧迫食材，按原有逻辑处理
+        to_cook = self._get_ingredients_to_cook()
         for ing_name, cooker_type in to_cook:
             if cooker_type not in free_cookers:
                 continue
-
-            # 已经在烹饪中
             if self._is_cooking(ing_name):
                 continue
-
-            # 库存已有，跳过（优先使用库存）
             if self._has_in_stockpile(ing_name):
                 continue
 
@@ -672,7 +687,6 @@ class CookingAgent:
                 order_id=order_id,
             )
 
-        # 不预烹饪 - 按需响应策略更可靠
         return None
 
     # ========================================================================
@@ -916,6 +930,61 @@ class CookingAgent:
                 continue
             result.append((ing_name, cooker_type))
         return result
+
+    def _get_urgent_ingredients(self) -> list[tuple[str, str, float]]:
+        """
+        获取需要紧急烹饪的食材列表
+        返回: [(ingredient, cooker, remaining_time)]
+        按紧迫度排序（rush优先，timeout近的优先）
+        """
+        result = []
+        
+        for _, order in self._prioritized_orders():
+            remaining = order.timeout_at - self.env.time
+            if remaining <= 0:
+                continue
+            
+            recipe = self._recipe_by_slug.get(order.recipe_slug)
+            if not recipe:
+                continue
+            
+            raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+            cookers = self._get_recipe_attr(recipe, 'cookers', [])
+            
+            for i, ing in enumerate(raw):
+                cooker = cookers[i] if i < len(cookers) else None
+                if not cooker:
+                    continue
+                if self._is_cooking(ing):
+                    continue
+                if self._has_in_stockpile(ing):
+                    continue
+                if self._has_cooked_ingredient(ing):
+                    continue
+                
+                result.append((ing, cooker, remaining))
+        
+        return result
+    
+    def _get_time_until_needed(self, ingredient: str) -> float:
+        """获取该食材最紧迫的订单剩余时间"""
+        min_remaining = float('inf')
+        for _, order in self._prioritized_orders():
+            recipe = self._recipe_by_slug.get(order.recipe_slug)
+            if not recipe:
+                continue
+            raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+            if ingredient in raw:
+                remaining = order.timeout_at - self.env.time
+                min_remaining = min(min_remaining, remaining)
+        return min_remaining if min_remaining != float('inf') else 0
+    
+    def _has_cooked_ingredient(self, ingredient: str) -> bool:
+        """检查灶台上是否有已完成的该食材"""
+        for cooker in self.env.cookers.values():
+            if cooker.done_at and cooker.ingredient_name == ingredient:
+                return True
+        return False
 
     def _can_add_to_assembly(self, ingredient: str) -> bool:
         """检查食材是否可以添加到组装站"""

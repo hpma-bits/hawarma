@@ -231,8 +231,30 @@ class UIRunner:
             slot_idx: 订单槽位索引
         """
         pickup_pos = self._pickup_positions[slot_idx]
-        await self.swipe(self._assembly_position, pickup_pos, duration=0.25, steps=12)
+        distance = self._calculate_distance(self._assembly_position, pickup_pos)
+        duration, steps = self._calculate_swipe_params(distance)
+        await self.swipe(self._assembly_position, pickup_pos, duration=duration, steps=steps)
         logger.debug(f"Served order to slot {slot_idx}")
+    
+    def _calculate_distance(self, pos1: tuple[int, int], pos2: tuple[int, int]) -> float:
+        """计算两点之间的欧氏距离"""
+        dx = pos2[0] - pos1[0]
+        dy = pos2[1] - pos1[1]
+        return (dx ** 2 + dy ** 2) ** 0.5
+    
+    def _calculate_swipe_params(self, distance: float) -> tuple[float, int]:
+        """
+        根据距离计算swipe参数
+        距离越远，duration和steps越大
+        """
+        if distance < 400:
+            return 0.25, 12
+        elif distance < 600:
+            return 0.3, 15
+        elif distance < 800:
+            return 0.35, 18
+        else:
+            return 0.4, 20
     
     async def clear_cooker(self, cooker: str) -> None:
         """
