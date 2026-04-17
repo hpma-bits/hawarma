@@ -170,7 +170,11 @@ class RealGameBridge:
         
         关键改进：不再按 recipe_slug 数量判断，而是按 slot 位置精确匹配。
         """
+        start_time = asyncio.get_event_loop().time()
         scanned = await self.scanner.scan_new_orders()
+        scan_duration = asyncio.get_event_loop().time() - start_time
+        
+        new_orders_count = 0
         
         # 标记每个 env 订单是否已被扫描结果匹配
         env_matched = [False] * len(self.env.orders)
@@ -204,6 +208,9 @@ class RealGameBridge:
                     recipe_slug=detected.recipe_slug,
                     is_rush=detected.is_rush,
                 )
+                new_orders_count += 1
+        
+        logger.debug(f"[t={self.env.time:.1f}s] Scan completed: {len(scanned)} detected, {new_orders_count} new, duration={scan_duration*1000:.1f}ms")
 
     # ========================================================================
     # 超时检测循环
@@ -389,7 +396,9 @@ class RealGameBridge:
         Returns:
             匹配的槽位索引，如果没有匹配则返回 None
         """
+        start_time = asyncio.get_event_loop().time()
         scanned = await self.scanner.scan_new_orders()
+        scan_duration = asyncio.get_event_loop().time() - start_time
 
         assembly = self.env.assembly
         assembly_names = [ing[0] if isinstance(ing, tuple) else ing for ing in assembly.ingredients]
@@ -399,8 +408,10 @@ class RealGameBridge:
             if recipe:
                 raw_ings = getattr(recipe, 'raw_ingredients', [])
                 if sorted(assembly_names) == sorted(raw_ings):
+                    logger.debug(f"[t={self.env.time:.1f}s] Rescan found match at slot {detected.slot_idx}, duration={scan_duration*1000:.1f}ms")
                     return detected.slot_idx
 
+        logger.debug(f"[t={self.env.time:.1f}s] Rescan found no match, scanned={len(scanned)}, duration={scan_duration*1000:.1f}ms")
         return None
 
     async def _exec_clear_cooker(self, action) -> None:
