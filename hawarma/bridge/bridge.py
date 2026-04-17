@@ -67,9 +67,7 @@ class RealGameBridge:
     def _init_minitouch(self) -> None:
         """初始化 minitouch（直接使用，已在设备初始化时配置）"""
         device = G.DEVICE
-        if hasattr(device, 'touch') and device.touch:
-            logger.info(f"Using device touch: {type(device.touch).__name__}")
-        else:
+        if not hasattr(device, 'touch') or not device.touch:
             logger.warning("No touch method configured")
 
     def set_agent(self, agent) -> None:
