@@ -76,7 +76,7 @@ game:
     - [860, 195]
     - [1230, 195]
     - [1600, 195]
-  serve_verify_wait: 0.3  # 送餐后验证等待时间（秒）
+  serve_verify_wait: 0.4  # 送餐后验证等待时间（秒）
   swipe_params:  # {distance_threshold: [duration, steps]}
     400: [0.2, 10]
     600: [0.25, 12]
@@ -86,5 +86,5 @@ game:
 # 调试选项
 debug:
   save_order_screenshots: False  # 检测到新订单时保存截图
-  save_assembly_verify_screenshots: False  # 送餐验证时保存assembly截图
+  save_assembly_verify_screenshots: True  # 送餐验证时保存assembly截图
   screenshot_directory: "logs/order_screenshots"
