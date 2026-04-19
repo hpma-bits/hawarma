@@ -361,7 +361,7 @@ class RealGameBridge:
         """
         for attempt in range(max_retries + 1):
             await self.ui.serve_order(slot_idx)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(self.config.game.serve_verify_wait)
 
             if self.verifier.is_assembly_empty():
                 if attempt > 0:
@@ -391,6 +391,9 @@ class RealGameBridge:
         """
         重新扫描订单，找到与组装站食材匹配的槽位。
 
+        匹配规则：assembly 食材必须完全等于订单的 raw_ingredients
+        排序：优先选择最早超时的订单
+
         Returns:
             匹配的槽位索引，如果没有匹配则返回 None
         """
@@ -401,16 +404,24 @@ class RealGameBridge:
         assembly = self.env.assembly
         assembly_names = [ing[0] if isinstance(ing, tuple) else ing for ing in assembly.ingredients]
 
+        matches = []
         for detected in scanned:
             recipe = self._recipe_by_slug.get(detected.recipe_slug)
             if recipe:
                 raw_ings = getattr(recipe, 'raw_ingredients', [])
                 if sorted(assembly_names) == sorted(raw_ings):
-                    logger.debug(f"[t={self.env.time:.1f}s] Rescan found match at slot {detected.slot_idx}, duration={scan_duration*1000:.1f}ms")
-                    return detected.slot_idx
+                    order = self.env.orders[detected.slot_idx]
+                    timeout = order.timeout_at if order else float('inf')
+                    matches.append((detected.slot_idx, timeout))
 
-        logger.debug(f"[t={self.env.time:.1f}s] Rescan found no match, scanned={len(scanned)}, duration={scan_duration*1000:.1f}ms")
-        return None
+        if not matches:
+            logger.debug(f"[t={self.env.time:.1f}s] Rescan found no match, scanned={len(scanned)}, duration={scan_duration*1000:.1f}ms")
+            return None
+
+        matches.sort(key=lambda x: x[1])
+        best_slot = matches[0][0]
+        logger.debug(f"[t={self.env.time:.1f}s] Rescan found match at slot {best_slot}, duration={scan_duration*1000:.1f}ms")
+        return best_slot
 
     async def _exec_clear_cooker(self, action) -> None:
         """清理灶台"""

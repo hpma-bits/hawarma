@@ -46,6 +46,15 @@ class GameConfig(BaseModel):
     cooker_retention: float = 5.0
     rush_red_threshold: int = 180
     rush_detection_positions: list[tuple[int, int]] = Field(default_factory=list)
+    serve_verify_wait: float = 0.3
+    swipe_params: dict[int, tuple[float, int]] = Field(
+        default_factory=lambda: {
+            400: (0.2, 10),
+            600: (0.25, 12),
+            800: (0.3, 15),
+            1000: (0.35, 18),
+        }
+    )
 
 
 class DebugConfig(BaseModel):

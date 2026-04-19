@@ -76,6 +76,12 @@ game:
     - [860, 195]
     - [1230, 195]
     - [1600, 195]
+  serve_verify_wait: 0.3  # 送餐后验证等待时间（秒）
+  swipe_params:  # {distance_threshold: [duration, steps]}
+    400: [0.2, 10]
+    600: [0.25, 12]
+    800: [0.3, 15]
+    1000: [0.35, 18]
 
 # 调试选项
 debug:

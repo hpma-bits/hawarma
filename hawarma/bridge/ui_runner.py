@@ -21,6 +21,10 @@ from loguru import logger
 from hawarma.config import AppConfig
 from hawarma.models import Recipe
 
+from hawarma.bridge.patch_maxtouch import apply_patch
+
+apply_patch()
+
 
 class UIRunner:
     """
@@ -246,15 +250,14 @@ class UIRunner:
         """
         根据距离计算swipe参数
         距离越远，duration和steps越大
+
+        注：swipe方法内部已有0.01s等待让UI事件生效，可适当降低参数
         """
-        if distance < 400:
-            return 0.25, 12
-        elif distance < 600:
-            return 0.3, 15
-        elif distance < 800:
-            return 0.35, 18
-        else:
-            return 0.4, 20
+        for threshold, (duration, steps) in self.config.game.swipe_params.items():
+            if distance < threshold:
+                return duration, steps
+        last = list(self.config.game.swipe_params.values())[-1]
+        return last
     
     async def clear_cooker(self, cooker: str) -> None:
         """
