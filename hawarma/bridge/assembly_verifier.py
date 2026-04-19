@@ -35,6 +35,10 @@ class AssemblyVerifier:
         self.image_dir = Path(config.image_directory)
         self.assembly_region: tuple[int, int, int, int] = (1150, 720, 1600, 1030)
         self._empty_template: Optional[Template] = None
+        self._save_debug = config.debug.save_assembly_verify_screenshots
+        self._debug_dir = Path(config.debug.screenshot_directory) / "assembly_verify"
+        if self._save_debug and not self._debug_dir.exists():
+            self._debug_dir.mkdir(parents=True, exist_ok=True)
         self._load_template()
 
     def _load_template(self) -> None:
@@ -49,7 +53,7 @@ class AssemblyVerifier:
     def is_assembly_empty(self) -> bool:
         """
         检测组装站区域是否为空
-
+        
         Returns:
             True 如果区域为空（提交成功），False 如果区域不为空（提交失败）
         """
@@ -64,4 +68,25 @@ class AssemblyVerifier:
 
         cropped = crop_image(screen, self.assembly_region)
         match = self._empty_template._cv_match(cropped)
-        return match is not None
+        is_empty = match is not None
+
+        if self._save_debug:
+            self._save_debug_screenshot(cropped, is_empty)
+
+        return is_empty
+
+    def _save_debug_screenshot(self, cropped, is_empty: bool) -> None:
+        """保存调试截图"""
+        try:
+            import cv2
+            import time
+
+            timestamp = int(time.time() * 1000)
+            status = "empty" if is_empty else "not_empty"
+            filename = f"assembly_{timestamp}_{status}.jpg"
+            filepath = self._debug_dir / filename
+
+            cv2.imwrite(str(filepath), cropped)
+            logger.debug(f"Saved assembly verify debug: {filepath.name}")
+        except Exception as e:
+            logger.warning(f"Failed to save assembly verify debug: {e}")

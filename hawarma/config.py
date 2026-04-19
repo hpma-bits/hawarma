@@ -55,6 +55,7 @@ class GameConfig(BaseModel):
 
 class DebugConfig(BaseModel):
     save_order_screenshots: bool = False
+    save_assembly_verify_screenshots: bool = False
     screenshot_directory: str = "logs/order_screenshots"
 
 
