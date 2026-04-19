@@ -10,12 +10,38 @@
 | 类别 | 技术/库 | 用途 |
 |------|---------|------|
 | **UI 自动化** | Airtest (Poco) | 屏幕截图、图像识别、触摸操作 |
+| **截图方法** | MinicapApk | 通过 APK 进行高效屏幕截图 |
+| **触控方法** | Maxtouch | Android 10+ 高性能触摸协议 |
 | **并发框架** | asyncio | 双循环并行、异步操作 |
 | **数据验证** | Pydantic | 配置加载、类型安全 |
 | **日志系统** | loguru | 结构化日志、彩色输出 |
-| **触摸加速** | minitouch 协议 | 将 swipe 从 ~0.93s 降至 ~0.1s |
 | **配置管理** | YAML | config.yaml 统一配置管理 |
 | **图像匹配** | Template Matching (Airtest) | 订单检测、组装站验证 |
+
+### 1.1 设备方法检测
+
+程序启动时会自动检测并记录使用的截图和触控方法：
+
+```python
+# 截图方法检测
+screen_class = type(device.screen_proxy.screen_method).__name__  # MinicapApk
+
+# 触控方法检测  
+touch_class = type(device.touch_proxy.touch_method.base_touch).__name__  # Maxtouch
+```
+
+日志输出示例：
+```
+Screenshot method: MinicapApk
+Touch method: Maxtouch
+```
+
+### 1.2 延迟初始化
+
+MinicapApk 采用延迟初始化策略：
+- 第一次调用 `snapshot()` 时才建立 stream 连接
+- 避免在程序初始化时预热导致帧缓冲区积累
+- 减少截图延迟累积问题
 
 ---
 
@@ -183,11 +209,12 @@ def move_to_assembly(self, cooker: str) -> bool:
 
 | 优化项 | 效果 |
 |--------|------|
-| **minitouch 加速** | swipe 从 ~0.93s → ~0.1s (9x 提升) |
+| **Maxtouch 加速** | Android 10+ 高性能触摸，swipe 从 ~0.93s → ~0.1s (9x 提升) |
+| **MinicapApk 延迟初始化** | 第一次 snapshot 时才建立 stream，避免帧缓冲区积累 |
 | **异步截图** | `asyncio.to_thread(G.DEVICE.snapshot)` 不阻塞事件循环 |
-| **自适应扫描频率** | 根据灶台/订单状态动态调整，减少无效检测 |
+| **自适应扫描频率** | 根据灶台/订单状态动态调整：0.4s (空闲灶台) / 0.5s (忙碌) |
 | **双循环并行** | 扫描和决策独立运行，互不阻塞 |
-| **动画窗口检查** | 两个循环都检查，避免操作冲突 |
+| **动画窗口检查** | 两个循环都检查，避免操作冲突和无效扫描 |
 | **UI 操作锁** | asyncio.Lock() 防止并发 swipe 冲突 |
 
 ### 5.2 潜在优化方向

@@ -456,10 +456,8 @@ class CookingAgent:
 
     def _try_move_to_assembly(self) -> Optional[MoveToAssemblyAction]:
         """将完成的食材从灶台移到组装站"""
-        # 获取当前订单需要的食材
         needed_ings = self._get_needed_ingredient_names()
-        
-        # 获取所有活跃订单需要的食材
+
         all_needed = set()
         for order in self.env.orders:
             if order and not order.done:
@@ -468,7 +466,6 @@ class CookingAgent:
                     raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
                     all_needed.update(raw)
 
-        # 使用并集：移动任何活跃订单需要的食材
         effective_needed = needed_ings | all_needed
         if not effective_needed:
             return None
@@ -476,18 +473,12 @@ class CookingAgent:
         for cooker_name, cooker in self.env.cookers.items():
             if not cooker.busy or cooker.done_at is None:
                 continue
-
-            # 烹饪未完成
             if self.env.time < cooker.done_at:
                 continue
-
-            # 食材过期，跳过
             if cooker.is_expired(self.env.time):
                 continue
-
             if cooker.ingredient_name not in effective_needed:
                 continue
-
             if self._can_add_to_assembly(cooker.ingredient_name):
                 order_id = self._get_order_id_for_ingredient(cooker.ingredient_name)
                 return MoveToAssemblyAction(cooker=cooker_name, order_id=order_id)
@@ -704,37 +695,75 @@ class CookingAgent:
     # 存入库存
     # ========================================================================
 
+    EXPIRED_THRESHOLD = 5.0
+    WARN_THRESHOLD = 4.0
+
     def _try_store_to_stockpile(self) -> Optional[MoveToStockpileAction]:
-        """将灶台完成的多余食材存入库存"""
+        """将灶台完成的多余食材存入库存（增强版）"""
         assembly = self.env.assembly
         needed = self._get_needed_ingredient_names()
 
-        # 组装站空闲时：如果食材不是任何活跃订单需要的，存入库存
-        if assembly.is_free:
-            for cooker_name, cooker in self.env.cookers.items():
-                if not cooker.busy or cooker.done_at is None:
-                    continue
-                if self.env.time < cooker.done_at:
-                    continue
-                # 食材不是任何订单需要的，存入库存
-                if cooker.ingredient_name not in needed:
-                    slot = self._find_available_slot(cooker.ingredient_name, cooker.cooker_type)
-                    if slot:
-                        return MoveToStockpileAction(cooker=cooker_name, slot=slot)
-            return None
-
-        # 组装站有目标配方，但灶台食材不是配方需要的 => 存入库存
         for cooker_name, cooker in self.env.cookers.items():
             if not cooker.busy or cooker.done_at is None:
                 continue
             if self.env.time < cooker.done_at:
                 continue
 
-            # 如果组装站需要这个食材，不应该存入库存
+            ing_name = cooker.ingredient_name
+            cooker_type = cooker.cooker_type
+            time_since_done = self.env.time - cooker.done_at
+
+            if ing_name in needed:
+                continue
+
+            if time_since_done > self.WARN_THRESHOLD:
+                slot = self._try_increment_stockpile(ing_name, cooker_type)
+                if slot is None:
+                    slot = self._find_available_slot(ing_name, cooker_type)
+                if slot:
+                    return MoveToStockpileAction(cooker=cooker_name, slot=slot)
+
+            if time_since_done > self.EXPIRED_THRESHOLD:
+                slot = self._try_increment_stockpile(ing_name, cooker_type)
+                if slot is None:
+                    slot = self._find_available_slot(ing_name, cooker_type)
+                if slot:
+                    return MoveToStockpileAction(cooker=cooker_name, slot=slot)
+
+        if assembly.is_free:
+            for cooker_name, cooker in self.env.cookers.items():
+                if not cooker.busy or cooker.done_at is None:
+                    continue
+                if self.env.time < cooker.done_at:
+                    continue
+                if cooker.ingredient_name not in needed:
+                    slot = self._try_increment_stockpile(
+                        cooker.ingredient_name, cooker.cooker_type
+                    )
+                    if slot is None:
+                        slot = self._find_available_slot(
+                            cooker.ingredient_name, cooker.cooker_type
+                        )
+                    if slot:
+                        return MoveToStockpileAction(cooker=cooker_name, slot=slot)
+            return None
+
+        for cooker_name, cooker in self.env.cookers.items():
+            if not cooker.busy or cooker.done_at is None:
+                continue
+            if self.env.time < cooker.done_at:
+                continue
+
             if cooker.ingredient_name in needed:
                 continue
 
-            slot = self._find_available_slot(cooker.ingredient_name, cooker.cooker_type)
+            slot = self._try_increment_stockpile(
+                cooker.ingredient_name, cooker.cooker_type
+            )
+            if slot is None:
+                slot = self._find_available_slot(
+                    cooker.ingredient_name, cooker.cooker_type
+                )
             if slot:
                 return MoveToStockpileAction(cooker=cooker_name, slot=slot)
 
@@ -1038,6 +1067,14 @@ class CookingAgent:
         """找到可用的库存槽位"""
         for slot_name, slot in self.env.stockpile.items():
             if slot.ingredient_name is None or (slot.ingredient_name == ingredient and slot.cooker_type == cooker_type):
+                if slot.count < 5:
+                    return slot_name
+        return None
+
+    def _try_increment_stockpile(self, ingredient: str, cooker_type: str) -> Optional[str]:
+        """增加现有库存槽位的数量（不移动到新槽位）"""
+        for slot_name, slot in self.env.stockpile.items():
+            if slot.ingredient_name == ingredient and slot.cooker_type == cooker_type:
                 if slot.count < 5:
                     return slot_name
         return None

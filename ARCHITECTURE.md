@@ -63,7 +63,6 @@ hawarma/
 | `benchmark_agent.py` | 多局基准测试 |
 | `benchmark_utils.py` | 基准测试工具函数 |
 | `base_strategies.py` | 标准策略定义 |
-| `test_minitouch_speed.py` | minitouch 速度测试 |
 
 ### `experiments/` — 实验代码和报告
 - **地位**: 实验代码和报告

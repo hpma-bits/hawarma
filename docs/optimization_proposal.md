@@ -4,164 +4,137 @@
 
 ---
 
-## 问题分析
+## 已完成 ✅
 
-### 1. 送餐成功率问题
-日志显示 Serve verification failed 反复出现，当前 swipe 参数：
-- 送餐: `duration=0.25s, steps=12`
-- 可能需要增大以提高成功率
+### 1. 送餐成功率优化 ✅
+- **修改位置**: `hawarma/bridge/ui_runner.py`
+- **方案**: 根据距离动态计算 swipe 参数
+  - 距离 < 400: `duration=0.25s, steps=12`
+  - 距离 400-600: `duration=0.3s, steps=15`
+  - 距离 600-800: `duration=0.35s, steps=18`
+  - 距离 >= 800: `duration=0.4s, steps=20`
 
-### 2. 烹饪优先级问题
-当前 Agent 采用7级贪心策略，主要问题：
-- 总是先处理 assembly 中的食材，然后才考虑烹饪新食材
-- 导致灶台空闲时间未被充分利用
-- 仅按需响应可能导致烹饪滞后
+### 2. 前瞻性烹饪策略 ✅
+- **修改位置**: `hawarma/agent/agent.py`
+- **核心思路**: 引入"预烹饪"机制，基于订单时间紧迫度提前开始烹饪
+- **新增方法**:
+  - `_get_urgent_ingredients()` - 获取紧迫食材列表
+  - `_get_time_until_needed()` - 计算食材紧迫度
+  - `_has_cooked_ingredient()` - 检查灶台是否有已完成食材
+
+### 3. 扫描日志优化 ✅
+- **修改位置**: `hawarma/bridge/bridge.py`
+- 记录每次扫描的检测数量、新订单数量、耗时
+
+### 4. 清理无用日志 ✅
+- 删除 `Using device touch` 日志
 
 ---
 
-## 方案一：提升送餐成功率
+## 新问题（调整后）
 
-**修改位置**: `hawarma/bridge/ui_runner.py`
+### 问题1：Serve 失败后的处理（已完成 ✅）
+- **已实现**: 首次失败后重新扫描订单，尝试匹配后重试；无匹配则丢弃
 
-```python
-# 当前
-await self.swipe(self._assembly_position, pickup_pos, duration=0.25, steps=12)
+### 问题2：食材超时防护（已完成 ✅）
+- **已实现**: WARN_THRESHOLD=4s，提前存入库存，优先增加同槽位数量
 
-# 建议改为
-await self.swipe(self._assembly_position, pickup_pos, duration=0.3, steps=15)
+---
+
+## 方案三：Serve 失败后重试策略 ✅（已实现）
+
+### 当前流程
+```
+1. serve_order()
+2. 验证 assembly 为空
+3. 失败重试 max_retries 次
+4. 仍失败 → 丢弃到 trash bin
 ```
 
+### 期望流程
+```
+1. serve_order()
+2. 验证 assembly 为空
+3. 失败 → 重新扫描订单，找到匹配的订单（最早超时）
+4. 如果找到匹配 → 重试提交到该订单
+5. 如果没有匹配 → 丢弃到 trash bin
+```
+
+### 关键设计
+
+#### 3.1 匹配逻辑
+- assembly 食材必须完全匹配订单的 raw_ingredients
+- 如果有多个匹配，按 timeout_at 排序，优先选择最早超时的订单
+
+#### 3.2 重试次数
+- 保持 max_retries=2 不变
+- 重试时使用新的匹配 slot_idx
+
+#### 3.3 代码修改位置
+- `hawarma/bridge/bridge.py` 的 `_serve_with_verify()` 方法
+
+#### 3.4 丢弃时机
+- 所有重试都失败后，且没有找到匹配订单时
+
 ---
 
-## 方案二：优化烹饪优先级策略
+## 方案四：食材超时防护机制 ✅（已实现）
 
-### 核心思路
-引入"预烹饪"机制，基于订单时间紧迫度提前开始烹饪，而非被动等待。
+### 问题分析
+- 当前灶台超时逻辑：完成烹饪后 5 秒未取走 → 标记过期
+- 真实环境：操作可能有阻塞，导致时间累积
+- 需要在灶台食材接近超时前主动存入 stockpile
 
-### 具体策略
+### 实现思路
 
-#### 2.1 新增：前瞻性烹饪判断
-
-在 `_try_start_cooking()` 中增加：
+#### 4.1 提前存入库存
+在 `_try_store_to_stockpile()` 中增加更激进的判断：
 
 ```python
-def _try_start_cooking(self) -> Optional[CookAction]:
-    free_cookers = self._get_free_cookers()
-    if not free_cookers:
-        return None
+def _try_store_to_stockpile(self) -> Optional[MoveToStockpileAction]:
+    """
+    将灶台完成的多余食材存入库存（增强版）
+    """
+    # 降低超时阈值：从 5s 改为 3s
+    EXPIRED_THRESHOLD = 3.0
 
-    # ===== 新增：前瞻性烹饪评估 =====
-    # 计算订单剩余时间紧迫度
-    urgent_ingredients = self._get_urgent_ingredients()
+    # 增加：提前存入判断
+    WARN_THRESHOLD = 4.0  # 接近超时前 1s 存入
 
-    for ing_name, cooker_type, timeout_needed in urgent_ingredients:
-        if cooker_type not in free_cookers:
-            continue
-        if self._is_cooking(ing_name):
-            continue
-        if self._has_in_stockpile(ing_name):
+    for cooker_name, cooker in self.env.cookers.items():
+        if not cooker.busy or cooker.done_at is None:
             continue
 
-        # 检查烹饪时间是否足够在订单超时前完成
-        _, duration = self._ingredient_info.get(ing_name, (None, 3.0))
-        time_until_timeout = self._get_time_until_needed(ing_name)
+        time_since_done = self.env.time - cooker.done_at
+        if time_since_done < 0:
+            continue
 
-        if time_until_timeout >= duration:
-            order_id = self._get_order_id_for_ingredient(ing_name)
-            return CookAction(
-                ingredient=ing_name,
-                cooker=cooker_type,
-                duration=duration,
-                order_id=order_id,
+        # 如果接近超时，立即存入
+        if time_since_done > WARN_THRESHOLD:
+            slot = self._find_available_slot(
+                cooker.ingredient_name, cooker.cooker_type
             )
-    # ===== 前瞻性烹饪结束 =====
+            if slot:
+                return MoveToStockpileAction(cooker=cooker_name, slot=slot)
 
-    # 原有的按需响应逻辑
-    ...
+        # 如果已过期，也存入
+        if time_since_done > EXPIRED_THRESHOLD:
+            slot = self._find_available_slot(
+                cooker.ingredient_name, cooker.cooker_type
+            )
+            if slot:
+                return MoveToStockpileAction(cooker=cooker_name, slot=slot)
 ```
 
-#### 2.2 辅助方法
-
-```python
-def _get_urgent_ingredients(self) -> list[tuple[str, str, float]]:
-    """
-    获取需要紧急烹饪的食材列表
-    返回: [(ingredient, cooker, time_needed)]
-    """
-    result = []
-    for _, order in self._prioritized_orders():
-        remaining = order.timeout_at - self.env.time
-        if remaining <= 0:
-            continue  # 已超时
-
-        recipe = self._recipe_by_slug.get(order.recipe_slug)
-        if not recipe:
-            continue
-
-        raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
-        cookers = self._get_recipe_attr(recipe, 'cookers', [])
-
-        for i, ing in enumerate(raw):
-            cooker = cookers[i] if i < len(cookers) else None
-            if not cooker:
-                continue
-            if self._is_cooking(ing):
-                continue
-            if self._has_in_stockpile(ing):
-                continue
-            # 检查灶台是否有完成食材可用
-            if self._has_cooked_ingredient(ing):
-                continue
-
-            result.append((ing, cooker, remaining))
-
-    return result
-
-def _get_time_until_needed(self, ingredient: str) -> float:
-    """获取该食材最紧迫的订单剩余时间"""
-    min_remaining = float('inf')
-    for _, order in self._prioritized_orders():
-        recipe = self._recipe_by_slug.get(order.recipe_slug)
-        if not recipe:
-            continue
-        raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
-        if ingredient in raw:
-            remaining = order.timeout_at - self.env.time
-            min_remaining = min(min_remaining, remaining)
-    return min_remaining if min_remaining != float('inf') else 0
-
-def _has_cooked_ingredient(self, ingredient: str) -> bool:
-    """检查灶台上是否有已完成的该食材"""
-    for cooker in self.env.cookers.values():
-        if cooker.done_at and cooker.ingredient_name == ingredient:
-            return True
-    return False
-```
-
-#### 2.3 优先级调整
-
-保持原有优先级顺序，但在烹饪选择时优先选择紧迫订单的食材。
+#### 4.2 增加优先级
+确保 `_try_store_to_stockpile()` 在烹饪前被调用。
 
 ---
 
-## 方案三（可选）：灶台利用率优化
+## 待验证
 
-### 防止灶台空转
-
-在 `_try_move_to_assembly()` 中增加：
-- 如果灶台有完成食材，但 assembly 已有同类食材 → 考虑存入库存或等待
-
----
-
-## 实施计划
-
-1. **方案一（必须）**: 修改 swipe 参数，提高送餐成功率
-2. **方案二（核心）**: 实现前瞻性烹饪策略
-3. 验证测试
-
----
-
-## 待确认
-
-1. 送餐参数调整是否足够？
-2. 前瞻性策略的紧迫度阈值是否合理？
+所有优化已在代码中实现，需要在真实游戏环境中验证效果：
+- 动态swipe参数是否能提升送餐成功率？
+- 前瞻性烹饪是否能减少灶台空闲时间？
+- Serve失败重试是否能减少误丢弃？
+- 食材超时防护是否能减少食材浪费？

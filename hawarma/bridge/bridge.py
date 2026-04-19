@@ -24,7 +24,6 @@ from .environment import GameEnvironment
 from .scanner import OrderScanner
 from .ui_runner import UIRunner
 from .assembly_verifier import AssemblyVerifier
-from .direct_minitouch import DirectMinitouch
 
 
 class RealGameBridge:
@@ -38,7 +37,7 @@ class RealGameBridge:
     - Agent: 决策逻辑
     """
 
-    def __init__(self, config: AppConfig, recipes: list[Recipe], use_minitouch: bool | None = None):
+    def __init__(self, config: AppConfig, recipes: list[Recipe]):
         self.config = config
         self.recipes = recipes
         self._recipe_by_slug = {r.slug: r for r in recipes}
@@ -56,19 +55,9 @@ class RealGameBridge:
         self.verifier = AssemblyVerifier(config)
         self.agent = None
 
-        self._minitouch: DirectMinitouch | None = None
-        if use_minitouch if use_minitouch is not None else config.device.use_minitouch:
-            self._init_minitouch()
-
         self._running = False
         self._game_started = False
         self._executing_action = False  # 是否正在执行 UI 操作
-
-    def _init_minitouch(self) -> None:
-        """初始化 minitouch（直接使用，已在设备初始化时配置）"""
-        device = G.DEVICE
-        if not hasattr(device, 'touch') or not device.touch:
-            logger.warning("No touch method configured")
 
     def set_agent(self, agent) -> None:
         """设置 Agent"""
@@ -100,9 +89,6 @@ class RealGameBridge:
             pass
         finally:
             self._running = False
-            if self._minitouch:
-                self._minitouch.disconnect()
-                logger.info("DirectMinitouch disconnected")
 
         # 3. 返回统计
         return self.agent.get_stats()
@@ -439,6 +425,3 @@ class RealGameBridge:
     def stop(self) -> None:
         """停止游戏"""
         self._running = False
-        if self._minitouch:
-            self._minitouch.disconnect()
-            self._minitouch = None

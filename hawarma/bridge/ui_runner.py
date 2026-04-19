@@ -58,23 +58,10 @@ class UIRunner:
         # 异步锁
         self._lock = asyncio.Lock()
         
-        # minitouch 快速触摸（由外部注入）
-        self._minitouch = None
-        
         # 构建坐标映射
         self._build_mappings()
         
         logger.info(f"UIRunner initialized with {len(self._ingredient_positions)} ingredients")
-    
-    def set_minitouch(self, minitouch_swipe) -> None:
-        """
-        设置 minitouch 实例以加速触摸操作
-        
-        Args:
-            minitouch_swipe: MinitouchSwipe 实例 (ignored, we use Airtest's built-in minitouch)
-        """
-        self._minitouch = minitouch_swipe
-        logger.info("UIRunner configured to use minitouch via Airtest")
     
     def _build_mappings(self) -> None:
         """

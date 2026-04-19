@@ -77,25 +77,12 @@
   - 从config.yaml读取坐标配置
   - 提供异步执行接口
   - **动态坐标映射**：根据菜谱选择顺序确定元素位置
-  - **minitouch支持**：可注入MinitouchSwipe实例以加速触摸操作
+  - 使用 Airtest 内置的 minitouch 触摸方法
   - **垃圾桶坐标配置化**：`clear_cooker()` 和 `clear_assembly()` 使用 `config.screen.trash_position`
   - **clear_assembly 增强**：使用 `duration=0.4, steps=8` 确保拖拽动作被游戏识别
 - **输入**: 符号化操作（食材名、灶台名等）
 - **输出**: swipe操作执行结果
 - **关键类**: `UIRunner`
-- **方法**: `set_minitouch(minitouch_swipe)` - 注入minitouch实例
-
-### `minitouch_swipe.py`
-- **地位**: Minitouch快速触摸封装
-- **状态**: ✅ 新增
-- **功能**:
-  - 使用minitouch协议直接发送触摸指令
-  - 避免ADB shell调用的进程创建开销
-  - 将单次swipe从~0.93s降至~0.1s
-- **输入**: 坐标、持续时间
-- **输出**: 触摸操作执行结果
-- **关键类**: `MinitouchSwipe`
-- **关键方法**: `setup()`, `swipe()`, `touch()`
 
 #### 坐标映射规则
 

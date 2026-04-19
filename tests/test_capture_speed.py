@@ -10,7 +10,7 @@ class TestCaptureSpeed(unittest.TestCase):
         cls.device = init_device(
             platform="Android",
             uuid="127.0.0.1:16384",  # mumu
-            cap_method="minicap",
+            cap_method="MINICAP_APK",
             touch_method="adbtouch",
         )
 

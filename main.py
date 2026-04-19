@@ -9,8 +9,9 @@ import sys
 from pathlib import Path
 
 import questionary
-from airtest.core.api import init_device, touch
+from airtest.core.api import init_device
 from airtest.core.settings import Settings as ST
+from airtest.core.android.adb import ADB
 from loguru import logger
 
 from hawarma.config import load_config
@@ -26,13 +27,17 @@ def setup_airtest():
     ST.THRESHOLD = 0.7
     try:
         logger.info("Connecting to Airtest device...")
+        adb = ADB()
+        devices = adb.devices()
+        if not devices:
+            raise RuntimeError("At least one adb device required")
+        serialno = devices[0][0]
         device = init_device(
             platform="Android",
             uuid="127.0.0.1:16384",
-            cap_method="minicap_apk",
-            # touch_method="minitouch",
+            cap_method="MINICAP_APK",
+            touch_method="MAXTOUCH",
         )
-        touch((0, 0))
 
         # 打印截图方法 (精确检测)
         if hasattr(device, 'screen_proxy') and device.screen_proxy:
@@ -121,8 +126,8 @@ async def run_game(config, ordered_recipes):
 def main():
     """Main entry point."""
     setup_logging()
-    apply_patch()
     device = setup_airtest()
+    apply_patch()
 
     config = load_config()
     recipe_manager = RecipeManager(recipes_path="data/recipes.json")
