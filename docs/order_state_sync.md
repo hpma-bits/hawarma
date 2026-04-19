@@ -168,8 +168,38 @@ async def _serve_with_verify(self, ...) -> bool:
 
 ---
 
-## 6. 待确认问题
+## 6. 优化：动画窗口期间允许烹饪（2026-04-19）
 
-1. **4秒间隔**：当前代码没有精确的 4s 计时器，是否需要添加？
-2. **新订单动画**：是否需要等待 1 秒后再显示？
-3. **提交后立即刷新**：是否需要在 serve 后立即扫描？
+### 问题分析
+
+从日志分析 serve 后阻塞：
+```
+t=51.5s: serve完成 (animation_window=1.5s 开始)
+t=51.2s: 扫描
+t=53.4s: 开始烹饪  ← 延迟 ~2s (1.5s动画 + 扫描/决策延迟)
+```
+
+**根因**：之前 agent_loop 在 animation_window 期间完全跳过，包括烹饪决策。
+
+### 优化方案
+
+bridge.py `_agent_loop()` 修改：
+```python
+action = await asyncio.to_thread(self.agent.step_with_diagnostics)
+if action:
+    action_type = type(action).__name__
+    if in_animation and action_type == "ServeOrderAction":
+        await asyncio.sleep(0.05)
+        continue  # 跳过送餐，烹饪/移动正常执行
+```
+
+**效果**：动画期间允许烹饪，只禁止送餐
+
+---
+
+## 7. 待确认问题（已回答）
+
+1. **4秒间隔**：游戏规则说是个平均值，不需要精确 ❌
+2. **新订单动画**：暂时不需要 ❌
+3. **提交后立即刷新**：等待是合理的 ❌
+4. **serve后阻塞**：✅ 已优化（动画期间允许烹饪）

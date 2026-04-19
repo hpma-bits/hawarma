@@ -217,15 +217,22 @@ class RealGameBridge:
     # ========================================================================
 
     async def _agent_loop(self) -> None:
-        """Agent 决策循环（每 0.05s），带停滞检测，动画窗口期间暂停"""
+        """Agent 决策循环（每 0.05s），带停滞检测，动画窗口期间允许烹饪"""
         while self._running and not self.env.is_game_over():
             try:
-                if self.env.is_in_animation_window() or self._executing_action:
+                if self._executing_action:
                     await asyncio.sleep(0.05)
                     continue
 
+                in_animation = self.env.is_in_animation_window()
+
                 action = await asyncio.to_thread(self.agent.step_with_diagnostics)
                 if action:
+                    action_type = type(action).__name__
+                    if in_animation and action_type == "ServeOrderAction":
+                        await asyncio.sleep(0.05)
+                        continue
+
                     self.agent.stats["actions_taken"] += 1
                     self._executing_action = True
                     await self._execute_action(action)

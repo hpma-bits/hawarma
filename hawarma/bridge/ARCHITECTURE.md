@@ -364,17 +364,22 @@ async def _execute_serve_order(self, action) -> None:
 
 ### 保护范围
 
-1. **扫描循环**：动画期间不检测新订单
-2. **决策循环**：动画期间 Agent 不返回动作
+1. **扫描循环**：动画期间不检测新订单（防止捕获未刷新的屏幕）
+2. **决策循环**（2026-04-19 优化）：动画期间**允许烹饪**，只**禁止送餐**
 3. **Agent 内部**：`_try_serve()` 首先检查动画窗口
 
 ```python
-def _try_serve(self) -> Optional[ServeOrderAction]:
-    # 首先检查动画窗口
-    if self.env.is_in_animation_window():
-        return None
-    # ... 其他逻辑
+# bridge.py _agent_loop() 优化后的逻辑
+action = await asyncio.to_thread(self.agent.step_with_diagnostics)
+if action:
+    action_type = type(action).__name__
+    if in_animation and action_type == "ServeOrderAction":
+        await asyncio.sleep(0.05)
+        continue  # 跳过送餐，其他动作（烹饪/移动）正常执行
+    # ... 执行动作
 ```
+
+**优化原理**：根据 game_rules.md 规则，动画窗口期间"其他操作不受限"，烹饪是异步的可以让灶台提前工作。
 
 ---
 
