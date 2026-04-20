@@ -146,7 +146,8 @@ class OrderScanner:
         Returns:
             检测到的订单，如果没有则返回 None
         """
-        roi = self.config.screen.ingredients_regions[slot]
+        x1, y1, x2, y2 = self.config.screen.ingredients_regions[slot]
+        roi = (x1, y1, x1 + (x2 - x1) // 4, y2)
         
         best_match = None
         best_confidence = 0.0
