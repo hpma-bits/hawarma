@@ -383,7 +383,7 @@ class RealGameBridge:
         流程：连续获取 4 张 snapshot（间隔 0.05s），用第 4 张验证
         """
         for _ in range(3):
-            await asyncio.sleep(0.05)
+            G.DEVICE.snapshot()
 
         return self.verifier.is_assembly_empty()
 
