@@ -149,7 +149,6 @@ class UIRunner:
             steps: 滑动步数（建议5）
         """
         async with self._lock:
-            logger.debug(f"Swipe: {start} -> {end} duration={duration}s steps={steps}")
             from airtest.core.api import swipe
             swipe(start, end, duration=duration, steps=steps)
             await asyncio.sleep(0.01)

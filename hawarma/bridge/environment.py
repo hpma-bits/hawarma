@@ -317,6 +317,18 @@ class GameEnvironment(BaseEnvironment):
         """压缩订单槽位，将 None 移到末尾"""
         non_null = [o for o in self._orders if o is not None]
         self._orders = non_null + [None] * (4 - len(non_null))
+        self._log_orders_state("_shift")
+
+    def _log_orders_state(self, reason: str = "") -> None:
+        """输出完整的订单状态列表"""
+        slots = []
+        for i, order in enumerate(self._orders):
+            if order is None:
+                slots.append(f"slot{i}=None")
+            else:
+                rush_mark = "R" if order.is_rush else ""
+                slots.append(f"slot{i}={order.recipe_slug}({rush_mark})")
+        logger.info(f"[t={self.time:.1f}s] Orders state [{reason}]: [{', '.join(slots)}]")
 
     # ========================================================================
     # 订单操作
@@ -349,6 +361,7 @@ class GameEnvironment(BaseEnvironment):
         )
 
         logger.info(f"[t={self.time:.1f}s] New order {order_id}: {recipe_slug} ({'RUSH' if is_rush else 'normal'}) slot {target_slot}")
+        self._log_orders_state("add")
         return order_id
 
     def check_and_remove_timed_out_orders(self) -> list[int]:
@@ -363,6 +376,8 @@ class GameEnvironment(BaseEnvironment):
 
         if timed_out:
             self._shift_orders_left()
+        else:
+            self._log_orders_state("timeout_check")
 
         return timed_out
 
