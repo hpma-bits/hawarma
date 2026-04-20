@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 from airtest.core.api import G
 from loguru import logger
@@ -24,6 +25,7 @@ from .environment import GameEnvironment
 from .scanner import OrderScanner
 from .ui_runner import UIRunner
 from .assembly_verifier import AssemblyVerifier
+from .base_environment import OrderInfo
 
 
 class RealGameBridge:
@@ -146,55 +148,47 @@ class RealGameBridge:
 
     async def _sync_orders_from_scan(self) -> None:
         """
-        扫描屏幕并与 env.orders 对比，只添加真正的新订单。
-        
-        按 slot 位置匹配：如果扫描到的 slot 有订单，但 env 中该 slot 无订单，
-        认为是新订单。如果该 recipe_slug 已在 env 中存在（从其他 slot 左移过来），
-        则不创建新订单，只是更新位置（env 的左移逻辑会自动处理）。
-        
-        关键改进：不再按 recipe_slug 数量判断，而是按 slot 位置精确匹配。
+        强制将 env.orders 与扫描结果同步。
+
+        策略：
+        1. 清空当前 env.orders
+        2. 按扫描结果重建 env.orders
+        3. 忽略 None 的 slot（表示该位置没有订单）
         """
         start_time = asyncio.get_event_loop().time()
         scanned = await self.scanner.scan_new_orders()
         scan_duration = asyncio.get_event_loop().time() - start_time
-        
-        new_orders_count = 0
-        
-        # 标记每个 env 订单是否已被扫描结果匹配
-        env_matched = [False] * len(self.env.orders)
-        
-        # 尝试将扫描结果与 env 订单按 slot 位置匹配
-        for detected in scanned:
-            slot_idx = detected.slot_idx
-            if slot_idx >= len(self.env.orders):
-                continue
-            
-            env_order = self.env.orders[slot_idx]
-            
-            # 如果该 slot 已有匹配的订单（recipe 相同），标记为已匹配
-            if env_order is not None and env_order.recipe_slug == detected.recipe_slug:
-                env_matched[slot_idx] = True
-                continue
-            
-            # 该 slot 没有匹配的订单，检查 recipe_slug 是否在其他 slot 存在
-            # 这可能是左移过来的情况
-            found_match = False
-            for i, (other_order, matched) in enumerate(zip(self.env.orders, env_matched)):
-                if other_order is not None and not matched and other_order.recipe_slug == detected.recipe_slug:
-                    # 找到了匹配，这是左移，不需要新建订单
-                    env_matched[i] = True
-                    found_match = True
-                    break
-            
-            if not found_match:
-                # 真正的新订单，添加到 env（会自动找到最左边的空槽位）
-                self.env.add_order(
-                    recipe_slug=detected.recipe_slug,
-                    is_rush=detected.is_rush,
+
+        # 构建扫描结果的 slot -> order 映射
+        scan_by_slot: dict[int, tuple[str, bool]] = {}  # type: ignore
+        for d in scanned:
+            scan_by_slot[d.slot_idx] = (d.recipe_slug, d.is_rush)
+
+        # 直接重建 env.orders：从左到右填充扫描到的订单
+        new_orders: list[OrderInfo | None] = []
+        for slot_idx in range(4):
+            if slot_idx in scan_by_slot:
+                recipe_slug, is_rush = scan_by_slot[slot_idx]
+                now = time.time()
+                timeout = 40.0 if is_rush else 70.0
+                order = OrderInfo(
+                    order_id=self.env._next_order_id,
+                    recipe_slug=recipe_slug,
+                    is_rush=is_rush,
+                    created_at=now,
+                    timeout_at=now + timeout,
+                    done=False,
                 )
-                new_orders_count += 1
-        
-        logger.debug(f"[t={self.env.time:.1f}s] Scan completed: {len(scanned)} detected, {new_orders_count} new, duration={scan_duration*1000:.1f}ms")
+                self.env._next_order_id += 1
+                new_orders.append(order)
+            else:
+                new_orders.append(None)
+
+        # 直接替换
+        self.env._orders = new_orders
+
+        self.env._log_orders_state("sync")
+        logger.debug(f"[t={self.env.time:.1f}s] Scan completed: {len(scanned)} detected, duration={scan_duration*1000:.1f}ms")
 
     # ========================================================================
     # 超时检测循环
