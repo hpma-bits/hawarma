@@ -151,7 +151,7 @@ class RealGameBridge:
         强制将 env.orders 与扫描结果同步。
 
         策略：
-        1. 清空当前 env.orders
+        1. 检查当前订单是否有 done=True 的，有则跳过
         2. 按扫描结果重建 env.orders
         3. 忽略 None 的 slot（表示该位置没有订单）
         """
@@ -164,10 +164,18 @@ class RealGameBridge:
         for d in scanned:
             scan_by_slot[d.slot_idx] = (d.recipe_slug, d.is_rush)
 
+        # 检查当前订单是否有 done=True
+        skip_slots = set()
+        for i, order in enumerate(self.env._orders):
+            if order is not None and order.done:
+                skip_slots.add(i)
+
         # 直接重建 env.orders：从左到右填充扫描到的订单
         new_orders: list[OrderInfo | None] = []
         for slot_idx in range(4):
-            if slot_idx in scan_by_slot:
+            if slot_idx in skip_slots:
+                new_orders.append(None)
+            elif slot_idx in scan_by_slot:
                 recipe_slug, is_rush = scan_by_slot[slot_idx]
                 now = time.time()
                 timeout = 40.0 if is_rush else 70.0
@@ -322,7 +330,8 @@ class RealGameBridge:
             order = self.env.orders[success_slot]
             if order:
                 self.agent.on_order_served()
-            await self._sync_orders_from_scan()
+                order.done = True
+                await self._sync_orders_from_scan()
         else:
             logger.warning(
                 f"[t={self.env.time:.1f}s] Serve failed after all retries. "
