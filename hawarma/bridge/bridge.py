@@ -164,18 +164,10 @@ class RealGameBridge:
         for d in scanned:
             scan_by_slot[d.slot_idx] = (d.recipe_slug, d.is_rush)
 
-        # 检查当前订单是否有 done=True
-        skip_slots = set()
-        for i, order in enumerate(self.env._orders):
-            if order is not None and order.done:
-                skip_slots.add(i)
-
         # 直接重建 env.orders：从左到右填充扫描到的订单
         new_orders: list[OrderInfo | None] = []
         for slot_idx in range(4):
-            if slot_idx in skip_slots:
-                new_orders.append(None)
-            elif slot_idx in scan_by_slot:
+            if slot_idx in scan_by_slot:
                 recipe_slug, is_rush = scan_by_slot[slot_idx]
                 now = time.time()
                 timeout = 40.0 if is_rush else 70.0
@@ -327,13 +319,9 @@ class RealGameBridge:
         success_slot = await self._serve_with_verify(action.slot_idx)
 
         if success_slot is not None:
-            order = self.env.orders[success_slot]
-            if order:
-                self.agent.on_order_served()
-                order.done = True
-                self.env.set_animation_window(1.5)
-                await asyncio.sleep(1.5)
-                await self._sync_orders_from_scan()
+            self.agent.on_order_served()
+            self.env.clear_assembly()
+            self.env.set_animation_window(1.5)
         else:
             logger.warning(
                 f"[t={self.env.time:.1f}s] Serve failed after all retries. "
