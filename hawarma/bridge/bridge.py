@@ -331,6 +331,8 @@ class RealGameBridge:
             if order:
                 self.agent.on_order_served()
                 order.done = True
+                self.env.set_animation_window(1.5)
+                await asyncio.sleep(1.5)
                 await self._sync_orders_from_scan()
         else:
             logger.warning(
