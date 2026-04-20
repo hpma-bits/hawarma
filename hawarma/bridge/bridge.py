@@ -322,99 +322,70 @@ class RealGameBridge:
 
     async def _exec_serve_order(self, action) -> None:
         """送餐（带验证和重试）"""
-        served = await self._serve_with_verify(action.slot_idx, max_retries=2)
+        success_slot = await self._serve_with_verify(action.slot_idx)
 
-        if served:
-            order = self.env.orders[action.slot_idx]
+        if success_slot is not None:
+            order = self.env.orders[success_slot]
             if order:
                 self.agent.on_order_served()
-            self.env.serve_order(action.slot_idx)
+            self.env.serve_order(success_slot)
         else:
             logger.warning(
-                f"[t={self.env.time:.1f}s] Serve failed after retries. "
-                f"Clearing assembly and continuing."
+                f"[t={self.env.time:.1f}s] Serve failed after all retries. "
+                f"Assembly cleared."
             )
-            await self.ui.clear_assembly()
             self.env.clear_assembly()
 
-    async def _serve_with_verify(self, slot_idx: int, max_retries: int = 2) -> bool:
+    async def _serve_with_verify(self, slot_idx: int, max_retries: int = 2) -> int | None:
         """
         执行送餐并验证是否成功。
 
-        流程：
-        1. 执行 UI 送餐操作
-        2. 等待动画窗口结束
-        3. 验证组装站是否为空
-        4. 如果为空 → 成功
-        5. 如果不为空 → 重新扫描订单，找到匹配的槽位重试
-        6. 重试 max_retries 次后仍失败 → 返回 False
+        新方案：使用快速重试机制取代扫描匹配
+        1. 执行 serve swipe
+        2. 多点 snapshot 验证（4张，用最后一张）
+        3. 失败后快速重试所有 slot（0,1,2,3）
+        4. 全部失败后清空 assembly
 
         Returns:
-            True 如果送餐成功，False 如果失败
+            成功的 slot_idx，如果失败返回 None
         """
-        for attempt in range(max_retries + 1):
-            await self.ui.serve_order(slot_idx)
-            await asyncio.sleep(self.config.game.serve_verify_wait)
+        # 第一次尝试：原始 slot
+        await self.ui.serve_order(slot_idx)
+        if await self._verify_with_multi_snapshot():
+            return slot_idx
 
-            if self.verifier.is_assembly_empty():
-                if attempt > 0:
-                    logger.info(f"[t={self.env.time:.1f}s] Serve succeeded on retry {attempt}")
-                return True
+        logger.warning(
+            f"[t={self.env.time:.1f}s] Serve verification failed. "
+            f"Assembly still has: {self.env.assembly.ingredients}"
+        )
 
-            logger.warning(
-                f"[t={self.env.time:.1f}s] Serve verification failed (attempt {attempt + 1}/{max_retries + 1}). "
-                f"Assembly still has: {self.env.assembly.ingredients}"
-            )
+        # 快速重试所有 slot（0,1,2,3），跳过已尝试的
+        for try_slot in range(4):
+            if try_slot == slot_idx:
+                continue
 
-            if attempt < max_retries:
-                matching_slot = await self._find_matching_order_slot()
-                if matching_slot is not None and matching_slot != slot_idx:
-                    logger.info(
-                        f"[t={self.env.time:.1f}s] Re-scanning found matching order at slot {matching_slot}. Retrying..."
-                    )
-                    slot_idx = matching_slot
-                else:
-                    logger.info(
-                        f"[t={self.env.time:.1f}s] No matching order found. Retrying same slot {slot_idx}..."
-                    )
+            await asyncio.sleep(0.05)
+            await self.ui.serve_order(try_slot)
+            if await self._verify_with_multi_snapshot():
+                logger.info(f"[t={self.env.time:.1f}s] Serve succeeded at slot {try_slot}")
+                return try_slot
 
-        return False
+        # 全部失败，清空 assembly
+        logger.warning(f"[t={self.env.time:.1f}s] All serve attempts failed. Clearing assembly.")
+        await self.ui.clear_assembly()
+        self.env.clear_assembly()
+        return None
 
-    async def _find_matching_order_slot(self) -> int | None:
+    async def _verify_with_multi_snapshot(self) -> bool:
         """
-        重新扫描订单，找到与组装站食材匹配的槽位。
+        多点 snapshot 验证 assembly 是否为空。
 
-        匹配规则：assembly 食材必须完全等于订单的 raw_ingredients
-        排序：优先选择最早超时的订单
-
-        Returns:
-            匹配的槽位索引，如果没有匹配则返回 None
+        流程：连续获取 4 张 snapshot（间隔 0.05s），用第 4 张验证
         """
-        start_time = asyncio.get_event_loop().time()
-        scanned = await self.scanner.scan_new_orders()
-        scan_duration = asyncio.get_event_loop().time() - start_time
+        for _ in range(3):
+            await asyncio.sleep(0.05)
 
-        assembly = self.env.assembly
-        assembly_names = [ing[0] if isinstance(ing, tuple) else ing for ing in assembly.ingredients]
-
-        matches = []
-        for detected in scanned:
-            recipe = self._recipe_by_slug.get(detected.recipe_slug)
-            if recipe:
-                raw_ings = getattr(recipe, 'raw_ingredients', [])
-                if sorted(assembly_names) == sorted(raw_ings):
-                    order = self.env.orders[detected.slot_idx]
-                    timeout = order.timeout_at if order else float('inf')
-                    matches.append((detected.slot_idx, timeout))
-
-        if not matches:
-            logger.debug(f"[t={self.env.time:.1f}s] Rescan found no match, scanned={len(scanned)}, duration={scan_duration*1000:.1f}ms")
-            return None
-
-        matches.sort(key=lambda x: x[1])
-        best_slot = matches[0][0]
-        logger.debug(f"[t={self.env.time:.1f}s] Rescan found match at slot {best_slot}, duration={scan_duration*1000:.1f}ms")
-        return best_slot
+        return self.verifier.is_assembly_empty()
 
     async def _exec_clear_cooker(self, action) -> None:
         """清理灶台"""
