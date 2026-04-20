@@ -328,7 +328,7 @@ class RealGameBridge:
             order = self.env.orders[success_slot]
             if order:
                 self.agent.on_order_served()
-            self.env.serve_order(success_slot)
+            await self._sync_orders_from_scan()
         else:
             logger.warning(
                 f"[t={self.env.time:.1f}s] Serve failed after all retries. "
