@@ -204,9 +204,43 @@ class CookingAgent:
     def _ingredient_info(self) -> dict:
         """食材信息映射"""
         return self._ingredient_info_dict
-    
+
+    def _get_cooker_for_ingredient(self, ingredient: str, recipe: Optional[Recipe] = None) -> tuple[Optional[str], float]:
+        """
+        获取食材对应的灶台和烹饪时长
+
+        Args:
+            ingredient: 食材名称
+            recipe: 具体的 recipe（如果提供则优先从 recipe 中获取）
+
+        Returns:
+            (cooker, duration)
+        """
+        if recipe:
+            raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+            cookers = self._get_recipe_attr(recipe, 'cookers', [])
+            durations = self._get_recipe_attr(recipe, 'cook_durations', [])
+            for i, ing in enumerate(raw):
+                if ing == ingredient:
+                    cooker = cookers[i] if i < len(cookers) else None
+                    duration = durations[i] if i < len(durations) else 3.0
+                    if cooker:
+                        return (cooker, duration)
+        return self._ingredient_info_dict.get(ingredient, (None, 3.0))
+
+    def _get_duration_for_ingredient(self, ingredient: str, cooker_type: str) -> float:
+        """根据食材和灶台类型获取烹饪时长"""
+        for recipe in self.recipes:
+            raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+            cookers = self._get_recipe_attr(recipe, 'cookers', [])
+            durations = self._get_recipe_attr(recipe, 'cook_durations', [])
+            for i, ing in enumerate(raw):
+                if ing == ingredient and i < len(cookers) and cookers[i] == cooker_type:
+                    return durations[i] if i < len(durations) else 3.0
+        return 3.0
+
     def _build_ingredient_info(self) -> None:
-        """构建食材 -> (灶台, 时长) 映射"""
+        """构建食材 -> (灶台, 时长) 映射（仅作为默认值）"""
         for recipe in self.recipes:
             raw_ingredients = self._get_recipe_attr(recipe, 'raw_ingredients', [])
             cookers = self._get_recipe_attr(recipe, 'cookers', [])
@@ -570,9 +604,9 @@ class CookingAgent:
         # 组装站缺失的食材排最前
         needed_current = assembly_missing + [item for item in needed_current if item not in assembly_missing]
         
-        # 收集所有订单需要的食材
+        # 收集所有订单需要的食材（需要支持同一食材不同 cooker）
         needed_all = []
-        seen = set()
+        seen_combinations = set()
         for order in self.env.orders:
             if order and not order.done:
                 recipe = self._recipe_by_slug.get(order.recipe_slug)
@@ -581,8 +615,8 @@ class CookingAgent:
                     cookers = self._get_recipe_attr(recipe, 'cookers', [])
                     for i, ing_name in enumerate(raw):
                         cooker = cookers[i] if i < len(cookers) else None
-                        if cooker and ing_name not in seen:
-                            seen.add(ing_name)
+                        if cooker and (ing_name, cooker) not in seen_combinations:
+                            seen_combinations.add((ing_name, cooker))
                             needed_all.append((ing_name, cooker))
         
         # 检查哪些食材已在stockpile中
@@ -602,7 +636,8 @@ class CookingAgent:
             if stockpile_counts.get(ing_name, 0) > 0:
                 continue
             
-            _, duration = self._ingredient_info.get(ing_name, (None, 3.0))
+            recipe = self._recipe_by_slug.get(order_id) if (order_id := self._get_order_id_for_ingredient(ing_name)) else None
+            _, duration = self._get_cooker_for_ingredient(ing_name, recipe)
             order_id = self._get_order_id_for_ingredient(ing_name)
             return CookAction(
                 ingredient=ing_name,
@@ -610,7 +645,7 @@ class CookingAgent:
                 duration=duration,
                 order_id=order_id,
             )
-        
+
         # 然后烹饪其他订单需要的食材（如果stockpile中没有）
         for ing_name, cooker_type in needed_all:
             if cooker_type not in free_cookers:
@@ -621,7 +656,7 @@ class CookingAgent:
                 continue
             if stockpile_counts.get(ing_name, 0) > 0:
                 continue
-            
+
             _, duration = self._ingredient_info.get(ing_name, (None, 3.0))
             order_id = self._get_order_id_for_ingredient(ing_name)
             return CookAction(
@@ -649,8 +684,8 @@ class CookingAgent:
                 continue
             if self._has_in_stockpile(ing_name):
                 continue
-            
-            _, duration = self._ingredient_info.get(ing_name, (None, 3.0))
+
+            _, duration = self._get_cooker_for_ingredient(ing_name, None)
             order_id = self._get_order_id_for_ingredient(ing_name)
             return CookAction(
                 ingredient=ing_name,
@@ -659,17 +694,19 @@ class CookingAgent:
                 order_id=order_id,
             )
 
-        # 按需响应：如果没有紧迫食材，按原有逻辑处理
-        to_cook = self._get_ingredients_to_cook()
-        for ing_name, cooker_type in to_cook:
+        # 然后烹饪其他订单需要的食材（如果stockpile中没有）
+        for ing_name, cooker_type in needed_all:
             if cooker_type not in free_cookers:
                 continue
             if self._is_cooking(ing_name):
                 continue
-            if self._has_in_stockpile(ing_name):
+            if ing_name in assembly_ings:
+                continue
+            if stockpile_counts.get(ing_name, 0) > 0:
                 continue
 
             _, duration = self._ingredient_info.get(ing_name, (None, 3.0))
+            duration = self._get_duration_for_ingredient(ing_name, cooker_type)
             order_id = self._get_order_id_for_ingredient(ing_name)
             return CookAction(
                 ingredient=ing_name,
