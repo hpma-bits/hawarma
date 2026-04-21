@@ -195,16 +195,17 @@ class RealGameBridge:
     # ========================================================================
 
     async def _timeout_loop(self) -> None:
-        """订单超时检测循环（每 0.3s）"""
+        """订单超时检测循环（每 0.2s）"""
         while self._running and not self.env.is_game_over():
             try:
                 timed_out = self.env.check_and_remove_timed_out_orders()
                 for order_id in timed_out:
                     self.agent.on_order_timeout(order_id)
-                await asyncio.sleep(0.3)
+                G.DEVICE.snapshot()  # 用于刷新缓存的截图
+                await asyncio.sleep(0.2)
             except Exception as e:
                 logger.error(f"Timeout loop error: {e}")
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.2)
 
     # ========================================================================
     # Agent 决策循环

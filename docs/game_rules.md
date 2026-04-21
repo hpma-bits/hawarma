@@ -111,7 +111,10 @@
 
 - **食材唯一性**：每种食材在同一份菜品中最多出现 1 份，不存在需要 2 份相同食材的菜谱
 - **食材数量**：一份菜品最多需要 2 种不同食材（各 1 份），部分菜谱仅需 1 种食材
-- **食材-厨具绑定**：特定食材必须使用指定厨具烹饪，该组合决定唯一烹饪时长
+- **食材-厨具绑定**：`raw_ingredients` 与 `cookers` 按位置一一对应，即 `raw_ingredients[i]` 必须使用 `cookers[i]` 烹饪。例如：
+  - `gildedShoreRisotto`: `["clearwater_fish", "creamfield_rice"]` → `["oven", "pot"]`，表示 clearwater_fish 需用 oven 烹饪
+  - `braisedNewYearFish`: `["clearwater_fish"]` → `["skillet"]`，表示 clearwater_fish 需用 skillet 烹饪
+  - 该组合决定唯一烹饪时长
 - **配方唯一性**：两个不同的 recipe 不能包含相同的 ingredient-cooker 组合但不同的 duration
 
 ### 3.3 订单显示

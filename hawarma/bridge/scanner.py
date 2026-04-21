@@ -56,7 +56,22 @@ class OrderScanner:
         
         # 配方 slug -> Recipe 映射
         self._recipe_by_slug = {r.slug: r for r in recipes}
-        
+
+        # 首个食材 -> 菜谱列表映射（用于冲突检测）
+        self._recipes_by_first_ingredient: dict[str, list[Recipe]] = {}
+        for r in recipes:
+            first_ing = r.raw_ingredients[0] if r.raw_ingredients else None
+            if first_ing:
+                self._recipes_by_first_ingredient.setdefault(first_ing, []).append(r)
+
+        # 找出需要 cooker 二次匹配的冲突菜谱组（首个食材相同的菜谱）
+        self._conflict_groups: list[tuple[Recipe, ...]] = []
+        for ing, recipe_list in self._recipes_by_first_ingredient.items():
+            if len(recipe_list) > 1:
+                self._conflict_groups.append(tuple(recipe_list))
+
+        logger.debug(f"Conflict groups (same first ingredient): {[(g[0].raw_ingredients[0], [r.slug for r in g]) for g in self._conflict_groups]}")
+
         # Rush 检测配置
         self._rush_detection_positions = config.game.rush_detection_positions
         self._rush_red_threshold = config.game.rush_red_threshold
@@ -138,52 +153,104 @@ class OrderScanner:
     def _detect_order(self, slot: int, screen) -> Optional[DetectedOrder]:
         """
         检测单个订单槽位
-        
+
         Args:
             slot: 槽位索引 (0-3)
             screen: 屏幕截图
-            
+
         Returns:
             检测到的订单，如果没有则返回 None
         """
         x1, y1, x2, y2 = self.config.screen.ingredients_regions[slot]
-        roi = (x1, y1, x1 + (x2 - x1) // 4, y2)
-        
+        ing_roi = (x1, y1, x1 + (x2 - x1) // 4, y2)
+
         best_match = None
         best_confidence = 0.0
-        
+
         for recipe in self.recipes:
-            # 检测第一个食材图标
             ing_name = recipe.raw_ingredients[0] if recipe.raw_ingredients else None
             if not ing_name:
                 continue
-            
+
             ing_path = self.image_dir / f"ingredient-{ing_name}.jpg"
             if not ing_path.exists():
-                # 尝试其他格式
                 ing_path = self.image_dir / f"icon-{ing_name}.jpg"
                 if not ing_path.exists():
                     continue
-            
-            match = local_match(Template(str(ing_path)), roi, screen)
+
+            match = local_match(Template(str(ing_path)), ing_roi, screen)
             if match:
                 confidence = float(match.get("confidence", 0))
                 if confidence > best_confidence:
                     best_confidence = confidence
                     best_match = recipe
-        
+
         if best_match and best_confidence > 0.7:
-            # 检测是否 rush
+            first_ing = best_match.raw_ingredients[0]
+            candidates = self._recipes_by_first_ingredient.get(first_ing, [])
+
+            if len(candidates) > 1:
+                resolved = self._resolve_cooker_conflict(best_match, slot, screen)
+                if resolved:
+                    best_match = resolved
+
             is_rush = self._detect_rush(slot, screen)
-            
+
             return DetectedOrder(
                 slot_idx=slot,
                 recipe_slug=best_match.slug,
                 is_rush=is_rush,
                 confidence=best_confidence,
             )
-        
+
         return None
+
+    def _resolve_cooker_conflict(
+        self, matched_recipe: Recipe, slot: int, screen
+    ) -> Optional[Recipe]:
+        """
+        当首个食材匹配多个菜谱时，通过 cooker 图标区分
+
+        Args:
+            matched_recipe: 食材已匹配成功的菜谱
+            slot: 槽位索引
+            screen: 屏幕截图
+
+        Returns:
+            区分后的正确菜谱，如果无法区分则返回原菜谱
+        """
+        x1, y1, x2, y2 = self.config.screen.ingredients_regions[slot]
+        cooker_roi = (x1, y1, x1 + (x2 - x1) // 4, y2)
+
+        first_ing = matched_recipe.raw_ingredients[0]
+        candidates = self._recipes_by_first_ingredient.get(first_ing, [])
+        if len(candidates) <= 1:
+            return matched_recipe
+
+        best_match = None
+        best_confidence = 0.0
+
+        for recipe in candidates:
+            cooker_name = recipe.cookers[0]
+            cooker_path = self.image_dir / f"icon-{cooker_name}.jpg"
+            if not cooker_path.exists():
+                continue
+
+            match = local_match(Template(str(cooker_path)), cooker_roi, screen)
+            if match:
+                confidence = float(match.get("confidence", 0))
+                if confidence > best_confidence:
+                    best_confidence = confidence
+                    best_match = recipe
+
+        if best_match and best_confidence > 0.6:
+            logger.debug(
+                f"Resolved conflict for {first_ing}: {matched_recipe.slug} -> {best_match.slug} "
+                f"(cooker confidence: {best_confidence:.2f})"
+            )
+            return best_match
+
+        return matched_recipe
     
     RUSH_DETECTION_POSITIONS = [
         (480, 195),

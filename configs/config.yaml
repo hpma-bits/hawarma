@@ -86,5 +86,5 @@ game:
 # 调试选项
 debug:
   save_order_screenshots: False  # 检测到新订单时保存截图
-  save_assembly_verify_screenshots: True  # 送餐验证时保存assembly截图
+  save_assembly_verify_screenshots: False  # 送餐验证时保存assembly截图
   screenshot_directory: "logs/order_screenshots"
