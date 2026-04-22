@@ -21,11 +21,11 @@ from loguru import logger
 from hawarma.config import AppConfig
 from hawarma.models import Recipe
 
+from .assembly_verifier import AssemblyVerifier
+from .base_environment import OrderInfo
 from .environment import GameEnvironment
 from .scanner import OrderScanner
 from .ui_runner import UIRunner
-from .assembly_verifier import AssemblyVerifier
-from .base_environment import OrderInfo
 
 
 class RealGameBridge:
@@ -188,24 +188,26 @@ class RealGameBridge:
         self.env._orders = new_orders
 
         self.env._log_orders_state("sync")
-        logger.debug(f"[t={self.env.time:.1f}s] Scan completed: {len(scanned)} detected, duration={scan_duration*1000:.1f}ms")
+        logger.debug(
+            f"[t={self.env.time:.1f}s] Scan completed: {len(scanned)} detected, duration={scan_duration * 1000:.1f}ms"
+        )
 
     # ========================================================================
     # 超时检测循环
     # ========================================================================
 
     async def _timeout_loop(self) -> None:
-        """订单超时检测循环（每 0.2s）"""
+        """订单超时检测循环（每 0.3s）"""
         while self._running and not self.env.is_game_over():
             try:
                 timed_out = self.env.check_and_remove_timed_out_orders()
                 for order_id in timed_out:
                     self.agent.on_order_timeout(order_id)
-                G.DEVICE.snapshot()  # 用于刷新缓存的截图
-                await asyncio.sleep(0.2)
+                # G.DEVICE.snapshot()  # 用于刷新缓存的截图
+                await asyncio.sleep(0.3)
             except Exception as e:
                 logger.error(f"Timeout loop error: {e}")
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(0.3)
 
     # ========================================================================
     # Agent 决策循环
@@ -245,7 +247,9 @@ class RealGameBridge:
     async def _execute_action(self, action) -> None:
         """执行 Agent 动作"""
         if self.env.is_game_over():
-            logger.info(f"[t={self.env.time:.1f}s] Game over, skipping action: {type(action).__name__}")
+            logger.info(
+                f"[t={self.env.time:.1f}s] Game over, skipping action: {type(action).__name__}"
+            )
             self._running = False
             return
 
@@ -277,7 +281,9 @@ class RealGameBridge:
         """烹饪"""
         await self.ui.cook(action.ingredient, action.cooker)
         self.env.start_cooking(action.ingredient, action.cooker, action.duration)
-        logger.info(f"[t={self.env.time:.1f}s] Cooking {action.ingredient} on {action.cooker} ({action.duration}s)")
+        logger.info(
+            f"[t={self.env.time:.1f}s] Cooking {action.ingredient} on {action.cooker} ({action.duration}s)"
+        )
 
     async def _exec_move_to_assembly(self, action) -> None:
         """移到组装站"""
@@ -285,7 +291,7 @@ class RealGameBridge:
         cooker_state = self.env.cookers.get(action.cooker)
         if cooker_state:
             ingredient = cooker_state.ingredient_name
-            order_id = getattr(action, 'order_id', None)
+            order_id = getattr(action, "order_id", None)
             recipe_slug = None
             if order_id:
                 order = self.env.get_order_by_id(order_id)
@@ -293,7 +299,9 @@ class RealGameBridge:
                     recipe_slug = order.recipe_slug
             self.env.add_to_assembly(ingredient, action.cooker, order_id, recipe_slug)
             self.env.clear_cooker(action.cooker)
-            logger.info(f"[t={self.env.time:.1f}s] Moved {ingredient} from {action.cooker} -> assembly")
+            logger.info(
+                f"[t={self.env.time:.1f}s] Moved {ingredient} from {action.cooker} -> assembly"
+            )
 
     async def _exec_move_to_stockpile(self, action) -> None:
         """移到库存"""
@@ -301,13 +309,17 @@ class RealGameBridge:
         cooker = self.env.cookers.get(action.cooker)
         ingredient = cooker.ingredient_name if cooker else "?"
         self.env.move_to_stockpile(action.cooker, action.slot)
-        logger.info(f"[t={self.env.time:.1f}s] Stored {ingredient} from {action.cooker} -> {action.slot}")
+        logger.info(
+            f"[t={self.env.time:.1f}s] Stored {ingredient} from {action.cooker} -> {action.slot}"
+        )
 
     async def _exec_pull_from_stockpile(self, action) -> None:
         """从库存取用"""
         await self.ui.pull_from_stockpile(action.slot)
         self.env.pull_from_stockpile(action.slot)
-        logger.info(f"[t={self.env.time:.1f}s] Pulled {action.ingredient} from {action.slot} -> assembly")
+        logger.info(
+            f"[t={self.env.time:.1f}s] Pulled {action.ingredient} from {action.slot} -> assembly"
+        )
 
     async def _exec_add_condiment(self, action) -> None:
         """添加调料"""
@@ -330,7 +342,9 @@ class RealGameBridge:
             )
             self.env.clear_assembly()
 
-    async def _serve_with_verify(self, slot_idx: int, max_retries: int = 2) -> int | None:
+    async def _serve_with_verify(
+        self, slot_idx: int, max_retries: int = 2
+    ) -> int | None:
         """
         执行送餐并验证是否成功。
 
@@ -361,11 +375,15 @@ class RealGameBridge:
             await asyncio.sleep(0.05)
             await self.ui.serve_order(try_slot)
             if await self._verify_with_multi_snapshot():
-                logger.info(f"[t={self.env.time:.1f}s] Serve succeeded at slot {try_slot}")
+                logger.info(
+                    f"[t={self.env.time:.1f}s] Serve succeeded at slot {try_slot}"
+                )
                 return try_slot
 
         # 全部失败，清空 assembly
-        logger.warning(f"[t={self.env.time:.1f}s] All serve attempts failed. Clearing assembly.")
+        logger.warning(
+            f"[t={self.env.time:.1f}s] All serve attempts failed. Clearing assembly."
+        )
         await self.ui.clear_assembly()
         self.env.clear_assembly()
         return None
@@ -392,7 +410,9 @@ class RealGameBridge:
         discarded = self.env.assembly.ingredients.copy()
         await self.ui.clear_assembly()
         self.env.clear_assembly()
-        logger.info(f"[t={self.env.time:.1f}s] Cleared assembly (discarded: {discarded})")
+        logger.info(
+            f"[t={self.env.time:.1f}s] Cleared assembly (discarded: {discarded})"
+        )
 
     def stop(self) -> None:
         """停止游戏"""

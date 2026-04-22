@@ -132,7 +132,7 @@ class SimulatorEnvironment(BaseEnvironment):
     def assembly(self) -> AssemblyState:
         """Convert assembly data"""
         sim_assembly = self._sim.state.assembly
-        ingredients = [ing[0] for ing in sim_assembly.ingredients]
+        ingredients = [(ing[0], ing[1]) for ing in sim_assembly.ingredients]
         
         return AssemblyState(
             ingredients=ingredients,

@@ -490,17 +490,21 @@ class CookingAgent:
 
     def _try_move_to_assembly(self) -> Optional[MoveToAssemblyAction]:
         """将完成的食材从灶台移到组装站"""
-        needed_ings = self._get_needed_ingredient_names()
+        needed = self._get_needed_ingredients()
 
-        all_needed = set()
+        all_needed_with_cooker: list[tuple[str, str]] = []
         for order in self.env.orders:
             if order and not order.done:
                 recipe = self._recipe_by_slug.get(order.recipe_slug)
                 if recipe:
                     raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
-                    all_needed.update(raw)
+                    cookers = self._get_recipe_attr(recipe, 'cookers', [])
+                    for i, ing in enumerate(raw):
+                        cooker = cookers[i] if i < len(cookers) else None
+                        if cooker:
+                            all_needed_with_cooker.append((ing, cooker))
 
-        effective_needed = needed_ings | all_needed
+        effective_needed: set[tuple[str, str]] = set(needed) | set(all_needed_with_cooker)
         if not effective_needed:
             return None
 
@@ -511,10 +515,12 @@ class CookingAgent:
                 continue
             if cooker.is_expired(self.env.time):
                 continue
-            if cooker.ingredient_name not in effective_needed:
+            if (cooker.ingredient_name, cooker.cooker_type) not in effective_needed:
                 continue
-            if self._can_add_to_assembly(cooker.ingredient_name):
-                order_id = self._get_order_id_for_ingredient(cooker.ingredient_name)
+            if self._can_add_to_assembly(cooker.ingredient_name, cooker.cooker_type):
+                order_id = self._get_order_id_for_ingredient_with_cooker(
+                    cooker.ingredient_name, cooker.cooker_type
+                )
                 return MoveToAssemblyAction(cooker=cooker_name, order_id=order_id)
 
         return None
@@ -624,18 +630,18 @@ class CookingAgent:
         for slot in self.env.stockpile.values():
             if slot.count > 0 and slot.ingredient_name:
                 stockpile_counts[slot.ingredient_name] = stockpile_counts.get(slot.ingredient_name, 0) + slot.count
-        
+
         # 优先烹饪当前订单需要的食材
         for ing_name, cooker_type in needed_current:
             if cooker_type not in free_cookers:
                 continue
-            if self._is_cooking(ing_name):
+            if self._is_cooking(ing_name, cooker_type):
                 continue
             if ing_name in assembly_ings:
                 continue
-            if stockpile_counts.get(ing_name, 0) > 0:
+            if self._has_in_stockpile(ing_name, cooker_type):
                 continue
-            
+
             recipe = self._recipe_by_slug.get(order_id) if (order_id := self._get_order_id_for_ingredient(ing_name)) else None
             _, duration = self._get_cooker_for_ingredient(ing_name, recipe)
             order_id = self._get_order_id_for_ingredient(ing_name)
@@ -650,7 +656,7 @@ class CookingAgent:
         for ing_name, cooker_type in needed_all:
             if cooker_type not in free_cookers:
                 continue
-            if self._is_cooking(ing_name):
+            if self._is_cooking(ing_name, cooker_type):
                 continue
             if ing_name in assembly_ings:
                 continue
@@ -680,29 +686,29 @@ class CookingAgent:
             if cooker_type not in free_cookers:
                 continue
             
-            if self._is_cooking(ing_name):
+            if self._is_cooking(ing_name, cooker_type):
                 continue
-            if self._has_in_stockpile(ing_name):
+            if self._has_in_stockpile(ing_name, cooker_type):
                 continue
 
             _, duration = self._get_cooker_for_ingredient(ing_name, None)
             order_id = self._get_order_id_for_ingredient(ing_name)
             return CookAction(
-                ingredient=ing_name,
-                cooker=cooker_type,
-                duration=duration,
-                order_id=order_id,
-            )
+            ingredient=ing_name,
+            cooker=cooker_type,
+            duration=duration,
+            order_id=order_id,
+        )
 
         # 然后烹饪其他订单需要的食材（如果stockpile中没有）
         for ing_name, cooker_type in needed_all:
             if cooker_type not in free_cookers:
                 continue
-            if self._is_cooking(ing_name):
+            if self._is_cooking(ing_name, cooker_type):
                 continue
             if ing_name in assembly_ings:
                 continue
-            if stockpile_counts.get(ing_name, 0) > 0:
+            if self._has_in_stockpile(ing_name, cooker_type):
                 continue
 
             _, duration = self._ingredient_info.get(ing_name, (None, 3.0))
@@ -990,9 +996,9 @@ class CookingAgent:
         needed = self._get_needed_ingredients()
         result = []
         for ing_name, cooker_type in needed:
-            if self._is_cooking(ing_name):
+            if self._is_cooking(ing_name, cooker_type):
                 continue
-            if self._has_in_stockpile(ing_name):
+            if self._has_in_stockpile(ing_name, cooker_type):
                 continue
             result.append((ing_name, cooker_type))
         return result
@@ -1052,48 +1058,66 @@ class CookingAgent:
                 return True
         return False
 
-    def _can_add_to_assembly(self, ingredient: str) -> bool:
-        """检查食材是否可以添加到组装站"""
+    def _can_add_to_assembly(self, ingredient: str, cooker_type: str | None = None) -> bool:
+        """检查食材是否可以添加到组装站（考虑cooker类型）"""
         assembly = self.env.assembly
-        present = set(assembly.ingredients)
+        present_with_cooker = assembly.ingredients
         target_slug = assembly.target_recipe_slug
 
-        if not present and not target_slug:
+        if not present_with_cooker and not target_slug:
             return True
 
+        present_ings = {ing[0] if isinstance(ing, tuple) else ing for ing in present_with_cooker}
+
         if not target_slug:
-            # assembly有食材但没有target，检查ingredient是否匹配任何活跃订单
             for order in self.env.orders:
                 if order and not order.done:
                     recipe = self._recipe_by_slug.get(order.recipe_slug)
                     if recipe:
                         raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
-                        if ingredient in raw:
-                            return True
+                        cookers = self._get_recipe_attr(recipe, 'cookers', [])
+                        for i, ing in enumerate(raw):
+                            if ing == ingredient:
+                                cooker_needed = cookers[i] if i < len(cookers) else None
+                                if cooker_needed == cooker_type:
+                                    return True
             return False
 
         recipe = self._recipe_by_slug.get(target_slug)
         if not recipe:
             return False
 
-        raw = recipe.raw_ingredients if hasattr(recipe, 'raw_ingredients') else recipe.get('raw_ingredients', [])
+        raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+        cookers = self._get_recipe_attr(recipe, 'cookers', [])
         if ingredient not in raw:
             return False
 
-        return ingredient not in present
+        for i, ing in enumerate(raw):
+            if ing == ingredient:
+                cooker_needed = cookers[i] if i < len(cookers) else None
+                if cooker_needed != cooker_type:
+                    return False
 
-    def _is_cooking(self, ingredient: str) -> bool:
-        """检查食材是否正在烹饪"""
+        present_combinations = {
+            (ing[0], ing[1]) if isinstance(ing, tuple) else (ing, None)
+            for ing in present_with_cooker
+        }
+        return (ingredient, cooker_type) not in present_combinations
+
+    def _is_cooking(self, ingredient: str, cooker_type: str | None = None) -> bool:
+        """检查食材是否正在烹饪（可选检查特定 cooker）"""
         for cooker in self.env.cookers.values():
             if cooker.busy and cooker.ingredient_name == ingredient:
-                return True
+                if cooker_type is None or cooker.cooker_type == cooker_type:
+                    return True
         return False
 
-    def _has_in_stockpile(self, ingredient: str) -> bool:
-        """检查库存是否有该食材"""
+    def _has_in_stockpile(self, ingredient: str, cooker_type: str | None = None) -> bool:
+        """检查库存是否有该食材（可选检查特定 cooker）"""
         for slot in self.env.stockpile.values():
             if slot.ingredient_name == ingredient and slot.count > 0:
-                return True
+                if cooker_type is None or slot.cooker_type == cooker_type:
+                    return True
         return False
 
     def _get_free_cookers(self) -> list[str]:
@@ -1126,12 +1150,43 @@ class CookingAgent:
                     return order.order_id
         return None
 
+    def _get_order_id_for_ingredient_with_cooker(
+        self, ingredient: str, cooker_type: str
+    ) -> Optional[int]:
+        """获取需要该食材+cooker组合的订单ID（优先级排序）"""
+        for _, order in self._prioritized_orders():
+            recipe = self._recipe_by_slug.get(order.recipe_slug)
+            if recipe:
+                raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+                cookers = self._get_recipe_attr(recipe, 'cookers', [])
+                for i, ing in enumerate(raw):
+                    if ing == ingredient:
+                        cooker_needed = cookers[i] if i < len(cookers) else None
+                        if cooker_needed == cooker_type:
+                            return order.order_id
+        return None
+
     def _ingredients_match(self, actual: list, recipe) -> bool:
-        """检查食材是否匹配配方（忽略顺序）"""
-        expected = recipe.raw_ingredients if hasattr(recipe, 'raw_ingredients') else recipe.get('raw_ingredients', [])
-        # Handle tuple format (name, cooker, time) from simulator
-        actual_names = [ing[0] if isinstance(ing, tuple) else ing for ing in actual]
-        return sorted(actual_names) == sorted(expected)
+        """检查食材是否匹配配方（考虑cooker类型）"""
+        expected_raw = recipe.raw_ingredients if hasattr(recipe, 'raw_ingredients') else recipe.get('raw_ingredients', [])
+        expected_cookers = recipe.cookers if hasattr(recipe, 'cookers') else recipe.get('cookers', [])
+
+        if len(actual) != len(expected_raw):
+            return False
+
+        expected_pairs = set()
+        for i, ing in enumerate(expected_raw):
+            cooker = expected_cookers[i] if i < len(expected_cookers) else None
+            expected_pairs.add((ing, cooker))
+
+        actual_pairs = set()
+        for ing in actual:
+            if isinstance(ing, tuple):
+                actual_pairs.add((ing[0], ing[1] if len(ing) > 1 else None))
+            else:
+                actual_pairs.add((ing, None))
+
+        return actual_pairs == expected_pairs
 
     def _condiments_complete(self, applied: dict[str, int], needed: dict[str, int]) -> bool:
         """检查调料是否齐全"""
@@ -1140,23 +1195,33 @@ class CookingAgent:
                 return False
         return True
 
-    def _infer_recipe_from_assembly(self) -> Optional[str]:
-        """根据组装站食材推断匹配的配方"""
+def _infer_recipe_from_assembly(self) -> Optional[str]:
+        """根据组装站食材推断匹配的配方（考虑cooker类型）"""
         assembly = self.env.assembly
         if not assembly.ingredients:
             return None
-        
-        assembly_names = [ing[0] if isinstance(ing, tuple) else ing for ing in assembly.ingredients]
-        
+
+        assembly_pairs = set()
+        for ing in assembly.ingredients:
+            if isinstance(ing, tuple):
+                assembly_pairs.add((ing[0], ing[1] if len(ing) > 1 else None))
+            else:
+                assembly_pairs.add((ing, None))
+
         for _, order in self._prioritized_orders():
             recipe = self._recipe_by_slug.get(order.recipe_slug)
             if recipe:
                 raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
-                if all(ing in raw for ing in assembly_names):
+                cookers = self._get_recipe_attr(recipe, 'cookers', [])
+                recipe_pairs = set()
+                for i, ing in enumerate(raw):
+                    cooker = cookers[i] if i < len(cookers) else None
+                    recipe_pairs.add((ing, cooker))
+                if assembly_pairs == recipe_pairs:
                     return order.recipe_slug
         return None
 
-    def get_stats(self) -> dict:
+def get_stats(self) -> dict:
         """获取统计信息"""
         return {
             "time": self.env.time,

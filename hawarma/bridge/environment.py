@@ -62,7 +62,9 @@ class GameEnvironment(BaseEnvironment):
         # 配方数据（用于校验组装站操作）
         self._recipes = recipes or {}
 
-        logger.info(f"GameEnvironment initialized: {len(cooker_names)} cookers, {stockpile_slots} stockpile slots")
+        logger.info(
+            f"GameEnvironment initialized: {len(cooker_names)} cookers, {stockpile_slots} stockpile slots"
+        )
 
     # ========================================================================
     # BaseEnvironment 接口实现
@@ -132,7 +134,9 @@ class GameEnvironment(BaseEnvironment):
 
         # 食材已过期，拒绝移动
         if cooker_state.is_expired(self.time):
-            logger.warning(f"[t={self.time:.1f}s] Ingredient {ingredient} on {cooker} expired, cannot move to assembly")
+            logger.warning(
+                f"[t={self.time:.1f}s] Ingredient {ingredient} on {cooker} expired, cannot move to assembly"
+            )
             return False
 
         self._assembly.ingredients.append(ingredient)
@@ -150,14 +154,18 @@ class GameEnvironment(BaseEnvironment):
 
         # 食材已过期，拒绝存入
         if cooker_state.is_expired(self.time):
-            logger.warning(f"[t={self.time:.1f}s] Ingredient {cooker_state.ingredient_name} on {cooker} expired, cannot move to stockpile")
+            logger.warning(
+                f"[t={self.time:.1f}s] Ingredient {cooker_state.ingredient_name} on {cooker} expired, cannot move to stockpile"
+            )
             return False
 
         if slot not in self._stockpile:
             return False
 
         stockpile_slot = self._stockpile[slot]
-        if not stockpile_slot.add(cooker_state.ingredient_name, cooker_state.cooker_type):
+        if not stockpile_slot.add(
+            cooker_state.ingredient_name, cooker_state.cooker_type
+        ):
             return False
 
         self._cookers[cooker].reset()
@@ -189,7 +197,7 @@ class GameEnvironment(BaseEnvironment):
         if self._assembly.target_recipe_slug:
             recipe = self._recipes.get(self._assembly.target_recipe_slug)
             if recipe is not None:
-                recipe_condiments = getattr(recipe, 'condiments', [])
+                recipe_condiments = getattr(recipe, "condiments", [])
                 # Recipe model uses list[str]; simulator adapter uses dict[str, int]
                 if isinstance(recipe_condiments, dict):
                     max_count = recipe_condiments.get(condiment, 0)
@@ -199,11 +207,15 @@ class GameEnvironment(BaseEnvironment):
                     valid = condiment in recipe_condiments
 
                 if not valid:
-                    logger.warning(f"[t={self.time:.1f}s] Condiment {condiment} not in recipe {self._assembly.target_recipe_slug}")
+                    logger.warning(
+                        f"[t={self.time:.1f}s] Condiment {condiment} not in recipe {self._assembly.target_recipe_slug}"
+                    )
                     return False
                 current = self._assembly.condiments.get(condiment, 0)
                 if current >= max_count:
-                    logger.warning(f"[t={self.time:.1f}s] Condiment {condiment} already at max ({max_count}) for recipe {self._assembly.target_recipe_slug}")
+                    logger.warning(
+                        f"[t={self.time:.1f}s] Condiment {condiment} already at max ({max_count}) for recipe {self._assembly.target_recipe_slug}"
+                    )
                     return False
 
         current = self._assembly.condiments.get(condiment, 0)
@@ -228,7 +240,9 @@ class GameEnvironment(BaseEnvironment):
         # 左移槽位
         self._shift_orders_left()
 
-        logger.info(f"[t={self.time:.1f}s] Served order {order.order_id} ({order.recipe_slug}) slot {slot_idx} {'RUSH' if order.is_rush else 'normal'}")
+        logger.info(
+            f"[t={self.time:.1f}s] Served order {order.order_id} ({order.recipe_slug}) slot {slot_idx} {'RUSH' if order.is_rush else 'normal'}"
+        )
         return True
 
     def clear_cooker(self, cooker: str) -> bool:
@@ -280,33 +294,43 @@ class GameEnvironment(BaseEnvironment):
                 if order:
                     self._assembly.target_recipe_slug = order.recipe_slug
                 else:
-                    self._assembly.target_recipe_slug = self._infer_recipe_slug_from_ingredient(ingredient)
+                    self._assembly.target_recipe_slug = (
+                        self._infer_recipe_slug_from_ingredient(ingredient)
+                    )
             else:
-                self._assembly.target_recipe_slug = self._infer_recipe_slug_from_ingredient(ingredient)
+                self._assembly.target_recipe_slug = (
+                    self._infer_recipe_slug_from_ingredient(ingredient)
+                )
 
         # 如果组装站有食材但没有目标配方，尝试推断
         if not self._assembly.target_recipe_slug and self._assembly.ingredients:
-            all_ingredients = self._assembly.ingredients + [ingredient]
-            inferred = self._infer_recipe_slug_from_ingredients(all_ingredients)
+            all_ings = [t[0] for t in self._assembly.ingredients] + [ingredient]
+            inferred = self._infer_recipe_slug_from_ingredients(all_ings)
             if inferred:
                 self._assembly.target_recipe_slug = inferred
 
         # 校验食材是否属于目标配方
+        raw_ings = []
         if self._assembly.target_recipe_slug:
             recipe = self._recipes.get(self._assembly.target_recipe_slug)
             if recipe is not None:
-                raw_ings = getattr(recipe, 'raw_ingredients', [])
+                raw_ings = getattr(recipe, "raw_ingredients", [])
                 if ingredient not in raw_ings:
-                    logger.warning(f"[t={self.time:.1f}s] Ingredient {ingredient} not in recipe {self._assembly.target_recipe_slug}")
-                    return False
-                # 检查是否重复添加
-                already_added = self._assembly.ingredients.count(ingredient)
-                needed = raw_ings.count(ingredient)
-                if already_added >= needed:
-                    logger.warning(f"[t={self.time:.1f}s] Ingredient {ingredient} already at max ({needed}) for recipe {self._assembly.target_recipe_slug}")
+                    logger.warning(
+                        f"[t={self.time:.1f}s] Ingredient {ingredient} not in recipe {self._assembly.target_recipe_slug}"
+                    )
                     return False
 
-        self._assembly.ingredients.append(ingredient)
+        # 检查是否重复添加（按 ingredient 名称统计，不区分 cooker）
+        already_added = sum(1 for t in self._assembly.ingredients if t[0] == ingredient)
+        needed = raw_ings.count(ingredient) if raw_ings else 1
+        if already_added >= needed:
+            logger.warning(
+                f"[t={self.time:.1f}s] Ingredient {ingredient} already at max ({needed}) for recipe {self._assembly.target_recipe_slug}"
+            )
+            return False
+
+        self._assembly.ingredients.append((ingredient, cooker))
         return True
 
     def get_condiment_count(self, condiment: str) -> int:
@@ -328,7 +352,9 @@ class GameEnvironment(BaseEnvironment):
             else:
                 rush_mark = "R" if order.is_rush else ""
                 slots.append(f"slot{i}={order.recipe_slug}({rush_mark})")
-        logger.info(f"[t={self.time:.1f}s] Orders state [{reason}]: [{', '.join(slots)}]")
+        logger.info(
+            f"[t={self.time:.1f}s] Orders state [{reason}]: [{', '.join(slots)}]"
+        )
 
     # ========================================================================
     # 订单操作
@@ -342,10 +368,10 @@ class GameEnvironment(BaseEnvironment):
             if order is None:
                 target_slot = i
                 break
-        
+
         if target_slot is None:
             return None
-        
+
         order_id = self._next_order_id
         self._next_order_id += 1
 
@@ -360,7 +386,9 @@ class GameEnvironment(BaseEnvironment):
             timeout_at=now + timeout,
         )
 
-        logger.info(f"[t={self.time:.1f}s] New order {order_id}: {recipe_slug} ({'RUSH' if is_rush else 'normal'}) slot {target_slot}")
+        logger.info(
+            f"[t={self.time:.1f}s] New order {order_id}: {recipe_slug} ({'RUSH' if is_rush else 'normal'}) slot {target_slot}"
+        )
         self._log_orders_state("add")
         return order_id
 
@@ -371,7 +399,9 @@ class GameEnvironment(BaseEnvironment):
         for i, order in enumerate(self._orders):
             if order is not None and not order.done and now >= order.timeout_at:
                 timed_out.append(order.order_id)
-                logger.warning(f"[t={self.time:.1f}s] Order {order.order_id} ({order.recipe_slug}) timed out in slot {i}")
+                logger.warning(
+                    f"[t={self.time:.1f}s] Order {order.order_id} ({order.recipe_slug}) timed out in slot {i}"
+                )
                 self._orders[i] = None
 
         if timed_out:
@@ -406,7 +436,8 @@ class GameEnvironment(BaseEnvironment):
     def get_done_cookers(self) -> list[str]:
         """获取烹饪完成的灶台列表"""
         return [
-            name for name, cooker in self._cookers.items()
+            name
+            for name, cooker in self._cookers.items()
             if cooker.busy and cooker.done_at and self.time >= cooker.done_at
         ]
 
@@ -437,18 +468,20 @@ class GameEnvironment(BaseEnvironment):
             if order and not order.done:
                 recipe = self._recipes.get(order.recipe_slug)
                 if recipe:
-                    raw_ings = getattr(recipe, 'raw_ingredients', [])
+                    raw_ings = getattr(recipe, "raw_ingredients", [])
                     if ingredient in raw_ings:
                         return order.recipe_slug
         return None
 
-    def _infer_recipe_slug_from_ingredients(self, ingredients: list[str]) -> Optional[str]:
+    def _infer_recipe_slug_from_ingredients(
+        self, ingredients: list[str]
+    ) -> Optional[str]:
         """根据多个食材和活跃订单推断目标配方"""
         for order in self._orders:
             if order and not order.done:
                 recipe = self._recipes.get(order.recipe_slug)
                 if recipe:
-                    raw_ings = set(getattr(recipe, 'raw_ingredients', []))
+                    raw_ings = set(getattr(recipe, "raw_ingredients", []))
                     if all(ing in raw_ings for ing in ingredients):
                         return order.recipe_slug
         return None

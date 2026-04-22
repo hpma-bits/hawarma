@@ -53,7 +53,7 @@ class CookerState:
 @dataclass
 class AssemblyState:
     """组装站状态"""
-    ingredients: list[str] = field(default_factory=list)
+    ingredients: list[tuple[str, str]] = field(default_factory=list)
     target_recipe_slug: Optional[str] = None
     owner_order_id: Optional[int] = None
     condiments: dict[str, int] = field(default_factory=dict)
