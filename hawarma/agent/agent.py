@@ -30,6 +30,13 @@ from dataclasses import dataclass
 
 from loguru import logger
 
+
+def _action_name(action: Action | None) -> str:
+    """Get the action class name for logging"""
+    if action is None:
+        return "None"
+    return type(action).__name__
+
 # ============================================================================
 # 动作类型定义
 # ============================================================================
@@ -285,10 +292,12 @@ class CookingAgent:
         """
         # 0. 检查assembly是否属于已超时订单，如果是则清空
         if action := self._check_and_clear_expired_assembly():
+            logger.debug(f"[t={self.env.time:.1f}s] step: returning {_action_name(action)} (expired assembly)")
             return action
 
         # 0.5. 检查组装站是否长时间停滞
         if action := self._check_stale_assembly():
+            logger.debug(f"[t={self.env.time:.1f}s] step: returning {_action_name(action)} (stale assembly)")
             return action
 
         assembly = self.env.assembly
@@ -300,32 +309,40 @@ class CookingAgent:
 
         # 1. 送餐（内部有动画窗口检查）
         if action := self._try_serve():
+            logger.debug(f"[t={self.env.time:.1f}s] step: returning ServeOrderAction")
             return action
 
         # 2. 清理过期食材（优先于移动，防止移动过期食材）
         if action := self._try_clear_expired():
+            logger.debug(f"[t={self.env.time:.1f}s] step: returning ClearCookerAction")
             return action
 
         # 3. 移动完成食材到组装站（当前订单需要的）- 内部有过期检查
         if action := self._try_move_to_assembly():
+            logger.debug(f"[t={self.env.time:.1f}s] step: returning MoveToAssemblyAction")
             return action
 
         # 4. 开始烹饪（动画窗口期间允许，尽早启动灶台）
         if action := self._try_parallel_cooking():
+            logger.debug(f"[t={self.env.time:.1f}s] step: returning CookAction")
             return action
 
         # 5. 添加调料
         if action := self._try_add_condiment():
+            logger.debug(f"[t={self.env.time:.1f}s] step: returning AddCondimentAction")
             return action
 
         # 6. 存入stockpile（非当前订单需要的食材）
         if action := self._try_store_to_stockpile():
+            logger.debug(f"[t={self.env.time:.1f}s] step: returning MoveToStockpileAction")
             return action
 
         # 7. 从库存取用
         if action := self._try_pull_from_stockpile():
+            logger.debug(f"[t={self.env.time:.1f}s] step: returning PullFromStockpileAction")
             return action
 
+        logger.debug(f"[t={self.env.time:.1f}s] step: returning None (no action)")
         return None
 
     def step_with_diagnostics(self) -> Action | None:
@@ -455,13 +472,20 @@ class CookingAgent:
     def _try_serve(self) -> ServeOrderAction | None:
         """送餐：组装站菜品匹配某个订单时立即送"""
         if self.env.is_in_animation_window():
+            logger.debug(f"[t={self.env.time:.1f}s] _try_serve: animation window, returning None")
             return None
 
         assembly = self.env.assembly
         if not assembly.ingredients_cookers:
+            logger.debug(f"[t={self.env.time:.1f}s] _try_serve: empty assembly, returning None")
             return None
 
         target_slug = assembly.target_recipe_slug
+
+        logger.debug(
+            f"[t={self.env.time:.1f}s] _try_serve: assembly={assembly.ingredients_cookers}, "
+            f"target={target_slug}, condiments={assembly.condiments}"
+        )
 
         # 按优先级遍历订单：rush 优先，timeout 近的优先
         for slot_idx, order in self._prioritized_orders():
@@ -470,6 +494,7 @@ class CookingAgent:
 
             # 如果组装站有目标配方，必须匹配
             if target_slug and target_slug != order.recipe_slug:
+                logger.debug(f"[t={self.env.time:.1f}s] _try_serve: order {order.recipe_slug} doesn't match target {target_slug}")
                 continue
 
             recipe = self._recipe_by_slug.get(order.recipe_slug)
@@ -477,8 +502,14 @@ class CookingAgent:
                 # 检查调料是否齐全
                 condiments_needed = self._recipe_condiments.get(order.recipe_slug, {})
                 if self._condiments_complete(assembly.condiments, condiments_needed):
+                    logger.debug(f"[t={self.env.time:.1f}s] _try_serve: returning ServeOrderAction for slot {slot_idx}")
                     return ServeOrderAction(slot_idx=slot_idx)
+                else:
+                    logger.debug(f"[t={self.env.time:.1f}s] _try_serve: condiments incomplete, need {condiments_needed}, have {assembly.condiments}")
+            else:
+                logger.debug(f"[t={self.env.time:.1f}s] _try_serve: ingredients don't match recipe {order.recipe_slug}")
 
+        logger.debug(f"[t={self.env.time:.1f}s] _try_serve: no matching order, returning None")
         return None
 
     # ========================================================================
@@ -538,24 +569,48 @@ class CookingAgent:
         effective_needed: set[tuple[str, str]] = set(needed) | set(
             all_needed_with_cooker
         )
+
+        logger.debug(
+            f"[t={self.env.time:.1f}s] _try_move_to_assembly: "
+            f"needed={needed}, all_needed={all_needed_with_cooker}, "
+            f"effective_needed={effective_needed}"
+        )
+
         if not effective_needed:
+            logger.debug(f"[t={self.env.time:.1f}s] _try_move_to_assembly: no effective_needed, returning None")
             return None
 
         for cooker_name, cooker in self.env.cookers.items():
+            logger.debug(
+                f"[t={self.env.time:.1f}s] _try_move_to_assembly: checking {cooker_name}: "
+                f"busy={cooker.busy}, done_at={cooker.done_at}, "
+                f"ingredient={cooker.ingredient_name}, cooker_type={cooker.cooker_type}"
+            )
             if not cooker.busy or cooker.done_at is None:
+                logger.debug(f"[t={self.env.time:.1f}s] _try_move_to_assembly: {cooker_name} skipped - not busy or no done_at")
                 continue
             if self.env.time < cooker.done_at:
+                logger.debug(f"[t={self.env.time:.1f}s] _try_move_to_assembly: {cooker_name} skipped - still cooking (time={self.env.time:.1f} < done_at={cooker.done_at:.1f})")
                 continue
             if cooker.is_expired(self.env.time):
+                logger.debug(f"[t={self.env.time:.1f}s] _try_move_to_assembly: {cooker_name} skipped - expired")
                 continue
-            if (cooker.ingredient_name, cooker.cooker_type) not in effective_needed:
+            ing_key = (cooker.ingredient_name, cooker.cooker_type)
+            if ing_key not in effective_needed:
+                logger.debug(f"[t={self.env.time:.1f}s] _try_move_to_assembly: {cooker_name} skipped - {ing_key} not in effective_needed")
                 continue
-            if self._can_add_to_assembly(cooker.ingredient_name, cooker.cooker_type):
-                order_id = self._get_order_id_for_ingredient_with_cooker(
-                    cooker.ingredient_name, cooker.cooker_type
-                )
-                return MoveToAssemblyAction(cooker=cooker_name, order_id=order_id)
+            if not self._can_add_to_assembly(cooker.ingredient_name, cooker.cooker_type):
+                logger.debug(f"[t={self.env.time:.1f}s] _try_move_to_assembly: {cooker_name} skipped - _can_add_to_assembly returned False")
+                continue
+            order_id = self._get_order_id_for_ingredient_with_cooker(
+                cooker.ingredient_name, cooker.cooker_type
+            )
+            logger.info(
+                f"[t={self.env.time:.1f}s] _try_move_to_assembly: returning MoveToAssemblyAction(cooker={cooker_name}, order_id={order_id})"
+            )
+            return MoveToAssemblyAction(cooker=cooker_name, order_id=order_id)
 
+        logger.debug(f"[t={self.env.time:.1f}s] _try_move_to_assembly: no cooker matched, returning None")
         return None
 
     # ========================================================================
@@ -997,6 +1052,10 @@ class CookingAgent:
         target_slug = assembly.target_recipe_slug
         present = set(assembly.ingredients_cookers)
 
+        logger.debug(
+            f"[t={self.env.time:.1f}s] _get_needed_ingredients: target_slug={target_slug}, present={present}"
+        )
+
         if target_slug:
             recipe = self._recipe_by_slug.get(target_slug)
             if recipe:
@@ -1008,6 +1067,7 @@ class CookingAgent:
                     for ing in recipe.ingredients:
                         if ing.name not in present:
                             result.append((ing.name, ing.cooker_type))
+                    logger.debug(f"[t={self.env.time:.1f}s] _get_needed_ingredients: returning {result} (Recipe object, has target)")
                     return result
                 # Handle dict format
                 raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
@@ -1018,7 +1078,9 @@ class CookingAgent:
                         cooker = cookers[i] if i < len(cookers) else None
                         if cooker:
                             result.append((ing, cooker))
+                logger.debug(f"[t={self.env.time:.1f}s] _get_needed_ingredients: returning {result} (dict, has target)")
                 return result
+            logger.debug(f"[t={self.env.time:.1f}s] _get_needed_ingredients: target_slug set but recipe not found")
 
         # 组装站为空，按优先级取第一个订单
         for _, order in self._prioritized_orders():
@@ -1031,6 +1093,10 @@ class CookingAgent:
                     result = []
                     for ing in recipe.ingredients:
                         result.append((ing.name, ing.cooker_type))
+                    logger.debug(
+                        f"[t={self.env.time:.1f}s] _get_needed_ingredients: returning {result} "
+                        f"(from prioritized order {order.recipe_slug})"
+                    )
                     return result
                 # Handle dict format
                 raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
@@ -1040,8 +1106,13 @@ class CookingAgent:
                     cooker = cookers[i] if i < len(cookers) else None
                     if cooker:
                         result.append((ing, cooker))
+                logger.debug(
+                    f"[t={self.env.time:.1f}s] _get_needed_ingredients: returning {result} "
+                    f"(from prioritized order {order.recipe_slug})"
+                )
                 return result
 
+        logger.debug(f"[t={self.env.time:.1f}s] _get_needed_ingredients: no orders found, returning []")
         return []
 
     def _get_needed_ingredient_names(self) -> set[str]:
@@ -1123,10 +1194,17 @@ class CookingAgent:
         present_with_cooker = assembly.ingredients_cookers
         target_slug = assembly.target_recipe_slug
 
+        logger.debug(
+            f"[t={self.env.time:.1f}s] _can_add_to_assembly: ingredient={ingredient}, "
+            f"cooker_type={cooker_type}, present={present_with_cooker}, target_slug={target_slug}"
+        )
+
         if not present_with_cooker and not target_slug:
+            logger.debug(f"[t={self.env.time:.1f}s] _can_add_to_assembly: empty assembly and no target, returning True")
             return True
 
         if not target_slug:
+            logger.debug(f"[t={self.env.time:.1f}s] _can_add_to_assembly: no target_slug, checking orders")
             for order in self.env.orders:
                 if order and not order.done:
                     recipe = self._recipe_by_slug.get(order.recipe_slug)
@@ -1137,11 +1215,14 @@ class CookingAgent:
                             if ing == ingredient:
                                 cooker_needed = cookers[i]
                                 if cooker_needed == cooker_type:
+                                    logger.debug(f"[t={self.env.time:.1f}s] _can_add_to_assembly: found in order {order.recipe_slug}, returning True")
                                     return True
+            logger.debug(f"[t={self.env.time:.1f}s] _can_add_to_assembly: not found in any order, returning False")
             return False
 
         recipe = self._recipe_by_slug.get(target_slug)
         if not recipe:
+            logger.debug(f"[t={self.env.time:.1f}s] _can_add_to_assembly: recipe not found, returning False")
             return False
 
         raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
@@ -1151,13 +1232,22 @@ class CookingAgent:
             if ing == ingredient:
                 cooker_needed = cookers[i] if i < len(cookers) else None
                 if cooker_needed != cooker_type:
+                    logger.debug(
+                        f"[t={self.env.time:.1f}s] _can_add_to_assembly: cooker mismatch "
+                        f"(needed={cooker_needed}, got={cooker_type}), returning False"
+                    )
                     return False
 
         present_combinations = {
             (ing[0], ing[1]) if isinstance(ing, tuple) else (ing, None)
             for ing in present_with_cooker
         }
-        return (ingredient, cooker_type) not in present_combinations
+        result = (ingredient, cooker_type) not in present_combinations
+        logger.debug(
+            f"[t={self.env.time:.1f}s] _can_add_to_assembly: present_combinations={present_combinations}, "
+            f"checking ({ingredient}, {cooker_type}) not in present = {result}"
+        )
+        return result
 
     def _is_cooking(self, ingredient: str, cooker_type: str | None = None) -> bool:
         """检查食材是否正在烹饪（可选检查特定 cooker）"""

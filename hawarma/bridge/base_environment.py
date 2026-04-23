@@ -36,7 +36,6 @@ class CookerState:
         """重置灶台状态"""
         self.busy = False
         self.ingredient_name = None
-        self.cooker_type = None
         self.started_at = None
         self.done_at = None
         self.expired_at = None
