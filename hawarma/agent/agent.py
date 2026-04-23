@@ -1228,6 +1228,7 @@ class CookingAgent:
         raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
         cookers = self._get_recipe_attr(recipe, "cookers", [])
 
+        found = False
         for i, ing in enumerate(raw):
             if ing == ingredient:
                 cooker_needed = cookers[i] if i < len(cookers) else None
@@ -1237,6 +1238,9 @@ class CookingAgent:
                         f"(needed={cooker_needed}, got={cooker_type}), returning False"
                     )
                     return False
+                found = True
+        if not found:
+            return False
 
         present_combinations = {
             (ing[0], ing[1]) if isinstance(ing, tuple) else (ing, None)
