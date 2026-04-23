@@ -364,7 +364,7 @@ class RealGameBridge:
 
         logger.warning(
             f"[t={self.env.time:.1f}s] Serve verification failed. "
-            f"Assembly still has: {self.env.assembly.ingredients}"
+            f"Assembly still has: {self.env.assembly.ingredients_cookers}"
         )
 
         # 快速重试所有 slot（0,1,2,3），跳过已尝试的
@@ -407,7 +407,7 @@ class RealGameBridge:
 
     async def _exec_clear_assembly(self, action) -> None:
         """清空组装站"""
-        discarded = self.env.assembly.ingredients.copy()
+        discarded = self.env.assembly.ingredients_cookers.copy()
         await self.ui.clear_assembly()
         self.env.clear_assembly()
         logger.info(

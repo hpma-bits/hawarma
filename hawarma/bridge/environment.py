@@ -13,16 +13,15 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 from loguru import logger
 
 from .base_environment import (
+    AssemblyState,
     BaseEnvironment,
     CookerState,
-    AssemblyState,
-    StockpileSlot,
     OrderInfo,
+    StockpileSlot,
 )
 
 
@@ -38,7 +37,7 @@ class GameEnvironment(BaseEnvironment):
         cooker_names: list[str],
         stockpile_slots: int = 3,
         game_duration: float = 90.0,
-        recipes: Optional[dict[str, object]] = None,
+        recipes: dict[str, object] | None = None,
         cooker_retention: float = 5.0,
     ):
         self._cooker_retention = cooker_retention
@@ -52,9 +51,9 @@ class GameEnvironment(BaseEnvironment):
             f"slot{i}": StockpileSlot() for i in range(stockpile_slots)
         }
 
-        self._orders: list[Optional[OrderInfo]] = [None] * 4
+        self._orders: list[OrderInfo | None] = [None] * 4
 
-        self._game_start_time: Optional[float] = None
+        self._game_start_time: float | None = None
         self._game_duration = game_duration
         self._animation_until: float = 0.0
         self._next_order_id = 1
@@ -78,7 +77,7 @@ class GameEnvironment(BaseEnvironment):
         return time.time() - self._game_start_time
 
     @property
-    def orders(self) -> list[Optional[OrderInfo]]:
+    def orders(self) -> list[OrderInfo | None]:
         """当前订单列表"""
         return self._orders
 
@@ -129,8 +128,7 @@ class GameEnvironment(BaseEnvironment):
             return False
 
         ingredient = cooker_state.ingredient_name
-        if ingredient is None:
-            return False
+        cooker_type = cooker_state.cooker_type
 
         # 食材已过期，拒绝移动
         if cooker_state.is_expired(self.time):
@@ -139,7 +137,7 @@ class GameEnvironment(BaseEnvironment):
             )
             return False
 
-        self._assembly.ingredients.append(ingredient)
+        self._assembly.ingredients_cookers.append((ingredient, cooker_type))
         cooker_state.reset()
         return True
 
@@ -181,6 +179,7 @@ class GameEnvironment(BaseEnvironment):
             return False
 
         ingredient = stockpile_slot.ingredient_name
+        cooker_type = stockpile_slot.cooker_type
 
         # 如果组装站为空，根据食材推断目标配方
         if self._assembly.is_free:
@@ -188,7 +187,7 @@ class GameEnvironment(BaseEnvironment):
             if inferred_slug:
                 self._assembly.target_recipe_slug = inferred_slug
 
-        self._assembly.ingredients.append(ingredient)
+        self._assembly.ingredients_cookers.append((ingredient, cooker_type))
         stockpile_slot.remove()
         return True
 
@@ -254,7 +253,7 @@ class GameEnvironment(BaseEnvironment):
 
     def clear_assembly(self) -> bool:
         """清空组装站"""
-        if not self._assembly.ingredients:
+        if not self._assembly.ingredients_cookers:
             return False
         self._assembly.reset()
         return True
@@ -281,8 +280,8 @@ class GameEnvironment(BaseEnvironment):
         self,
         ingredient: str,
         cooker: str,
-        order_id: Optional[int] = None,
-        recipe_slug: Optional[str] = None,
+        order_id: int | None = None,
+        recipe_slug: str | None = None,
     ) -> bool:
         """添加食材到组装站（带配方关联，校验食材合法性）"""
         if self._assembly.is_free:
@@ -303,8 +302,8 @@ class GameEnvironment(BaseEnvironment):
                 )
 
         # 如果组装站有食材但没有目标配方，尝试推断
-        if not self._assembly.target_recipe_slug and self._assembly.ingredients:
-            all_ings = [t[0] for t in self._assembly.ingredients] + [ingredient]
+        if not self._assembly.target_recipe_slug and self._assembly.ingredients_cookers:
+            all_ings = [t[0] for t in self._assembly.ingredients_cookers] + [ingredient]
             inferred = self._infer_recipe_slug_from_ingredients(all_ings)
             if inferred:
                 self._assembly.target_recipe_slug = inferred
@@ -321,8 +320,10 @@ class GameEnvironment(BaseEnvironment):
                     )
                     return False
 
-        # 检查是否重复添加（按 ingredient 名称统计，不区分 cooker）
-        already_added = sum(1 for t in self._assembly.ingredients if t[0] == ingredient)
+        # 检查是否重复添加（按 ingredient-cooker 组合统计）
+        already_added = sum(
+            1 for t in self._assembly.ingredients_cookers if t[0] == ingredient
+        )
         needed = raw_ings.count(ingredient) if raw_ings else 1
         if already_added >= needed:
             logger.warning(
@@ -330,7 +331,7 @@ class GameEnvironment(BaseEnvironment):
             )
             return False
 
-        self._assembly.ingredients.append((ingredient, cooker))
+        self._assembly.ingredients_cookers.append((ingredient, cooker))
         return True
 
     def get_condiment_count(self, condiment: str) -> int:
@@ -411,14 +412,14 @@ class GameEnvironment(BaseEnvironment):
 
         return timed_out
 
-    def get_order_by_id(self, order_id: int) -> Optional[OrderInfo]:
+    def get_order_by_id(self, order_id: int) -> OrderInfo | None:
         """根据ID获取订单"""
         for order in self._orders:
             if order and order.order_id == order_id:
                 return order
         return None
 
-    def get_order_slot(self, order_id: int) -> Optional[int]:
+    def get_order_slot(self, order_id: int) -> int | None:
         """获取订单所在的槽位索引"""
         for i, order in enumerate(self._orders):
             if order and order.order_id == order_id:
@@ -448,21 +449,21 @@ class GameEnvironment(BaseEnvironment):
                 return slot.count
         return 0
 
-    def find_stockpile_slot(self, ingredient: str) -> Optional[str]:
+    def find_stockpile_slot(self, ingredient: str) -> str | None:
         """找到存储指定食材的库存槽位"""
         for slot_name, slot in self._stockpile.items():
             if slot.ingredient_name == ingredient and slot.count > 0:
                 return slot_name
         return None
 
-    def find_empty_stockpile_slot(self) -> Optional[str]:
+    def find_empty_stockpile_slot(self) -> str | None:
         """找到空的库存槽位"""
         for slot_name, slot in self._stockpile.items():
             if slot.ingredient_name is None or slot.count == 0:
                 return slot_name
         return None
 
-    def _infer_recipe_slug_from_ingredient(self, ingredient: str) -> Optional[str]:
+    def _infer_recipe_slug_from_ingredient(self, ingredient: str) -> str | None:
         """根据单个食材和活跃订单推断目标配方"""
         for order in self._orders:
             if order and not order.done:
@@ -473,9 +474,7 @@ class GameEnvironment(BaseEnvironment):
                         return order.recipe_slug
         return None
 
-    def _infer_recipe_slug_from_ingredients(
-        self, ingredients: list[str]
-    ) -> Optional[str]:
+    def _infer_recipe_slug_from_ingredients(self, ingredients: list[str]) -> str | None:
         """根据多个食材和活跃订单推断目标配方"""
         for order in self._orders:
             if order and not order.done:
