@@ -137,6 +137,12 @@ class GameEnvironment(BaseEnvironment):
             )
             return False
 
+        # 如果组装站为空，根据(ingredient, cooker)推断目标配方
+        if self._assembly.is_free:
+            inferred_slug = self.get_recipe_for_ingredient_cooker(ingredient, cooker_type)
+            if inferred_slug:
+                self._assembly.target_recipe_slug = inferred_slug
+
         self._assembly.ingredients_cookers.append((ingredient, cooker_type))
         cooker_state.reset()
         return True
@@ -181,9 +187,9 @@ class GameEnvironment(BaseEnvironment):
         ingredient = stockpile_slot.ingredient_name
         cooker_type = stockpile_slot.cooker_type
 
-        # 如果组装站为空，根据食材推断目标配方
+        # 如果组装站为空，根据(ingredient, cooker)推断目标配方
         if self._assembly.is_free:
-            inferred_slug = self._infer_recipe_slug_from_ingredient(ingredient)
+            inferred_slug = self.get_recipe_for_ingredient_cooker(ingredient, cooker_type)
             if inferred_slug:
                 self._assembly.target_recipe_slug = inferred_slug
 
@@ -294,11 +300,11 @@ class GameEnvironment(BaseEnvironment):
                     self._assembly.target_recipe_slug = order.recipe_slug
                 else:
                     self._assembly.target_recipe_slug = (
-                        self._infer_recipe_slug_from_ingredient(ingredient)
+                        self.get_recipe_for_ingredient_cooker(ingredient, cooker)
                     )
             else:
                 self._assembly.target_recipe_slug = (
-                    self._infer_recipe_slug_from_ingredient(ingredient)
+                    self.get_recipe_for_ingredient_cooker(ingredient, cooker)
                 )
 
         # 如果组装站有食材但没有目标配方，尝试推断
@@ -472,6 +478,34 @@ class GameEnvironment(BaseEnvironment):
                     raw_ings = getattr(recipe, "raw_ingredients", [])
                     if ingredient in raw_ings:
                         return order.recipe_slug
+        return None
+
+    def get_recipe_for_ingredient_cooker(
+        self, ingredient: str, cooker_type: str
+    ) -> str | None:
+        """
+        根据 (ingredient, cooker) 组合确定目标recipe。
+        
+        逻辑：
+        1. 遍历活跃订单
+        2. 检查 ingredient+cooker 是否匹配 recipe 的 (raw_ingredients[0], cookers[0])
+        3. 返回匹配的recipe_slug，不匹配则返回None
+        
+        场景分析：
+        - gildedShoreRisotto: raw=[clearwater_fish, creamfield_rice], cooks=[oven, pot]
+        - braisedNewYearFish: raw=[clearwater_fish], cooks=[skillet]
+        - clearwater_fish(oven) → 只能匹配 gildedShoreRisotto
+        - clearwater_fish(skillet) → 只能匹配 braisedNewYearFish
+        """
+        for order in self._orders:
+            if order and not order.done:
+                recipe = self._recipes.get(order.recipe_slug)
+                if recipe:
+                    raw_ings = getattr(recipe, "raw_ingredients", [])
+                    cookers = getattr(recipe, "cookers", [])
+                    if raw_ings and cookers:
+                        if raw_ings[0] == ingredient and cookers[0] == cooker_type:
+                            return order.recipe_slug
         return None
 
     def _infer_recipe_slug_from_ingredients(self, ingredients: list[str]) -> str | None:

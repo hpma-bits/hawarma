@@ -640,7 +640,7 @@ class CookingAgent:
 
         for slot_name, slot in self.env.stockpile.items():
             if slot.ingredient_name in needed_ings and slot.count > 0:
-                if self._can_add_to_assembly(slot.ingredient_name):
+                if self._can_add_to_assembly(slot.ingredient_name, slot.cooker_type):
                     return PullFromStockpileAction(
                         slot=slot_name,
                         ingredient=slot.ingredient_name,
