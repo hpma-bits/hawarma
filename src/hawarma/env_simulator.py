@@ -7,6 +7,12 @@
 输入：游戏动作（烹饪、移动、调味等）、时间推进
 输出：事件列表、状态更新、操作结果
 
+真实游戏规则（2026-04-24 更新）：
+- 订单刷新间隔：随机 3-5 秒，平均 4 秒（非固定间隔）
+- 订单超时：与 recipe 食材耗时相关，普通订单 55-75 秒，rush 订单 30-45 秒
+- 游戏时长：90-110 秒（根据玩家等级/进度，可配置）
+- 动画窗口限制：因 UI 变化导致扫描不稳定，非游戏本身限制
+
 ⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新
 """
 
@@ -122,14 +128,23 @@ class GameSimulator:
     MAX_STOCKPILE = 5
     COOKER_RETENTION = 5.0  # 灶台食材保留时间（秒）
     ANIMATION_DURATION = 1.5  # slot 位移动画时间（秒）
-    RUSH_TIMEOUT = 40.0      # Rush 订单超时时间
-    NORMAL_TIMEOUT = 70.0    # 普通订单超时时间
-    MAX_CONDIMENTS = 3       # 每道菜最多调料数
-    GAME_DURATION = 90.0     # 游戏总时长（秒）
-    ORDER_INTERVAL = 4.0     # 订单生成间隔（秒）
+    ORDER_INTERVAL_MIN = 3.0   # 订单生成间隔最小值（秒）
+    ORDER_INTERVAL_MAX = 5.0   # 订单生成间隔最大值（秒）
+    RUSH_TIMEOUT_MIN = 30.0    # Rush 订单超时最小值（秒）
+    RUSH_TIMEOUT_MAX = 45.0    # Rush 订单超时最大值（秒）
+    NORMAL_TIMEOUT_MIN = 55.0  # 普通订单超时最小值（秒）
+    NORMAL_TIMEOUT_MAX = 75.0  # 普通订单超时最大值（秒）
+    MAX_CONDIMENTS = 3          # 每道菜最多调料数
+    GAME_DURATION_MIN = 90.0   # 游戏最短时长（秒）
+    GAME_DURATION_MAX = 110.0  # 游戏最长时长（秒）
+    DEFAULT_GAME_DURATION = 90.0  # 默认游戏时长
     
-    def __init__(self):
-        """初始化模拟器"""
+    def __init__(self, game_duration: float | None = None):
+        """初始化模拟器
+        
+        Args:
+            game_duration: 游戏时长（秒），范围 90-110。None 表示使用默认值
+        """
         # 当前游戏状态（使用深拷贝确保不可变性）
         self._state = GameState()
         
@@ -157,9 +172,14 @@ class GameSimulator:
         # 上次订单生成时间
         self._last_order_time: float = 0.0
         
-        # 下一次订单刷新时间（相对计时）
-        # 初始为 4 秒（游戏开始后第一个订单）
-        self._next_order_refresh_time: float = self.ORDER_INTERVAL
+        # 游戏时长（可配置）
+        self._game_duration: float = game_duration or self.DEFAULT_GAME_DURATION
+        if self._game_duration < self.GAME_DURATION_MIN or self._game_duration > self.GAME_DURATION_MAX:
+            raise ValueError(f"game_duration must be between {self.GAME_DURATION_MIN} and {self.GAME_DURATION_MAX}")
+        
+        # 下一次订单刷新时间（随机间隔）
+        # 初始为随机 3-5 秒（游戏开始后第一个订单）
+        self._next_order_refresh_time: float = self._random_order_interval()
         
         # 游戏配置（选菜单后的配置）
         self._game_config: GameConfig = GameConfig()
@@ -274,6 +294,39 @@ class GameSimulator:
             print(f"  Condiments: {self._game_config.available_condiments}")
         
         return self._game_config
+    
+    def _random_order_interval(self) -> float:
+        """生成随机订单间隔（3-5秒）"""
+        return random.uniform(self.ORDER_INTERVAL_MIN, self.ORDER_INTERVAL_MAX)
+    
+    def _calculate_timeout(self, recipe: Recipe, is_rush: bool) -> float:
+        """根据 recipe 计算订单超时时间
+        
+        Args:
+            recipe: 订单的配方
+            is_rush: 是否为 rush 订单
+            
+        Returns:
+            超时时间（秒），普通订单 55-75 秒，rush 订单 30-45 秒
+        """
+        # 基础超时：与配方总烹饪时长相关
+        total_cook_time = sum(ing.duration for ing in recipe.ingredients)
+        
+        if is_rush:
+            # Rush 订单：30-45 秒，基于烹饪时长调整
+            base = self.RUSH_TIMEOUT_MIN
+            max_timeout = self.RUSH_TIMEOUT_MAX
+        else:
+            # 普通订单：55-75 秒，基于烹饪时长调整
+            base = self.NORMAL_TIMEOUT_MIN
+            max_timeout = self.NORMAL_TIMEOUT_MAX
+        
+        # 根据烹饪时长在范围内调整（烹饪时间越长，超时时间相对越短）
+        # 简单的线性映射：假设烹饪时长 2-6 秒，映射到超时范围
+        cook_factor = max(0.0, min(1.0, (total_cook_time - 2.0) / 4.0))
+        timeout = base + (max_timeout - base) * (1.0 - cook_factor * 0.3)  # 最多减少30%
+        
+        return round(timeout, 1)
     
     def load_recipes(self, filepath: str | Path) -> None:
         """
@@ -407,8 +460,8 @@ class GameSimulator:
         return self._state.time < self._animation_until
     
     def is_game_over(self) -> bool:
-        """检查游戏是否已结束（到达90秒）"""
-        return self._state.time >= self.GAME_DURATION
+        """检查游戏是否已结束"""
+        return self._state.time >= self._game_duration
     
     def get_order(self, slot_idx: int) -> Order | None:
         """
@@ -469,7 +522,7 @@ class GameSimulator:
             )
         
         # 创建订单
-        timeout = self.RUSH_TIMEOUT if is_rush else self.NORMAL_TIMEOUT
+        timeout = self._calculate_timeout(recipe, is_rush)
         order = Order(
             order_id=self._next_order_id,
             recipe=recipe,
@@ -1240,9 +1293,9 @@ class GameSimulator:
             # 所有槽位为空，需要立即刷新
             self._needs_immediate_refresh = True
         else:
-            # 有剩余订单，从当前时刻开始计时 4 秒后刷新
+            # 有剩余订单，从当前时刻开始计时随机3-5秒后刷新
             # 每次订单过期都重置计时器
-            self._next_order_refresh_time = current_time + self.ORDER_INTERVAL
+            self._next_order_refresh_time = current_time + self._random_order_interval()
         
         # 创建槽位前移事件
         event = Event(
@@ -1291,7 +1344,7 @@ class GameSimulator:
         events: list[Event] = []
         
         # 计算新时间，但不能超过游戏结束时间
-        new_time = min(self._state.time + dt, self.GAME_DURATION)
+        new_time = min(self._state.time + dt, self._game_duration)
         
         # 先生成新订单（在超时检查之前）
         # 这样在订单超时重置计时器之前，可以先生成之前的订单
@@ -1401,8 +1454,8 @@ class GameSimulator:
                 if event:
                     events.append(event)
                     self._needs_immediate_refresh = False
-                    # 更新下一次刷新时间
-                    self._next_order_refresh_time = current_time + self.ORDER_INTERVAL
+                    # 更新下一次刷新时间（随机3-5秒）
+                    self._next_order_refresh_time = current_time + self._random_order_interval()
             return events
         
         # 检查是否到达刷新时间（使用容差处理浮点精度）
@@ -1415,8 +1468,8 @@ class GameSimulator:
                 event = self._create_new_order(order_time)
                 if event:
                     events.append(event)
-                    # 更新下一次刷新时间（4秒后）
-                    self._next_order_refresh_time = order_time + self.ORDER_INTERVAL
+                    # 更新下一次刷新时间（随机3-5秒）
+                    self._next_order_refresh_time = order_time + self._random_order_interval()
                     self._last_order_time = order_time
         
         return events
@@ -1459,8 +1512,10 @@ class GameSimulator:
         # 随机决定是否rush（25%概率）
         is_rush = random.random() < 0.25
         
+        # 计算超时时间（基于recipe）
+        timeout = self._calculate_timeout(recipe, is_rush)
+        
         # 创建订单
-        timeout = self.RUSH_TIMEOUT if is_rush else self.NORMAL_TIMEOUT
         order = Order(
             order_id=self._next_order_id,
             recipe=recipe,

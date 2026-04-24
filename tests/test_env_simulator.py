@@ -107,12 +107,21 @@ class TestBasicStructure:
 class TestGameTimeLimit:
     """测试90秒游戏时间限制"""
     
-    def test_game_duration_is_90_seconds(self):
-        """测试游戏总时长为90秒"""
+    def test_game_duration_default(self):
+        """测试游戏默认时长为90秒，范围90-110秒"""
         sim = create_simple_simulator()
         
         # 验证常量
-        assert GameSimulator.GAME_DURATION == 90.0
+        assert GameSimulator.GAME_DURATION_MIN == 90.0
+        assert GameSimulator.GAME_DURATION_MAX == 110.0
+        assert GameSimulator.DEFAULT_GAME_DURATION == 90.0
+        
+        # 验证默认实例
+        assert sim._game_duration == 90.0
+        
+        # 测试自定义时长
+        sim2 = GameSimulator(game_duration=100.0)
+        assert sim2._game_duration == 100.0
     
     def test_game_ends_at_90_seconds(self):
         """测试游戏在90秒时结束"""
@@ -158,20 +167,23 @@ class TestGameTimeLimit:
 class TestAutoOrderGeneration:
     """测试自动订单生成（每4秒）"""
     
-    def test_orders_generate_every_4_seconds(self):
-        """测试订单每4秒生成"""
+    def test_orders_generate_at_random_interval(self):
+        """测试订单在随机间隔后生成（3-5秒）"""
         sim = create_simple_simulator()
         sim._recipes['test_burger'] = create_test_recipe()
         
-        # 游戏开始，时间=0
-        assert sim.get_order(0) is None
+        # 获取第一个刷新时间
+        first_refresh = sim._next_order_refresh_time
+        assert 3.0 <= first_refresh <= 5.0, f"First refresh should be 3-5s, got {first_refresh}s"
         
-        # 推进5秒（4秒生成 + 1秒动画）
-        sim.tick(5.0)
+        # 推进到刷新时间（订单生成）
+        sim.tick(first_refresh)
+        # 再推进1秒动画时间
+        sim.tick(1.0)
         
         # 应该有一个订单在槽位0
         order1 = sim.get_order(0)
-        assert order1 is not None
+        assert order1 is not None, f"Order should appear after {first_refresh}s + 1s animation"
         assert order1.order_id == 1
     
     def test_orders_fill_leftmost_empty_slot(self):
@@ -179,16 +191,19 @@ class TestAutoOrderGeneration:
         sim = create_simple_simulator()
         sim._recipes['test_burger'] = create_test_recipe()
         
-        # 在第5秒可以看到第一个订单（4秒生成 + 1秒动画）
-        sim.tick(5.0)
+        # 获取第一个刷新时间并推进
+        refresh1 = sim._next_order_refresh_time
+        sim.tick(refresh1 + 1.0)  # +1s animation
         assert sim.get_order(0) is not None
         
-        # 在第9秒可以看到第二个订单
-        sim.tick(4.0)
+        # 获取第二个刷新时间并推进
+        refresh2 = sim._next_order_refresh_time
+        sim.tick(refresh2 + 1.0)
         assert sim.get_order(1) is not None
         
-        # 在第13秒可以看到第三个订单
-        sim.tick(4.0)
+        # 获取第三个刷新时间并推进
+        refresh3 = sim._next_order_refresh_time
+        sim.tick(refresh3 + 1.0)
         assert sim.get_order(2) is not None
     
     def test_orders_stop_when_all_slots_full(self):

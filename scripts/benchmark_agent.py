@@ -729,7 +729,7 @@ def run_single_game(
     sim._next_order_id = 1
     sim._needs_immediate_refresh = False
     sim._last_order_time = 0.0
-    sim._next_order_refresh_time = 4.0
+    sim._next_order_refresh_time = sim._random_order_interval()  # 使用随机间隔
     sim._animation_until = 0.0
     
     sim.setup_from_recipes(recipe_slugs)
@@ -819,14 +819,21 @@ def run_single_game(
 
 def run_benchmark(
     num_games: int = 50,
-    recipes_file: str = "data/recipes.json"
+    recipes_file: str = "data/recipes.json",
+    game_duration: float | None = None,
 ):
-    """运行基准测试"""
+    """运行基准测试
+    
+    Args:
+        num_games: Number of games to simulate
+        recipes_file: Path to recipes JSON file
+        game_duration: Game duration in seconds (90-110), None for default (90s)
+    """
     print("=" * 60)
     print("Agent 性能基准测试")
     print("=" * 60)
     
-    sim = GameSimulator()
+    sim = GameSimulator(game_duration=game_duration)
     sim.load_recipes(recipes_file)
     
     strategies = ["naive", "parallel"]
@@ -869,6 +876,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Agent benchmark")
     parser.add_argument("--seeds", type=int, default=50, help="Number of games")
     parser.add_argument("--recipes", type=str, default="data/recipes.json")
+    parser.add_argument("--game-duration", type=float, default=None,
+                        help="Game duration in seconds (90-110), default 90")
     
     args = parser.parse_args()
-    run_benchmark(num_games=args.seeds, recipes_file=args.recipes)
+    run_benchmark(num_games=args.seeds, recipes_file=args.recipes, game_duration=args.game_duration)
