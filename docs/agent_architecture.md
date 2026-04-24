@@ -62,7 +62,7 @@
 
 ### 3.1 BaseEnvironment 抽象基类
 
-`BaseEnvironment` 定义在 `hawarma/bridge/base_environment.py`，包含统一的数据结构和抽象方法。
+`BaseEnvironment` 定义在 `src/hawarma/bridge/base_environment.py`，包含统一的数据结构和抽象方法。
 
 ```python
 from dataclasses import dataclass, field
@@ -281,7 +281,7 @@ class BaseEnvironment(ABC):
 
 ### 3.2 Action 类型定义
 
-定义在 `hawarma/agent/agent.py`：
+定义在 `src/hawarma/agent/agent.py`：
 
 ```python
 from dataclasses import dataclass
@@ -353,7 +353,7 @@ class ClearAssemblyAction(Action):
 
 ### 4.1 CookingAgent 类
 
-实际实现位置：`hawarma/agent/agent.py`
+实际实现位置：`src/hawarma/agent/agent.py`
 
 ```python
 class CookingAgent:
@@ -881,7 +881,7 @@ class CookingAgent:
 实际实现使用 `StockpileSlot` 的 `can_add()` 方法进行动态分配：
 
 ```python
-# hawarma/bridge/base_environment.py
+# src/hawarma/bridge/base_environment.py
 @dataclass
 class StockpileSlot:
     """库存槽位"""

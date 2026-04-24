@@ -1,4 +1,4 @@
-# hawarma/bridge 目录架构
+# src/hawarma/bridge 目录架构
 
 ## 📁 目录概述
 

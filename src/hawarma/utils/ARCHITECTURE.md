@@ -1,4 +1,4 @@
-# utils Directory Architecture
+# src/hawarma/utils Directory Architecture
 
 ## 📁 目录概述
 此目录包含hawarma项目的工具函数，提供通用的辅助功能。

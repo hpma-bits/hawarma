@@ -10,11 +10,11 @@
 | 上下文 | 文件 | 何时阅读 |
 |--------|------|----------|
 | **项目总览** | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 了解整体目录结构和模块关系 |
-| **核心代码** | [`hawarma/ARCHITECTURE.md`](hawarma/ARCHITECTURE.md) | 修改核心逻辑、理解数据流和架构 |
-| **Agent 决策** | [`hawarma/agent/ARCHITECTURE.md`](hawarma/agent/ARCHITECTURE.md) | 修改 Agent 策略、动作类型、优先级 |
-| **桥接层** | [`hawarma/bridge/ARCHITECTURE.md`](hawarma/bridge/ARCHITECTURE.md) | 修改 UI 操作、状态追踪、扫描器、双循环架构 |
-| **服务层** | [`hawarma/services/ARCHITECTURE.md`](hawarma/services/ARCHITECTURE.md) | 修改配方管理等服务组件 |
-| **工具函数** | [`hawarma/utils/ARCHITECTURE.md`](hawarma/utils/ARCHITECTURE.md) | 修改图像处理工具 |
+| **核心代码** | [`src/hawarma/ARCHITECTURE.md`](src/hawarma/ARCHITECTURE.md) | 修改核心逻辑、理解数据流和架构 |
+| **Agent 决策** | [`src/hawarma/agent/ARCHITECTURE.md`](src/hawarma/agent/ARCHITECTURE.md) | 修改 Agent 策略、动作类型、优先级 |
+| **桥接层** | [`src/hawarma/bridge/ARCHITECTURE.md`](src/hawarma/bridge/ARCHITECTURE.md) | 修改 UI 操作、状态追踪、扫描器、双循环架构 |
+| **服务层** | [`src/hawarma/services/ARCHITECTURE.md`](src/hawarma/services/ARCHITECTURE.md) | 修改配方管理等服务组件 |
+| **工具函数** | [`src/hawarma/utils/ARCHITECTURE.md`](src/hawarma/utils/ARCHITECTURE.md) | 修改图像处理工具 |
 | **文档** | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 游戏规则、Agent策略、架构设计 |
 | **测试** | [`tests/ARCHITECTURE.md`](tests/ARCHITECTURE.md) | 添加或修改测试 |
 | **实验** | [`experiments/ARCHITECTURE.md`](experiments/ARCHITECTURE.md) | 运行基准测试、查看实验记录 |
@@ -23,12 +23,12 @@
 
 | 任务 | 阅读顺序 |
 |------|----------|
-| 修改 Agent 策略 | `docs/game_rules.md` → `hawarma/agent/ARCHITECTURE.md` → `hawarma/ARCHITECTURE.md` |
-| 修改 UI 操作 | `hawarma/bridge/ARCHITECTURE.md` → `hawarma/ARCHITECTURE.md` |
-| 修改订单检测 | `hawarma/bridge/ARCHITECTURE.md` (scanner) → `docs/game_rules.md` |
+| 修改 Agent 策略 | `docs/game_rules.md` → `src/hawarma/agent/ARCHITECTURE.md` → `src/hawarma/ARCHITECTURE.md` |
+| 修改 UI 操作 | `src/hawarma/bridge/ARCHITECTURE.md` → `src/hawarma/ARCHITECTURE.md` |
+| 修改订单检测 | `src/hawarma/bridge/ARCHITECTURE.md` (scanner) → `docs/game_rules.md` |
 | 添加新测试 | `tests/ARCHITECTURE.md` → 对应模块的 ARCHITECTURE.md |
 | 运行基准测试 | `experiments/ARCHITECTURE.md` → `scripts/` 目录 |
-| 修改配置 | `configs/config.yaml` → `hawarma/config.py` |
+| 修改配置 | `configs/config.yaml` → `src/hawarma/config.py` |
 
 ---
 

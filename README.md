@@ -15,10 +15,10 @@ This project is a bot for a cooking game, designed to automate the process of co
 The application is structured into several key components:
 
 *   **`main.py`:** The entry point of the application. It handles the initial setup, user input for recipe selection, and the main application loop.
-*   **`hawarma/app.py`:** The core application class, `CookingBotApp`. It orchestrates the entire cooking process, from detecting orders to managing the cooking pipeline.
-*   **`hawarma/services/detection_service.py`:** This service is responsible for detecting customer orders from the screen. It uses image recognition to identify recipes, rush orders, and condiment preferences.
-*   **`hawarma/services/cooking_service.py`:** This service handles the physical actions of cooking, stockpiling, and serving in the game. It translates recipes into swipe actions and manages cooker contention.
-*   **`hawarma/models.py`:** Defines the data models for the application, such as `Recipe` and `Order`.
+*   **`src/hawarma/config.py`:** The configuration module. It loads settings from `configs/config.yaml` and defines the `AppConfig` model.
+*   **`src/hawarma/services/detection_service.py`:** This service is responsible for detecting customer orders from the screen. It uses image recognition to identify recipes, rush orders, and condiment preferences.
+*   **`src/hawarma/services/cooking_service.py`:** This service handles the physical actions of cooking, stockpiling, and serving in the game. It translates recipes into swipe actions and manages cooker contention.
+*   **`src/hawarma/models.py`:** Defines the data models for the application, such as `Recipe` and `Order`.
 *   **`configs/config.yaml`:** The main configuration file for the application. It contains settings for screen coordinates, matching parameters, and other application-level configurations.
 *   **`data/recipes.json`:** A JSON file containing the definitions of all the recipes that the bot can cook.
 

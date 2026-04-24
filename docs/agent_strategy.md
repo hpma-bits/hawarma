@@ -259,14 +259,14 @@ t=15.5s  移动 clearwater_fish 到组装站
 
 ### 6.4 核心代码
 
-**文件**：`hawarma/agent/agent.py`
+**文件**：`src/hawarma/agent/agent.py`
 
 **关键方法**：
 - `step()`: 7级优先级贪婪策略（送餐 → 清理过期 → 移动食材 → 烹饪 → 调料 → 库存 → 取用）
 - `_get_assembly_stage()`: 判断assembly阶段（NOT_READY/NEEDS_SEASONING/READY）
 - `_try_parallel_cooking()`: 并行烹饪（动画窗口期间允许）
 
-**文件**：`hawarma/bridge/bridge.py`
+**文件**：`src/hawarma/bridge/bridge.py`
 
 **关键方法**：
 - `_agent_loop()`: 动画窗口期间允许烹饪，只禁止送餐

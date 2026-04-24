@@ -6,11 +6,11 @@
 
 | 上下文 | 文件 | 何时阅读 |
 |--------|------|----------|
-| **核心代码** | [`hawarma/ARCHITECTURE.md`](hawarma/ARCHITECTURE.md) | 修改核心逻辑、理解数据流和架构 |
-| **Agent 决策** | [`hawarma/agent/ARCHITECTURE.md`](hawarma/agent/ARCHITECTURE.md) | 修改 Agent 策略、动作类型、优先级 |
-| **桥接层** | [`hawarma/bridge/ARCHITECTURE.md`](hawarma/bridge/ARCHITECTURE.md) | 修改 UI 操作、状态追踪、扫描器、双循环架构 |
-| **服务层** | [`hawarma/services/ARCHITECTURE.md`](hawarma/services/ARCHITECTURE.md) | 修改配方管理等服务组件 |
-| **工具函数** | [`hawarma/utils/ARCHITECTURE.md`](hawarma/utils/ARCHITECTURE.md) | 修改图像处理工具 |
+| **核心代码** | [`src/hawarma/ARCHITECTURE.md`](src/hawarma/ARCHITECTURE.md) | 修改核心逻辑、理解数据流和架构 |
+| **Agent 决策** | [`src/hawarma/agent/ARCHITECTURE.md`](src/hawarma/agent/ARCHITECTURE.md) | 修改 Agent 策略、动作类型、优先级 |
+| **桥接层** | [`src/hawarma/bridge/ARCHITECTURE.md`](src/hawarma/bridge/ARCHITECTURE.md) | 修改 UI 操作、状态追踪、扫描器、双循环架构 |
+| **服务层** | [`src/hawarma/services/ARCHITECTURE.md`](src/hawarma/services/ARCHITECTURE.md) | 修改配方管理等服务组件 |
+| **工具函数** | [`src/hawarma/utils/ARCHITECTURE.md`](src/hawarma/utils/ARCHITECTURE.md) | 修改图像处理工具 |
 | **文档** | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 查找游戏规则、设计文档、模拟器文档 |
 | **测试** | [`tests/ARCHITECTURE.md`](tests/ARCHITECTURE.md) | 添加或修改测试 |
 | **实验** | [`experiments/ARCHITECTURE.md`](experiments/ARCHITECTURE.md) | 运行基准测试、查看实验记录 |
@@ -19,11 +19,12 @@
 
 ```
 hawarma/
-├── hawarma/           # 核心代码
-│   ├── agent/         # Agent 决策逻辑
-│   ├── bridge/        # 桥接层（UI 操作、状态追踪、扫描器）
-│   ├── services/      # 服务层（配方管理等）
-│   └── utils/         # 工具函数（图像处理）
+├── src/
+│   └── hawarma/       # 核心代码
+│       ├── agent/      # Agent 决策逻辑
+│       ├── bridge/     # 桥接层（UI 操作、状态追踪、扫描器）
+│       ├── services/   # 服务层（配方管理等）
+│       └── utils/      # 工具函数（图像处理）
 ├── scripts/           # 脚本文件（模拟、基准测试）
 ├── experiments/       # 实验代码和报告
 ├── docs/              # 文档（游戏规则、策略设计、架构说明）
@@ -38,10 +39,10 @@ hawarma/
 
 ## 📄 关键目录说明
 
-### `hawarma/` — 核心代码
+### `src/hawarma/` — 核心代码
 - **地位**: Agent 自动化烹饪游戏的全部逻辑
 - **架构**: `main.py` → `RealGameBridge` → 双循环（scan_loop + agent_loop）
-- **深入阅读**: [`hawarma/ARCHITECTURE.md`](hawarma/ARCHITECTURE.md)
+- **深入阅读**: [`src/hawarma/ARCHITECTURE.md`](src/hawarma/ARCHITECTURE.md)
 
 ### `docs/` — 项目文档
 - **地位**: 游戏规则、策略设计、架构说明
@@ -71,7 +72,7 @@ hawarma/
 - **深入阅读**: [`experiments/ARCHITECTURE.md`](experiments/ARCHITECTURE.md)
 
 ### `configs/` — 配置文件
-- `config.yaml` — YAML 配置，通过 `hawarma/config.py` 加载
+- `config.yaml` — YAML 配置，通过 `src/hawarma/config.py` 加载
 
 ### `data/` — 数据文件
 - `recipes.json` — 配方数据

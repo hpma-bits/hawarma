@@ -12,10 +12,17 @@ dependencies = [
     "questionary>=2.1.0",
 ]
 
-[tool.uv.sources]
-airtest = { git = "https://github.com/ChanningWang2018/Airtest.git", rev = "master" }
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
 ]
+
+[tool.uv.sources]
+airtest = { git = "https://github.com/ChanningWang2018/Airtest.git", rev = "master" }

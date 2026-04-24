@@ -1,4 +1,4 @@
-# hawarma Directory Architecture
+# src/hawarma Directory Architecture
 
 ## 📁 目录概述
 

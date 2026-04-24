@@ -1,4 +1,4 @@
-# hawarma/agent 目录架构
+# src/hawarma/agent 目录架构
 
 ## 📁 目录概述
 
