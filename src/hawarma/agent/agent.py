@@ -1204,20 +1204,59 @@ class CookingAgent:
             return True
 
         if not target_slug:
-            logger.debug(f"[t={self.env.time:.1f}s] _can_add_to_assembly: no target_slug, checking orders")
+            # 组装站已有食材但 target_slug 未设置
+            # 关键：新食材必须与 assembly 上已有食材属于同一个 recipe（游戏规则 6.1）
+            logger.debug(f"[t={self.env.time:.1f}s] _can_add_to_assembly: no target_slug, checking compatibility with present ingredients")
+            present_ing_names = {t[0] for t in present_with_cooker}
+            present_ing_combos = {(t[0], t[1]) if isinstance(t, tuple) else (t, None) for t in present_with_cooker}
+
+            # 1. 找到满足 "包含 assembly 上所有已有食材" 的 recipe
+            #    且该 recipe 必须为某个活跃订单的 recipe
+            compatible_slugs: list[str] = []
             for order in self.env.orders:
-                if order and not order.done:
-                    recipe = self._recipe_by_slug.get(order.recipe_slug)
-                    if recipe:
-                        raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
-                        cookers = self._get_recipe_attr(recipe, "cookers", [])
-                        for i, ing in enumerate(raw):
-                            if ing == ingredient:
-                                cooker_needed = cookers[i]
-                                if cooker_needed == cooker_type:
-                                    logger.debug(f"[t={self.env.time:.1f}s] _can_add_to_assembly: found in order {order.recipe_slug}, returning True")
-                                    return True
-            logger.debug(f"[t={self.env.time:.1f}s] _can_add_to_assembly: not found in any order, returning False")
+                if not order or order.done:
+                    continue
+                recipe = self._recipe_by_slug.get(order.recipe_slug)
+                if not recipe:
+                    continue
+                raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
+                cookers = self._get_recipe_attr(recipe, "cookers", [])
+                # 检查 assembly 上所有已有食材是否都在此 recipe 中（名称 + cooker 匹配）
+                all_match = True
+                for ing_name, ck_type in present_ing_combos:
+                    ing_matched = False
+                    for i, r_ing in enumerate(raw):
+                        r_ck = cookers[i] if i < len(cookers) else None
+                        if r_ing == ing_name and r_ck == ck_type:
+                            ing_matched = True
+                            break
+                    if not ing_matched:
+                        all_match = False
+                        break
+                if all_match:
+                    compatible_slugs.append(order.recipe_slug)
+
+            if not compatible_slugs:
+                logger.debug(f"[t={self.env.time:.1f}s] _can_add_to_assembly: no recipe found containing all present ingredients, returning False")
+                return False
+
+            # 2. 检查新食材是否属于兼容的 recipe，且新食材-cooker 组合尚未在 assembly 上
+            new_key = (ingredient, cooker_type)
+            if new_key in present_ing_combos:
+                logger.debug(f"[t={self.env.time:.1f}s] _can_add_to_assembly: {new_key} already on assembly, returning False")
+                return False
+
+            for slug in compatible_slugs:
+                recipe = self._recipe_by_slug.get(slug)
+                if recipe:
+                    raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
+                    cookers = self._get_recipe_attr(recipe, "cookers", [])
+                    for i, r_ing in enumerate(raw):
+                        r_ck = cookers[i] if i < len(cookers) else None
+                        if r_ing == ingredient and r_ck == cooker_type:
+                            logger.debug(f"[t={self.env.time:.1f}s] _can_add_to_assembly: {new_key} compatible with recipe {slug}, returning True")
+                            return True
+            logger.debug(f"[t={self.env.time:.1f}s] _can_add_to_assembly: {new_key} not compatible with any present recipe, returning False")
             return False
 
         recipe = self._recipe_by_slug.get(target_slug)
