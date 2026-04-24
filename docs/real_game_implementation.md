@@ -75,14 +75,59 @@ AppConfig
 ### 2.2 环境状态层 (environment.py)
 
 ```python
-GameEnvironment
-├── orders: list[Order | None]           # 4个订单槽位
+GameEnvironment(BaseEnvironment)
+├── orders: list[OrderInfo | None]      # 4个订单槽位
 ├── cookers: dict[str, CookerState]      # 灶台状态
 ├── assembly: AssemblyState              # 组装站状态
-├── stockpile: list[StockpileSlot]       # 3个库存槽位
+├── stockpile: dict[str, StockpileSlot]  # 3个库存槽位
 ├── _game_start_time: float | None       # 游戏开始时间
 ├── _game_duration: float               # 游戏时长 (默认90s)
 └── _animation_until: float              # 动画窗口截止时间
+```
+
+```python
+@dataclass
+class CookerState:
+    busy: bool                           # 是否正在烹饪
+    ingredient_name: str | None         # 食材名称
+    cooker_type: str | None             # 灶台类型
+    started_at: float | None           # 开始时间
+    done_at: float | None              # 烹饪完成时间
+    expired_at: float | None           # 过期时间 (5秒后)
+    
+    def is_done(self, current_time: float) -> bool:
+        """检查烹饪是否已完成"""
+        return self.done_at is not None and current_time >= self.done_at
+    
+    def is_expired(self, current_time: float) -> bool:
+        """检查食材是否已过期"""
+        return self.expired_at is not None and current_time >= self.expired_at
+```
+
+```python
+@dataclass
+class AssemblyState:
+    ingredients_cookers: list[tuple[str, str]] = field(default_factory=list)  # (食材, 灶台) 列表
+    target_recipe_slug: str | None         # 目标配方 (关键!)
+    owner_order_id: int | None            # 关联订单
+    condiments: dict[str, int]           # 调料计数
+    
+    @property
+    def is_free(self) -> bool:
+        """组装站是否空闲"""
+        return len(self.ingredients_cookers) == 0 and self.target_recipe_slug is None
+```
+
+```python
+@dataclass
+class OrderInfo:
+    """订单信息（统一数据结构）"""
+    order_id: int
+    recipe_slug: str
+    is_rush: bool
+    created_at: float
+    timeout_at: float
+    done: bool = False
 ```
 
 ```python
@@ -138,48 +183,65 @@ class DetectedOrder:
 
 ### 3.2 动态扫描频率算法
 
+在 `bridge.py` 中实现：
+
 ```python
 def _compute_scan_interval(self) -> float:
     active_orders = [o for o in self.env.orders if o and not o.done]
     free_cookers = [c for c in self.env.cookers.values() if not c.busy]
     
     if active_orders and free_cookers:
-        return 0.5   # 有订单且有空闲灶台 → 快扫
+        return 0.4   # 有订单且有空闲灶台 → 快扫
     elif not active_orders:
-        return 1.0   # 无订单 → 中速
+        return 0.5   # 无订单 → 中速
     else:
         return 2.0   # 灶台全忙 → 慢扫
 ```
 
 | 游戏状态 | 扫描间隔 | 原因 |
 |----------|----------|------|
-| 有空闲灶台 + 有活跃订单 | 0.5s | 快速发现新订单 |
-| 无活跃订单 | 1.0s | 等待新订单 |
+| 有空闲灶台 + 有活跃订单 | 0.4s | 快速发现新订单 |
+| 无活跃订单 | 0.5s | 等待新订单 |
 | 所有灶台都忙 | 2.0s | 减少不必要的扫描 |
 
-### 3.3 送餐验证 + 重试算法
+### 3.3 送餐验证 + 快速重试算法
+
+在 `bridge.py` 中实现，使用快速重试机制（不依赖扫描）：
 
 ```
 _serve_with_verify(slot_idx):
     for attempt in max_retries+1:
         1. 执行 UI 送餐操作
-        2. 验证组装站是否为空 (模板匹配)
-        3. 为空 → 成功返回
-        4. 不为空 → 重新扫描订单找匹配槽位
-           - 找到匹配 → 切换槽位重试
-           - 未找到 → 原槽位重试
-    5. 全部失败 → 清理组装站
+        2. 多点 snapshot 验证（连续3次0.05s间隔）
+        3. 验证通过 → 成功返回
+        4. 验证失败 → 依次尝试其他 slot (0→1→2→3)
+            - 找到成功 → 返回成功 slot
+            - 全部失败 → 清空组装站
 ```
+
+**关键设计**：
+- 不用扫描匹配订单，直接依次尝试所有 slot
+- 多点 snapshot 避免单次截图的时效性问题
+- 无需检查动画窗口（直接使用 UI 操作结果）
 
 ### 3.4 食材过期检测
 
+在 `environment.py` 的 `add_to_assembly()` 方法中：
+
 ```python
-def move_to_assembly(self, cooker: str) -> bool:
-    cooker_state = self.cookers[cooker]
+def add_to_assembly(self, cooker_name: str) -> bool:
+    cooker_state = self._cookers[cooker_name]
+    
+    # 检查是否过期
     if cooker_state.is_expired(self.time):
-        logger.warning(f"拒绝过期食材: {cooker}")
+        logger.warning(f"拒绝过期食材: {cooker_name}")
         return False
-    # ... 添加到组装站
+    
+    # 检查组装站是否可以接受
+    if not self._can_add_to_assembly(cooker_state.ingredient_name, cooker_state.cooker_type):
+        return False
+    
+    # 添加到组装站...
 ```
 
 **关键设计**: 过期食材被 **程序逻辑拒绝**，而非依赖 UI 反馈。
@@ -209,31 +271,34 @@ def move_to_assembly(self, cooker: str) -> bool:
 
 | 优化项 | 效果 |
 |--------|------|
-| **Maxtouch 加速** | Android 10+ 高性能触摸，swipe 从 ~0.93s → ~0.1s (9x 提升) |
+| **Maxtouch 加速** | Android 10+ 高性能触摸，swipe 从 ~0.93s → ~0.1s |
 | **MinicapApk 延迟初始化** | 第一次 snapshot 时才建立 stream，避免帧缓冲区积累 |
 | **异步截图** | `asyncio.to_thread(G.DEVICE.snapshot)` 不阻塞事件循环 |
-| **自适应扫描频率** | 根据灶台/订单状态动态调整：0.4s (空闲灶台) / 0.5s (忙碌) |
-| **双循环并行** | 扫描和决策独立运行，互不阻塞 |
-| **动画窗口检查** | 两个循环都检查，避免操作冲突和无效扫描 |
+| **自适应扫描频率** | 根据灶台/订单状态动态调整：0.4s (空闲灶台) / 0.5s (忙碌) / 2.0s (全忙) |
+| **双循环并行** | scan/timeout/agent 三个循环独立运行，互不阻塞 |
+| **动画窗口检查** | agent_loop 只禁止送餐，允许烹饪继续 |
 | **UI 操作锁** | asyncio.Lock() 防止并发 swipe 冲突 |
+| **多点snapshot验证** | 送餐后连续3次截图，避免单次截图时效性问题 |
+| **快速重试机制** | 送餐失败依次尝试所有slot，无需扫描匹配 |
 
-### 5.2 潜在优化方向
+### 5.2 已实现或无需优化的方向
 
-1. **模板匹配优化**
-   - 当前: 对每个 slot 遍历所有 recipe
-   - 思路: 预建 recipe 索引，只匹配相关区域
+1. **模板匹配优化** ✅（已足够快）
+   - 当前：对每个 slot 遍历所有 recipe
+   - 实际性能：~30-50ms/slot，已满足需求
 
-2. **状态缓存**
-   - 当前: 每次决策都重新计算可用灶台、可用食材
-   - 思路: 增量更新，只在状态变化时重算
+2. **状态缓存** ✅（已实现）
+   - 环境状态由 GameEnvironment 维护，无需重复计算
+   - Agent 通过属性访问状态，高效且一致
 
-3. **预测性烹饪**
-   - 当前: 有订单才烹饪
-   - 思路: 基于订单历史预测下一步需求，提前烹饪
+3. **预测性烹饪** ❌（无效优化）
+   - 问题：预烹饪食材可能与订单不匹配
+   - 教训：按需响应策略已经足够好（见 agent_strategy.md）
 
-4. **多级验证**
-   - 当前: 送餐后模板匹配验证
-   - 思路: 操作前/中/后多级检查，提前发现问题
+4. **多级验证** ✅（已实现）
+   - 操作前：状态检查（动画窗口、过期检查）
+   - 操作中：UI 操作执行
+   - 操作后：多点 snapshot 验证
 
 ---
 
@@ -255,25 +320,28 @@ def move_to_assembly(self, cooker: str) -> bool:
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  GameEnvironment                                                │
-│  ├── 订单状态维护                                               │
-│  ├── 灶台/组装站/库存状态追踪                                    │
-│  └── 时间/动画窗口管理                                          │
+│  ├── 订单状态维护 (orders: list[OrderInfo])                      │
+│  ├── 灶台状态 (cookers: dict[str, CookerState])              │
+│  ├── 组装站状态 (assembly: AssemblyState)                        │
+│  ├── 库存状态 (stockpile: dict[str, StockpileSlot])          │
+│  └── 时间/动画窗口管理                                         │
 └──────────────────────────┬──────────────────────────────────────┘
-                           │ step_with_diagnostics()
+                           │ step() / step_with_diagnostics()
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  CookingAgent                                                   │
-│  ├── 订单优先级排序                                             │
-│  ├── 动作生成 (烹饪/移动/调味/送餐)                             │
-│  └── 返回: Action                                               │
+│  ├── 订单优先级排序 (_prioritized_orders)                       │
+│  ├── 动作生成 (7级优先级贪婪策略)                             │
+│  ├── 停滞检测 (_consecutive_none)                              │
+│  └── 返回: Action | None                                      │
 └──────────────────────────┬──────────────────────────────────────┘
                            │ _execute_action()
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  RealGameBridge                                                 │
 │  ├── 校验 (过期食材、动画窗口、游戏结束)                         │
-│  ├── UIRunner.swipe() → minitouch                              │
-│  └── 状态更新 (env.move_to_assembly, env.serve_order)           │
+│  ├── UIRunner.swipe() → maxtouch                              │
+│  └── 状态更新 (env.add_to_assembly, env.serve_order)           │
 └──────────────────────────┬──────────────────────────────────────┘
                            │ is_assembly_empty()
                            ▼

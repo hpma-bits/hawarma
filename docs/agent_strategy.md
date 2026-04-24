@@ -257,21 +257,21 @@ t=15.5s  移动 clearwater_fish 到组装站
 - 分析具体哪些订单导致超时
 - 针对性优化复杂订单的处理
 
-### 6.3 核心代码
+### 6.4 核心代码
 
 **文件**：`hawarma/agent/agent.py`
 
 **关键方法**：
-- `step()`: 阶段驱动决策（烹饪优先于移动食材）
-- `_get_assembly_stage()`: 判断assembly阶段
-- `_try_parallel_cooking()`: 开始烹饪（动画窗口期间允许）
+- `step()`: 7级优先级贪婪策略（送餐 → 清理过期 → 移动食材 → 烹饪 → 调料 → 库存 → 取用）
+- `_get_assembly_stage()`: 判断assembly阶段（NOT_READY/NEEDS_SEASONING/READY）
+- `_try_parallel_cooking()`: 并行烹饪（动画窗口期间允许）
 
 **文件**：`hawarma/bridge/bridge.py`
 
 **关键方法**：
-- `_agent_loop()`: 移除了动画窗口检查，允许动画期间执行烹饪操作
+- `_agent_loop()`: 动画窗口期间允许烹饪，只禁止送餐
 
-### 6.4 重要原则
+### 6.5 重要原则
 
 > **从文档出发思考问题，代码要与文档保持一致**
 > 
@@ -280,9 +280,9 @@ t=15.5s  移动 clearwater_fish 到组装站
 ## 7. 运行基准测试
 
 ```bash
-# 旧版策略对比
-python scripts/benchmark_agent.py --seeds 50
+# 真实游戏测试（推荐使用真实设备）
+python main.py
 
-# 烹饪优先级优化对比
-python scripts/benchmark_cooking_priority.py --seeds 50
+# 查看日志分析性能
+# 日志位置：logs/game_*.log
 ```
