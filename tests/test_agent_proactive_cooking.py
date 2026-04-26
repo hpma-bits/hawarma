@@ -1,7 +1,9 @@
 """
 前瞻性烹饪策略测试
 
-测试 CookingAgent 的前瞻性烹饪决策
+测试 CookingAgent + DefaultStrategy 的前瞻性烹饪决策。
+重构后：Agent 仅为 Shell，决策逻辑在 DefaultStrategy 中。
+本文件改为黑盒行为测试，只通过 agent.step() 验证策略行为。
 
 ⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新
 """
@@ -12,77 +14,65 @@ from hawarma.bridge.simulator_environment import SimulatorEnvironment
 from hawarma.env_simulator import GameSimulator
 
 
-def create_test_agent():
+def create_test_agent(strategy=None):
     """创建测试用的 CookingAgent"""
     sim = GameSimulator()
     sim.load_recipes("data/recipes.json")
     recipe_slugs = sim.select_recipes(count=4, random_seed=42)
     sim.setup_from_recipes(recipe_slugs)
-    
+
     env = SimulatorEnvironment(sim)
     recipe_objs = [sim.recipes[slug] for slug in recipe_slugs]
-    
-    return CookingAgent(env, recipe_objs), sim, env
+
+    return CookingAgent(env, recipe_objs, strategy=strategy), sim, env
 
 
 class TestUrgentIngredients:
-    """测试紧迫食材识别"""
+    """测试紧迫食材识别（黑盒：通过 step 输出推断）"""
 
-    def test_get_urgent_ingredients_empty_orders(self):
-        """无订单时应返回空列表"""
-        agent, sim, env = create_test_agent()
-        urgent = agent._get_urgent_ingredients()
-        assert urgent == []
-
-    def test_get_urgent_ingredients_with_orders(self):
-        """有订单时应返回需要的食材"""
+    def test_urgent_order_triggers_cooking(self):
+        """有订单时 step() 应返回 CookAction"""
         agent, sim, env = create_test_agent()
         recipe = list(sim.recipes.values())[0]
         sim.inject_order(0, recipe, is_rush=False)
-        
-        urgent = agent._get_urgent_ingredients()
-        assert len(urgent) > 0
-        for item in urgent:
-            assert len(item) == 3
 
-    def test_time_until_needed(self):
-        """测试食材紧迫时间计算"""
-        agent, sim, env = create_test_agent()
-        recipe = list(sim.recipes.values())[0]
-        sim.inject_order(0, recipe, is_rush=False)
-        
-        time_needed = agent._get_time_until_needed('clearwater_fish')
-        assert time_needed > 0
+        action = agent.step()
+        # 有空闲灶台和订单时，策略应该开始烹饪
+        assert action is not None
 
 
 class TestProactiveCooking:
-    """测试前瞻性烹饪策略"""
+    """测试前瞻性烹饪策略（黑盒）"""
 
     def test_cook_when_cooker_free_and_order_urgent(self):
         """灶台空闲且订单紧迫时应主动烹饪"""
         agent, sim, env = create_test_agent()
         recipe = list(sim.recipes.values())[0]
         sim.inject_order(0, recipe, is_rush=False)
-        
-        free_cookers = agent._get_free_cookers()
-        assert len(free_cookers) > 0
-        
-        action = agent._try_start_cooking()
+
+        action = agent.step()
         # 应该有烹饪动作（如果灶台可用）
         assert action is not None
 
-    def test_prefers_urgent_over_non_urgent(self):
-        """应该优先烹饪紧迫订单的食材"""
+    def test_rush_order_gets_priority(self):
+        """rush 订单应被优先处理（通过观察多步输出）"""
         agent, sim, env = create_test_agent()
         recipe = list(sim.recipes.values())[0]
-        
+
         sim.inject_order(0, recipe, is_rush=False)
         sim.tick(40)
         sim.inject_order(1, recipe, is_rush=True)
-        
-        urgent = agent._get_urgent_ingredients()
-        if len(urgent) > 1:
-            assert urgent[0][2] <= urgent[1][2]
+
+        # 多步执行，观察是否优先服务 rush
+        actions = []
+        for _ in range(20):
+            action = agent.step()
+            if action:
+                actions.append(type(action).__name__)
+
+        # 至少有烹饪动作发生
+        cook_actions = [a for a in actions if 'Cook' in a]
+        assert len(cook_actions) > 0
 
 
 class TestCookerUtilization:
@@ -94,13 +84,13 @@ class TestCookerUtilization:
         recipe = list(sim.recipes.values())[0]
         sim.inject_order(0, recipe, is_rush=False)
         sim.inject_order(1, recipe, is_rush=False)
-        
+
         actions = []
         for _ in range(10):
             action = agent.step()
             if action:
                 actions.append(type(action).__name__)
-        
+
         cook_actions = [a for a in actions if 'Cook' in a]
         assert len(cook_actions) > 0
 

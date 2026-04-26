@@ -37,6 +37,7 @@ from .env_simulator_types import (
     IngredientRequirement,
     GameConfig,
 )
+from playground.env.rewards import RecipeTimeoutLookup
 
 
 # ============================================================================
@@ -183,6 +184,9 @@ class GameSimulator:
         
         # 游戏配置（选菜单后的配置）
         self._game_config: GameConfig = GameConfig()
+        
+        # 订单超时查表
+        self._timeout_lookup: RecipeTimeoutLookup | None = None
     
     # ------------------------------------------------------------------
     # 配置和初始化
@@ -302,29 +306,35 @@ class GameSimulator:
     def _calculate_timeout(self, recipe: Recipe, is_rush: bool) -> float:
         """根据 recipe 计算订单超时时间
         
+        从 recipe_timeout.csv 查表获取真实超时时间。
+        如果找不到数据，则使用原来的公式计算作为后备。
+        
         Args:
             recipe: 订单的配方
             is_rush: 是否为 rush 订单
             
         Returns:
-            超时时间（秒），普通订单 55-75 秒，rush 订单 30-45 秒
+            超时时间（秒）
         """
-        # 基础超时：与配方总烹饪时长相关
+        if self._timeout_lookup is None:
+            self._timeout_lookup = RecipeTimeoutLookup()
+        
+        timeout = self._timeout_lookup.get_timeout(recipe.slug, is_rush)
+        
+        if timeout is not None:
+            return timeout
+        
         total_cook_time = sum(ing.duration for ing in recipe.ingredients)
         
         if is_rush:
-            # Rush 订单：30-45 秒，基于烹饪时长调整
             base = self.RUSH_TIMEOUT_MIN
             max_timeout = self.RUSH_TIMEOUT_MAX
         else:
-            # 普通订单：55-75 秒，基于烹饪时长调整
             base = self.NORMAL_TIMEOUT_MIN
             max_timeout = self.NORMAL_TIMEOUT_MAX
         
-        # 根据烹饪时长在范围内调整（烹饪时间越长，超时时间相对越短）
-        # 简单的线性映射：假设烹饪时长 2-6 秒，映射到超时范围
         cook_factor = max(0.0, min(1.0, (total_cook_time - 2.0) / 4.0))
-        timeout = base + (max_timeout - base) * (1.0 - cook_factor * 0.3)  # 最多减少30%
+        timeout = base + (max_timeout - base) * (1.0 - cook_factor * 0.3)
         
         return round(timeout, 1)
     
@@ -543,7 +553,7 @@ class GameSimulator:
             event_type=EventType.ORDER_APPEARED,
             details={
                 'order_id': order.order_id,
-                'recipe': recipe.name,
+                'recipe': recipe.slug,
                 'slot': slot_idx,
                 'rush': is_rush,
                 'timeout_at': order.timeout_at
@@ -725,7 +735,7 @@ class GameSimulator:
                 timestamp=self._state.time,
                 event_type=EventType.ASSEMBLY_COMPLETED,
                 details={
-                    'recipe': self._state.assembly.target_recipe.name if self._state.assembly.target_recipe else None,
+                    'recipe': self._state.assembly.target_recipe.slug if self._state.assembly.target_recipe else None,
                     'ingredients': [ing[0] for ing in self._state.assembly.ingredients]
                 }
             )
@@ -1208,7 +1218,7 @@ class GameSimulator:
             details={
                 'order_id': order.order_id,
                 'slot': slot_idx,
-                'recipe': order.recipe.name,
+                'recipe': order.recipe.slug,
                 'score': score,
                 'served_at': order.served_at
             }
@@ -1376,14 +1386,13 @@ class GameSimulator:
                 continue
             
             if current_time >= order.timeout_at:
-                # 订单超时
                 events.append(Event(
                     timestamp=current_time,
                     event_type=EventType.ORDER_TIMEOUT,
                     details={
                         'order_id': order.order_id,
                         'slot': i,
-                        'recipe': order.recipe.name
+                        'recipe': order.recipe.slug
                     }
                 ))
                 
@@ -1539,7 +1548,7 @@ class GameSimulator:
             event_type=EventType.ORDER_APPEARED,
             details={
                 'order_id': order.order_id,
-                'recipe': recipe.name,
+                'recipe': recipe.slug,
                 'slot': empty_slot,
                 'rush': is_rush,
                 'timeout_at': order.timeout_at,
