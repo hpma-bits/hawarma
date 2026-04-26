@@ -14,7 +14,7 @@ GameEnvImpl 集成测试
 import pytest
 
 from playground.env.game_env_impl import GameEnvImpl
-from playground.env.unified_state import UnifiedState
+from hawarma.agent.unified_state import UnifiedState
 from hawarma.agent.agent import (
     CookAction,
     ServeOrderAction,

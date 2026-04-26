@@ -37,7 +37,7 @@ from .env_simulator_types import (
     IngredientRequirement,
     GameConfig,
 )
-from playground.env.rewards import RecipeTimeoutLookup
+from hawarma.rewards import RecipeTimeoutLookup
 
 
 # ============================================================================

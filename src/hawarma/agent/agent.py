@@ -140,10 +140,9 @@ class CookingAgent:
             else:
                 self._recipe_condiments[slug] = {}
 
-        # 注入 Strategy（默认使用 DefaultStrategy）
+        # 注入 Strategy（必须由调用方传入）
         if strategy is None:
-            from playground.strategies.default import DefaultStrategy
-            strategy = DefaultStrategy()
+            raise ValueError("strategy is required. Use DefaultStrategy() from hawarma.agent.strategies")
         strategy.on_game_start(self._recipe_by_slug)
         self._strategy = strategy
 
@@ -219,7 +218,7 @@ class CookingAgent:
 
     def _build_unified_state(self):
         """从 self.env 构建 UnifiedState（供 Strategy 使用）"""
-        from playground.env.unified_state import UnifiedState
+        from hawarma.agent.unified_state import UnifiedState
 
         assembly = self.env.assembly
         ingredients_cookers = [(ing[0], ing[1]) for ing in assembly.ingredients_cookers]

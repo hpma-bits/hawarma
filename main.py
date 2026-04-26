@@ -106,7 +106,7 @@ async def run_game(config, ordered_recipes, strategy_class=None):
     """
     from hawarma.bridge import RealGameBridge
     from hawarma.agent import CookingAgent
-    from playground.strategies.default import DefaultStrategy
+    from hawarma.agent.strategies.default import DefaultStrategy
 
     bridge = RealGameBridge(config, ordered_recipes)
 

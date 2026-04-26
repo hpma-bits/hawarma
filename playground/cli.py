@@ -15,8 +15,7 @@ import argparse
 import sys
 from pathlib import Path
 
-# 添加项目根目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent))
+
 
 
 def _parse_recipes(recipes_arg: str | None) -> list[str] | None:

@@ -13,9 +13,9 @@ Playground 接口验证测试
 import pytest
 from dataclasses import replace, FrozenInstanceError
 
-from playground.env.unified_state import UnifiedState
+from hawarma.agent.unified_state import UnifiedState
+from hawarma.agent.strategy import Strategy
 from playground.env.rewards import SparseReward, StepResult
-from playground.strategies.base import Strategy
 from playground.agents.base import Agent
 from playground.env.game_env import GameEnv
 

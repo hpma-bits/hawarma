@@ -6,7 +6,7 @@ import pytest
 
 from playground.env.game_env_impl import GameEnvImpl
 from playground.agents.base import Agent
-from playground.strategies.default import DefaultStrategy
+from hawarma.agent.strategies.default import DefaultStrategy
 from playground.core.runner import run_episode, run_benchmark
 
 

@@ -28,9 +28,10 @@ class TestEndToEnd:
         # 创建 CookingAgent，使用默认的 DefaultStrategy
         # 需要用 SimulatorEnvironment 包装 GameSimulator（CookingAgent 期望 BaseEnvironment 接口）
         from hawarma.bridge.simulator_environment import SimulatorEnvironment
+        from hawarma.agent.strategies.default import DefaultStrategy
         sim_env = SimulatorEnvironment(env._sim)
         recipes = list(info["recipes"].values())
-        agent = CookingAgent(sim_env, recipes)
+        agent = CookingAgent(sim_env, recipes, strategy=DefaultStrategy())
 
         total_reward = 0.0
         steps = 0
@@ -64,7 +65,7 @@ class TestEndToEnd:
 
     def test_agent_with_explicit_strategy(self, env):
         """验证可以注入自定义 Strategy"""
-        from playground.strategies.default import DefaultStrategy
+        from hawarma.agent.strategies.default import DefaultStrategy
         from hawarma.bridge.simulator_environment import SimulatorEnvironment
 
         obs, info = env.reset(seed=42)
@@ -87,7 +88,7 @@ class TestEndToEnd:
 
     def test_strategy_decides_from_unified_state(self, env):
         """验证 Strategy 从 UnifiedState 决策，不直接访问 env"""
-        from playground.strategies.default import DefaultStrategy
+        from hawarma.agent.strategies.default import DefaultStrategy
         from playground.env.unified_state import UnifiedState
 
         obs, info = env.reset(seed=42)

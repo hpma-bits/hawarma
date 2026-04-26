@@ -1,16 +1,17 @@
 """
-Playground 策略模块
+Playground Strategy 兼容层
 
-Strategy（决策脑）定义与实现
-
-可用策略：
-- DefaultStrategy: 默认策略（主动预烹饪 + 决策优先级优化）
-- CookingFirstV2Strategy: 旧版策略（Cooking First v2）
-- StockpileFirstStrategy: 库存优先策略变体（基于CookingFirstV2Strategy）
+所有策略已下沉到 hawarma.agent.strategies。
+此文件保留向后兼容的 re-export。
 """
 
-from playground.strategies.default import DefaultStrategy
-from playground.strategies.cooking_first_v2 import CookingFirstV2Strategy
-from playground.strategies.stockpile_first import StockpileFirstStrategy
+from __future__ import annotations
 
-__all__ = ["DefaultStrategy", "CookingFirstV2Strategy", "StockpileFirstStrategy"]
+from hawarma.agent.strategy import Strategy
+from hawarma.agent.strategies import (
+    DefaultStrategy,
+    CookingFirstV2Strategy,
+    StockpileFirstStrategy,
+)
+
+__all__ = ["Strategy", "DefaultStrategy", "CookingFirstV2Strategy", "StockpileFirstStrategy"]

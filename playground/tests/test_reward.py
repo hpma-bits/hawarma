@@ -6,7 +6,8 @@ GameDataReward 测试
 
 import pytest
 
-from playground.env.rewards import RecipeRewardLookup, GameDataReward, SparseReward
+from hawarma.rewards import RecipeRewardLookup
+from playground.env.rewards import GameDataReward, SparseReward
 from playground.env.unified_state import UnifiedState
 from hawarma.bridge.base_environment import AssemblyState, OrderInfo
 from hawarma.env_simulator_types import Event, EventType
