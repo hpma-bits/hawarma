@@ -158,9 +158,9 @@ class RecipeRewardLookup:
         # 当前使用 CSV 中的默认值（近似），日后再完善动态加成机制
         total = base + vis
 
-        # rush 订单：基础分数 × 2（简化处理）
+        # rush 订单：基础分数 + 60%（简化处理）
         if is_rush:
-            total *= 2
+            total *= 1.6
 
         return float(total)
 

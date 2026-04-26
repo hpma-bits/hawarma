@@ -41,6 +41,7 @@ def run_episode(
     seed: int,
     record_history: bool = False,
     max_steps: int = 2000,
+    recipe_slugs: list[str] | None = None,
 ) -> EpisodeResult:
     """
     运行单局游戏。
@@ -55,7 +56,7 @@ def run_episode(
     Returns:
         EpisodeResult: 游戏结果
     """
-    obs, info = env.reset(seed=seed)
+    obs, info = env.reset(seed=seed, recipe_slugs=recipe_slugs)
     agent.reset()
     agent.strategy.on_game_start(info.get("recipes", {}))
 
@@ -112,6 +113,7 @@ def run_benchmark(
     strategies: dict[str, Strategy],
     num_games: int = 50,
     seeds: list[int] | None = None,
+    recipe_slugs: list[str] | None = None,
 ) -> dict[str, list[EpisodeResult]]:
     """
     运行多策略基准测试。
@@ -136,7 +138,7 @@ def run_benchmark(
         for name, strategy in strategies.items():
             env = env_factory()
             agent = Agent(strategy)
-            result = run_episode(env, agent, seed=seed)
+            result = run_episode(env, agent, seed=seed, recipe_slugs=recipe_slugs)
             results[name].append(result)
 
     return results

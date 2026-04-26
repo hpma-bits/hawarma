@@ -70,7 +70,7 @@ class MyStrategy(Strategy):
 
 默认使用 `GameDataReward`，基于 `playground/reward.csv` 中的真实游戏数据精确计算 serve 得分：
 - 分数 = base_points + visibility
-- Rush 订单 × 2
+- Rush 订单 +60%
 
 也可切换回 `SparseReward`（读 simulator 的 score 字段）。
 

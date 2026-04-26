@@ -17,26 +17,26 @@ class TestRecipeRewardLookup:
 
     def test_loads_csv(self):
         lookup = RecipeRewardLookup()
-        assert "Gilded Shore Risotto" in lookup
-        assert "Mooncake" in lookup
+        assert "gildedShoreRisotto" in lookup
+        assert "nonexistent_recipe" not in lookup
 
     def test_get_score_with_condiments(self):
         lookup = RecipeRewardLookup()
-        score = lookup.get_score("Gilded Shore Risotto", has_condiments=True, is_rush=False)
+        score = lookup.get_score("gildedShoreRisotto", has_condiments=True, is_rush=False)
         # base 106 + visibility 32 = 138
         assert score == 138.0
 
     def test_get_score_without_condiments(self):
         lookup = RecipeRewardLookup()
-        score = lookup.get_score("Gilded Shore Risotto", has_condiments=False, is_rush=False)
+        score = lookup.get_score("gildedShoreRisotto", has_condiments=False, is_rush=False)
         # base 74 + visibility 16 = 90
         assert score == 90.0
 
     def test_get_score_rush(self):
         lookup = RecipeRewardLookup()
-        score = lookup.get_score("Gilded Shore Risotto", has_condiments=True, is_rush=True)
-        # (106 + 32) * 2 = 276
-        assert score == 276.0
+        score = lookup.get_score("gildedShoreRisotto", has_condiments=True, is_rush=True)
+        # (106 + 32) * 1.6 = 220.8
+        assert score == 220.8
 
     def test_get_score_unknown_recipe(self):
         lookup = RecipeRewardLookup()
@@ -54,9 +54,9 @@ class TestRecipeRewardLookup:
 
         missing = []
         for recipe in recipes:
-            name = recipe["name"]
-            if name not in lookup:
-                missing.append(name)
+            slug = recipe["slug"]
+            if slug not in lookup:
+                missing.append(slug)
 
         assert not missing, f"Missing recipes in reward.csv: {missing}"
 
@@ -80,7 +80,7 @@ class TestGameDataReward:
         prev_state = UnifiedState(
             time=10.0,
             orders=(
-                OrderInfo(order_id=1, recipe_slug="gilded_shore_risotto", is_rush=False,
+                OrderInfo(order_id=1, recipe_slug="gildedShoreRisotto", is_rush=False,
                          created_at=0.0, timeout_at=60.0),
             ),
             cookers={},
@@ -94,7 +94,7 @@ class TestGameDataReward:
             Event(
                 timestamp=10.0,
                 event_type=EventType.ORDER_SERVED,
-                details={"order_id": 1, "recipe": "Gilded Shore Risotto"},
+                details={"order_id": 1, "recipe": "gildedShoreRisotto"},
             )
         ]
         reward = reward_fn.compute(prev_state, None, prev_state, events)
@@ -105,7 +105,7 @@ class TestGameDataReward:
         prev_state = UnifiedState(
             time=10.0,
             orders=(
-                OrderInfo(order_id=1, recipe_slug="gilded_shore_risotto", is_rush=False,
+                OrderInfo(order_id=1, recipe_slug="gildedShoreRisotto", is_rush=False,
                          created_at=0.0, timeout_at=60.0),
             ),
             cookers={},
@@ -119,7 +119,7 @@ class TestGameDataReward:
             Event(
                 timestamp=10.0,
                 event_type=EventType.ORDER_SERVED,
-                details={"order_id": 1, "recipe": "Gilded Shore Risotto"},
+                details={"order_id": 1, "recipe": "gildedShoreRisotto"},
             )
         ]
         reward = reward_fn.compute(prev_state, None, prev_state, events)
@@ -130,7 +130,7 @@ class TestGameDataReward:
         prev_state = UnifiedState(
             time=10.0,
             orders=(
-                OrderInfo(order_id=1, recipe_slug="gilded_shore_risotto", is_rush=True,
+                OrderInfo(order_id=1, recipe_slug="gildedShoreRisotto", is_rush=True,
                          created_at=0.0, timeout_at=60.0),
             ),
             cookers={},
@@ -144,12 +144,12 @@ class TestGameDataReward:
             Event(
                 timestamp=10.0,
                 event_type=EventType.ORDER_SERVED,
-                details={"order_id": 1, "recipe": "Gilded Shore Risotto"},
+                details={"order_id": 1, "recipe": "gildedShoreRisotto"},
             )
         ]
         reward = reward_fn.compute(prev_state, None, prev_state, events)
-        # (106 + 32) * 2 = 276
-        assert reward == 276.0
+        # (106 + 32) * 1.6 = 220.8
+        assert reward == 220.8
 
     def test_multiple_serves(self, reward_fn):
         prev_state = UnifiedState(
@@ -169,17 +169,17 @@ class TestGameDataReward:
             Event(
                 timestamp=10.0,
                 event_type=EventType.ORDER_SERVED,
-                details={"order_id": 1, "recipe": "Gilded Shore Risotto"},
+                details={"order_id": 1, "recipe": "gildedShoreRisotto"},
             ),
             Event(
                 timestamp=10.0,
                 event_type=EventType.ORDER_SERVED,
-                details={"order_id": 2, "recipe": "New Year Jiaozi"},
+                details={"order_id": 2, "recipe": "newYearJiaozi"},
             ),
         ]
         reward = reward_fn.compute(prev_state, None, prev_state, events)
-        # Gilded Shore Risotto with cond = 138
-        # New Year Jiaozi with cond = 106 + 32 = 138
+        # gildedShoreRisotto with cond = 138
+        # newYearJiaozi with cond = 106 + 32 = 138
         assert reward == 138.0 + 138.0
 
 

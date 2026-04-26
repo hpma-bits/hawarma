@@ -19,6 +19,7 @@ def run_benchmark(
     strategies: dict[str, Strategy],
     num_games: int = 50,
     seeds: list[int] | None = None,
+    recipe_slugs: list[str] | None = None,
 ) -> dict[str, list[EpisodeResult]]:
     """
     运行多策略基准测试。
@@ -50,7 +51,7 @@ def run_benchmark(
         for name, strategy in strategies.items():
             env = env_factory()
             agent = Agent(strategy)
-            result = run_episode(env, agent, seed=seed)
+            result = run_episode(env, agent, seed=seed, recipe_slugs=recipe_slugs)
             results[name].append(result)
 
         if (i + 1) % 10 == 0 or i == len(seeds) - 1:

@@ -85,13 +85,13 @@ class GameEnvImpl(GameEnv):
         """
         import random
 
+        # 设置随机种子（在创建 simulator 之前，确保 __init__ 中的随机调用也是确定性的）
+        if seed is not None:
+            random.seed(seed)
+
         # 创建新的 simulator
         self._sim = GameSimulator(game_duration=game_duration)
         self._sim.load_recipes(self._recipes_file)
-
-        # 设置随机种子
-        if seed is not None:
-            random.seed(seed)
 
         # 选择配方
         if recipe_slugs is None:

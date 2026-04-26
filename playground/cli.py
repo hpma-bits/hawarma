@@ -19,6 +19,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
+def _parse_recipes(recipes_arg: str | None) -> list[str] | None:
+    """将逗号分隔的 recipe slugs 解析为列表"""
+    if not recipes_arg:
+        return None
+    return [s.strip() for s in recipes_arg.split(",")]
+
+
 def cmd_run(args):
     """运行单局游戏"""
     from playground.env.game_env_impl import GameEnvImpl
@@ -36,6 +43,7 @@ def cmd_run(args):
         agent,
         seed=args.seed,
         record_history=args.record,
+        recipe_slugs=_parse_recipes(args.recipes),
     )
 
     print(f"\nGame completed!")
@@ -76,6 +84,7 @@ def cmd_bench(args):
         env_factory,
         strategies,
         num_games=args.games,
+        recipe_slugs=_parse_recipes(args.recipes),
     )
 
     print_comparison(results)
@@ -104,12 +113,14 @@ def main():
     run_parser.add_argument("--seed", type=int, default=42, help="Random seed")
     run_parser.add_argument("--record", action="store_true", help="Record replay")
     run_parser.add_argument("--output", type=str, default="playground_replay.json", help="Replay output file")
+    run_parser.add_argument("--recipes", type=str, default=None, help="Comma-separated recipe slugs (e.g. beef_wrap,chicken_wrap)")
     run_parser.set_defaults(func=cmd_run)
 
     # bench
     bench_parser = subparsers.add_parser("bench", help="Run benchmark")
     bench_parser.add_argument("--games", type=int, default=50, help="Number of games per strategy")
     bench_parser.add_argument("--strategies", type=str, default=None, help="Comma-separated strategy names")
+    bench_parser.add_argument("--recipes", type=str, default=None, help="Comma-separated recipe slugs (e.g. beef_wrap,chicken_wrap)")
     bench_parser.add_argument("--csv", type=str, default=None, help="Export to CSV")
     bench_parser.add_argument("--json", type=str, default=None, help="Export to JSON")
     bench_parser.set_defaults(func=cmd_bench)
