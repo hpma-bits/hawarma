@@ -29,7 +29,7 @@ experiments/
 ### `script.py`
 - **地位**: 实验脚本
 - **内容**: 实验配置、策略实现、数据收集、结果输出
-- **依赖**: `scripts/benchmark_utils.py`, `scripts/base_strategies.py`
+- **依赖**: `playground/` 环境、策略模块
 
 ### `report.md`
 - **地位**: 实验报告
@@ -39,18 +39,12 @@ experiments/
 
 实验脚本应使用以下可复用模块：
 
-### `scripts/benchmark_utils.py`
+### `playground/` 模块
 提供实验脚本可复用的功能：
-- `GameMetrics`: 游戏指标数据类
-- `run_single_game`: 运行单局游戏
-- `run_benchmark`: 运行基准测试
-- `print_results`: 打印结果
-
-### `scripts/base_strategies.py`
-定义标准的基准策略：
-- `naive_strategy`: 按文档优先级的策略
-- `parallel_strategy`: 多订单并行策略
-- `BASE_STRATEGIES`: 标准策略字典
+- `playground.core.runner`: `run_episode`, `run_benchmark`
+- `playground.env.game_env_impl`: `GameEnvImpl`
+- `playground.strategies`: 策略基类和实现
+- `playground.bench.compare`: 结果对比和导出
 
 ## 🔗 相关文档
 

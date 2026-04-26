@@ -19,10 +19,14 @@ experiments/
 
 ### ✅ 正确方法
 ```python
-from scripts.benchmark_utils import run_single_game
-from scripts.base_strategies import parallel_strategy
+from playground.core.runner import run_episode
+from playground.env.game_env_impl import GameEnvImpl
+from playground.strategies.default import DefaultStrategy
+from playground.agents.base import Agent
 
-metrics = run_single_game(sim, recipe_slugs, parallel_strategy, seed=seed, debug=True)
+env = GameEnvImpl()
+agent = Agent(DefaultStrategy())
+result = run_episode(env, agent, seed=42)
 ```
 
 ### ❌ 错误方法（会导致状态不一致）
@@ -38,24 +42,19 @@ sim.move_to_assembly('pot')  # 失败：pot可能已空
 
 1. 创建实验目录：`mkdir experiments/[实验名称]`
 2. 编写实验设计：`design.md`
-3. 编写实验脚本：`script.py`（使用 `scripts/benchmark_utils.py` 和 `scripts/base_strategies.py`）
-4. 执行实验：`python script.py`
+3. 编写实验脚本：`script.py`（使用 `playground/` 的 CLI 或 API）
+4. 执行实验：`python -m playground bench --games 50`
 5. 编写实验报告：`report.md`
 
 详见 `.opencode/skills/experiment.md`
 
 ## 🔧 可复用模块
 
-### `scripts/benchmark_utils.py`
-- `GameMetrics`: 游戏指标数据类
-- `run_single_game`: 运行单局游戏
-- `run_benchmark`: 运行基准测试
-- `print_results`: 打印结果
-
-### `scripts/base_strategies.py`
-- `naive_strategy`: 按文档优先级的策略
-- `parallel_strategy`: 多订单并行策略
-- `BASE_STRATEGIES`: 标准策略字典
+使用 `playground/` 下的模块：
+- `playground.core.runner`: `run_episode`, `run_benchmark`
+- `playground.env.game_env_impl`: `GameEnvImpl`
+- `playground.strategies.default`: `DefaultStrategy`
+- `playground.bench.compare`: `print_comparison`, `export_csv`
 
 ## 📊 实验历史
 
