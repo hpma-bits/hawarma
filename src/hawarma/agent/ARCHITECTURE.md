@@ -27,7 +27,7 @@
 - **输入**: GameEnvironment 实例、配方列表、可选 Strategy
 - **输出**: 动作对象供执行器执行
 - **关键类**: `CookingAgent`, 各种 `Action` 子类
-- **注意**: 所有决策逻辑已迁移到 `playground/strategies/default.py` 的 `DefaultStrategy`
+- **注意**: 所有决策逻辑已迁移到 `playground/strategies/` 目录，默认使用 `DefaultStrategy`，可替换为 `OptimizedStrategy`
 
 ---
 

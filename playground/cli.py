@@ -54,12 +54,14 @@ def cmd_bench(args):
     """运行基准测试"""
     from playground.env.game_env_impl import GameEnvImpl
     from playground.strategies.default import DefaultStrategy
+    from playground.strategies.cooking_first_v2 import CookingFirstV2Strategy
     from playground.strategies.stockpile_first import StockpileFirstStrategy
     from playground.bench.runner import run_benchmark
     from playground.bench.compare import print_comparison, export_csv, export_json
 
     strategies = {
         "default": DefaultStrategy(),
+        "cooking_first_v2": CookingFirstV2Strategy(),
         "stockpile_first": StockpileFirstStrategy(),
     }
 

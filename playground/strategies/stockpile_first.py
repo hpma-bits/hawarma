@@ -10,12 +10,12 @@ StockpileFirstStrategy: 优先使用库存的并行策略
 
 from __future__ import annotations
 
-from playground.strategies.default import DefaultStrategy
+from playground.strategies.cooking_first_v2 import CookingFirstV2Strategy
 from playground.env.unified_state import UnifiedState
 from hawarma.agent.agent import Action
 
 
-class StockpileFirstStrategy(DefaultStrategy):
+class StockpileFirstStrategy(CookingFirstV2Strategy):
     """
     优先使用库存的并行策略。
 

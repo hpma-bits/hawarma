@@ -96,13 +96,25 @@ def get_recipe_selection(all_recipes):
     return ordered_recipes
 
 
-async def run_game(config, ordered_recipes):
-    """Run the agent game loop."""
+async def run_game(config, ordered_recipes, strategy_class=None):
+    """Run the agent game loop.
+
+    Args:
+        config: AppConfig instance
+        ordered_recipes: List of selected Recipe objects
+        strategy_class: Optional strategy class to use. Defaults to OptimizedStrategy.
+    """
     from hawarma.bridge import RealGameBridge
     from hawarma.agent import CookingAgent
+    from playground.strategies.default import DefaultStrategy
 
     bridge = RealGameBridge(config, ordered_recipes)
-    agent = CookingAgent(bridge.env, ordered_recipes)
+
+    # 使用 DefaultStrategy 作为默认策略，可通过参数覆盖
+    if strategy_class is None:
+        strategy_class = DefaultStrategy
+
+    agent = CookingAgent(bridge.env, ordered_recipes, strategy=strategy_class())
     bridge.set_agent(agent)
 
     logger.info("=" * 60)

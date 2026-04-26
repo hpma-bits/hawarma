@@ -144,7 +144,7 @@ class CookingAgent:
         if strategy is None:
             from playground.strategies.default import DefaultStrategy
             strategy = DefaultStrategy()
-            strategy.on_game_start(self._recipe_by_slug)
+        strategy.on_game_start(self._recipe_by_slug)
         self._strategy = strategy
 
         # 统计

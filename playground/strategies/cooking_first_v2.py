@@ -1,26 +1,17 @@
 """
-DefaultStrategy: 默认策略（主动预烹饪 + 决策优先级优化）
+CookingFirstV2Strategy: 旧版 Cooking First v2 策略
 
-核心优化（基于CookingFirstV2Strategy）：
-1. 调料优先：组装站食材齐全时立即添加（更快释放组装站）
-2. 最长烹饪优先：按时长降序排列（最大化并行重叠）
-3. 主动预烹饪：灶台空闲时预烹饪活跃订单的未来食材
-4. 快速存储：非必要食材2秒后存储（更快释放灶台）
-5. 过期优先移动：优先移动接近过期的食材到组装站
-6. 库存优先取用：为组装站目标优先拉取库存
+这是旧版策略，已被 DefaultStrategy 取代。
+接收 UnifiedState，返回 Action，不直接接触环境。
 
 决策优先级：
-1. 清理组装站（超时订单）
-2. 送餐
-3. 清理过期食材
-4. 添加调料（食材齐全时优先）
-5. 移动完成食材到组装站（过期优先）
-6. 从库存取用（为组装站目标）
-7. 开始烹饪（最长优先）
-8. 添加调料（回退）
-9. 主动预烹饪
-10. 存入库存（2秒快速存储）
-11. 从库存取用
+1. 送餐（动画窗口期间跳过）
+2. 清理过期食材
+3. 移动完成食材到组装站
+4. 开始烹饪（多订单并行）
+5. 添加调料
+6. 存入 stockpile
+7. 从库存取用
 
 输入: UnifiedState
 输出: Action | None
@@ -45,27 +36,29 @@ from playground.env.unified_state import UnifiedState
 from playground.strategies.base import Strategy
 
 
-class DefaultStrategy(Strategy):
-    """默认策略：主动预烹饪 + 决策优先级优化"""
+class CookingFirstV2Strategy(Strategy):
+    """
+    默认多订单并行策略。
+
+    从当前 CookingAgent 的决策逻辑提取，保持行为一致。
+    """
 
     EXPIRED_THRESHOLD = 5.0
     WARN_THRESHOLD = 4.0
-    PRECOOK_STORE_THRESHOLD = 2.0
-    MAX_PRECOOK_STOCKPILE = 3
 
     def __init__(self):
         self._recipe_by_slug: dict[str, object] = {}
         self._recipe_condiments: dict[str, dict[str, int]] = {}
         self._ingredient_info: dict[str, tuple[str, float]] = {}
-        self._recipe_ingredient_cooker: dict[str, list[tuple[str, str, float]]] = {}
 
     def on_game_start(self, recipes: dict[str, object]) -> None:
+        """初始化配方相关数据"""
         self._recipe_by_slug = recipes
         self._recipe_condiments = {}
         self._ingredient_info = {}
-        self._recipe_ingredient_cooker = {}
 
         for slug, recipe in recipes.items():
+            # 调料
             condiments = self._get_recipe_attr(recipe, "condiments", [])
             if isinstance(condiments, list):
                 self._recipe_condiments[slug] = {c: 1 for c in condiments}
@@ -74,45 +67,57 @@ class DefaultStrategy(Strategy):
             else:
                 self._recipe_condiments[slug] = {}
 
+            # 食材信息
             raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
             cookers = self._get_recipe_attr(recipe, "cookers", [])
             durations = self._get_recipe_attr(recipe, "cook_durations", [])
-
-            ics = []
             for i, ing in enumerate(raw):
-                cooker = cookers[i] if i < len(cookers) else None
-                duration = durations[i] if i < len(durations) else 3.0
-                if cooker:
-                    self._ingredient_info[ing] = (cooker, duration)
-                    ics.append((ing, cooker, duration))
-            self._recipe_ingredient_cooker[slug] = ics
+                if ing not in self._ingredient_info:
+                    cooker = cookers[i] if i < len(cookers) else None
+                    duration = durations[i] if i < len(durations) else 3.0
+                    if cooker:
+                        self._ingredient_info[ing] = (cooker, duration)
+
+    # ====================================================================
+    # 决策入口
+    # ====================================================================
 
     def decide(self, state: UnifiedState) -> Action | None:
+        """单步决策：多订单并行策略"""
         assembly_ings = [
             ing[0] if isinstance(ing, tuple) else ing
             for ing in state.assembly.ingredients_cookers
         ]
 
+        # 0. 检查组装站是否需要清理（超时订单/长时间停滞）
         if action := self._try_clear_assembly(state, assembly_ings):
             return action
+
+        # 1. 送餐
         if action := self._try_serve(state, assembly_ings):
             return action
+
+        # 2. 清理过期食材
         if action := self._try_clear_expired(state):
             return action
-        if action := self._try_add_condiment_urgent(state, assembly_ings):
-            return action
+
+        # 3. 移动完成食材到组装站
         if action := self._try_move_to_assembly(state, assembly_ings):
             return action
-        if action := self._try_pull_from_stockpile_urgent(state):
-            return action
+
+        # 4. 开始烹饪
         if action := self._try_parallel_cooking(state, assembly_ings):
             return action
+
+        # 5. 添加调料
         if action := self._try_add_condiment(state, assembly_ings):
             return action
-        if action := self._try_precook(state, assembly_ings):
-            return action
+
+        # 6. 存入 stockpile
         if action := self._try_store_to_stockpile(state):
             return action
+
+        # 7. 从库存取用
         if action := self._try_pull_from_stockpile(state):
             return action
 
@@ -125,20 +130,26 @@ class DefaultStrategy(Strategy):
     def _try_serve(self, state: UnifiedState, assembly_ings: list[str]) -> ServeOrderAction | None:
         if state.is_in_animation_window:
             return None
+
         assembly = state.assembly
         if not assembly.ingredients_cookers:
             return None
+
         target_slug = assembly.target_recipe_slug
+
         for slot_idx, order in self._prioritized_orders(state):
             if order is None or order.done:
                 continue
+
             if target_slug and target_slug != order.recipe_slug:
                 continue
+
             recipe = self._recipe_by_slug.get(order.recipe_slug)
             if recipe and self._ingredients_match(assembly.ingredients_cookers, recipe):
                 condiments_needed = self._recipe_condiments.get(order.recipe_slug, {})
                 if self._condiments_complete(assembly.condiments, condiments_needed):
                     return ServeOrderAction(slot_idx=slot_idx)
+
         return None
 
     # ====================================================================
@@ -146,9 +157,12 @@ class DefaultStrategy(Strategy):
     # ====================================================================
 
     def _try_clear_assembly(self, state: UnifiedState, assembly_ings: list[str]) -> ClearAssemblyAction | None:
+        """检查组装站食材是否属于已超时订单或长时间停滞"""
         assembly = state.assembly
         if not assembly.ingredients_cookers:
             return None
+
+        # 检查 1：assembly 的 target_recipe 对应订单已不存在
         target_slug = assembly.target_recipe_slug
         if target_slug:
             has_active = any(
@@ -157,10 +171,13 @@ class DefaultStrategy(Strategy):
             )
             if not has_active:
                 return ClearAssemblyAction()
+
+        # 检查 2：没有 target_recipe，但食材不匹配任何活跃订单
         if not target_slug:
             active_slugs = {o.recipe_slug for o in state.orders if o and not o.done}
             if not active_slugs:
                 return ClearAssemblyAction()
+
             for order in state.orders:
                 if order and not order.done:
                     recipe = self._recipe_by_slug.get(order.recipe_slug)
@@ -169,55 +186,64 @@ class DefaultStrategy(Strategy):
                         if all(ing in recipe_ings for ing in assembly_ings):
                             return None
             return ClearAssemblyAction()
+
         return None
 
     # ====================================================================
-    # 调料优先
+    # 添加调料
     # ====================================================================
 
-    def _try_add_condiment_urgent(self, state: UnifiedState, assembly_ings: list[str]) -> AddCondimentAction | None:
+    def _try_add_condiment(self, state: UnifiedState, assembly_ings: list[str]) -> AddCondimentAction | None:
         assembly = state.assembly
-        if not assembly.ingredients_cookers:
-            return None
         target_slug = assembly.target_recipe_slug
+
         if not target_slug:
             target_slug = self._infer_recipe_from_assembly(state)
             if not target_slug:
                 return None
+
         recipe = self._recipe_by_slug.get(target_slug)
         if not recipe:
             return None
+
         if not self._ingredients_match(assembly.ingredients_cookers, recipe):
             return None
+
         condiments_needed = self._recipe_condiments.get(target_slug, {})
         if not condiments_needed:
             return None
+
         for condiment, required in condiments_needed.items():
             current = assembly.condiments.get(condiment, 0)
             if current < required:
                 return AddCondimentAction(condiment=condiment)
+
         return None
 
-    def _try_add_condiment(self, state: UnifiedState, assembly_ings: list[str]) -> AddCondimentAction | None:
-        return self._try_add_condiment_urgent(state, assembly_ings)
-
     # ====================================================================
-    # 移动完成食材（过期优先）
+    # 移动完成食材
     # ====================================================================
 
     def _try_move_to_assembly(self, state: UnifiedState, assembly_ings: list[str]) -> MoveToAssemblyAction | None:
         needed = self._get_needed_ingredients(state)
+
         all_needed_with_cooker: list[tuple[str, str]] = []
         for order in state.orders:
             if order and not order.done:
-                ics = self._recipe_ingredient_cooker.get(order.recipe_slug, [])
-                for ing_name, cooker, _ in ics:
-                    all_needed_with_cooker.append((ing_name, cooker))
+                recipe = self._recipe_by_slug.get(order.recipe_slug)
+                if recipe:
+                    raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
+                    cookers = self._get_recipe_attr(recipe, "cookers", [])
+                    for i, ing in enumerate(raw):
+                        cooker = cookers[i] if i < len(cookers) else None
+                        if cooker:
+                            all_needed_with_cooker.append((ing, cooker))
+
         effective_needed: set[tuple[str, str]] = set(needed) | set(all_needed_with_cooker)
+
         if not effective_needed:
             return None
 
-        done_items = []
         for cooker_name, cooker in state.cookers.items():
             if not cooker.busy or cooker.done_at is None:
                 continue
@@ -230,47 +256,21 @@ class DefaultStrategy(Strategy):
                 continue
             if not self._can_add_to_assembly(state, cooker.ingredient_name, cooker.cooker_type):
                 continue
-            time_since_done = state.time - cooker.done_at
-            done_items.append((-time_since_done, cooker_name, cooker))
-
-        if done_items:
-            done_items.sort()
-            _, best_cooker_name, best_cooker = done_items[0]
-            order_id = self._get_order_id_for_ingredient_with_cooker(
-                state, best_cooker.ingredient_name, best_cooker.cooker_type)
-            return MoveToAssemblyAction(cooker=best_cooker_name, order_id=order_id)
+            order_id = self._get_order_id_for_ingredient_with_cooker(state, cooker.ingredient_name, cooker.cooker_type)
+            return MoveToAssemblyAction(cooker=cooker_name, order_id=order_id)
 
         return None
 
     # ====================================================================
-    # 库存取用：紧急
+    # 从库存取用
     # ====================================================================
-
-    def _try_pull_from_stockpile_urgent(self, state: UnifiedState) -> PullFromStockpileAction | None:
-        assembly = state.assembly
-        if not assembly.target_recipe_slug:
-            if assembly.ingredients_cookers:
-                return None
-            return self._try_pull_from_stockpile(state)
-        has_active = any(
-            o and not o.done and o.recipe_slug == assembly.target_recipe_slug
-            for o in state.orders
-        )
-        if not has_active:
-            return None
-        needed = self._get_needed_ingredient_names(state)
-        if not needed:
-            return None
-        for slot_name, slot in state.stockpile.items():
-            if slot.ingredient_name in needed and slot.count > 0:
-                if self._can_add_to_assembly(state, slot.ingredient_name, slot.cooker_type):
-                    return PullFromStockpileAction(slot=slot_name, ingredient=slot.ingredient_name)
-        return None
 
     def _try_pull_from_stockpile(self, state: UnifiedState) -> PullFromStockpileAction | None:
         assembly = state.assembly
+
         if assembly.ingredients_cookers and not assembly.target_recipe_slug:
             return None
+
         if assembly.target_recipe_slug:
             has_active = any(
                 o and not o.done and o.recipe_slug == assembly.target_recipe_slug
@@ -278,67 +278,79 @@ class DefaultStrategy(Strategy):
             )
             if not has_active:
                 return None
+
         needed_ings = self._get_needed_ingredient_names(state)
         if not needed_ings:
             return None
+
         for slot_name, slot in state.stockpile.items():
             if slot.ingredient_name in needed_ings and slot.count > 0:
                 if self._can_add_to_assembly(state, slot.ingredient_name, slot.cooker_type):
                     return PullFromStockpileAction(slot=slot_name, ingredient=slot.ingredient_name)
+
         return None
 
     # ====================================================================
-    # 烹饪：最长优先
+    # 开始烹饪
     # ====================================================================
 
     def _try_parallel_cooking(self, state: UnifiedState, assembly_ings: list[str]) -> CookAction | None:
         free_cookers = [name for name, c in state.cookers.items() if not c.busy]
         if not free_cookers:
             return None
+
         assembly = state.assembly
 
-        assembly_missing: list[tuple[str, str, float]] = []
+        # 组装站缺失的食材排最前
+        assembly_missing = []
         if assembly.target_recipe_slug:
-            ics = self._recipe_ingredient_cooker.get(assembly.target_recipe_slug, [])
-            for ing_name, cooker, duration in ics:
-                if ing_name not in assembly_ings:
-                    assembly_missing.append((ing_name, cooker, duration))
+            recipe = self._recipe_by_slug.get(assembly.target_recipe_slug)
+            if recipe:
+                raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
+                cookers = self._get_recipe_attr(recipe, "cookers", [])
+                for i, ing_name in enumerate(raw):
+                    cooker = cookers[i] if i < len(cookers) else None
+                    if cooker and ing_name not in assembly_ings:
+                        assembly_missing.append((ing_name, cooker))
 
-        needed_current: list[tuple[str, str, float]] = []
+        # 当前订单需要的食材
+        needed_current = []
         for _, order in self._prioritized_orders(state):
-            ics = self._recipe_ingredient_cooker.get(order.recipe_slug, [])
-            for ing_name, cooker, duration in ics:
-                if (ing_name, cooker) not in [(n, c) for n, c, _ in needed_current]:
-                    needed_current.append((ing_name, cooker, duration))
-            break
+            recipe = self._recipe_by_slug.get(order.recipe_slug)
+            if recipe:
+                raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
+                cookers = self._get_recipe_attr(recipe, "cookers", [])
+                for i, ing_name in enumerate(raw):
+                    cooker = cookers[i] if i < len(cookers) else None
+                    if cooker and ing_name not in [n for n, _ in needed_current]:
+                        needed_current.append((ing_name, cooker))
+                break
 
-        assembly_missing.sort(key=lambda x: x[2], reverse=True)
-        needed_current.sort(key=lambda x: x[2], reverse=True)
+        needed_current = assembly_missing + [item for item in needed_current if item not in assembly_missing]
 
-        cooking_priority: list[tuple[str, str, float]] = list(assembly_missing)
-        seen = {(n, c) for n, c, _ in cooking_priority}
-        for item in needed_current:
-            if (item[0], item[1]) not in seen:
-                cooking_priority.append(item)
-                seen.add((item[0], item[1]))
-
-        needed_all: list[tuple[str, str, float]] = []
-        seen_all: set[tuple[str, str]] = set()
+        # 所有订单需要的食材
+        needed_all = []
+        seen = set()
         for order in state.orders:
             if order and not order.done:
-                ics = self._recipe_ingredient_cooker.get(order.recipe_slug, [])
-                for ing_name, cooker, duration in ics:
-                    if (ing_name, cooker) not in seen_all:
-                        seen_all.add((ing_name, cooker))
-                        needed_all.append((ing_name, cooker, duration))
-        needed_all.sort(key=lambda x: x[2], reverse=True)
+                recipe = self._recipe_by_slug.get(order.recipe_slug)
+                if recipe:
+                    raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
+                    cookers = self._get_recipe_attr(recipe, "cookers", [])
+                    for i, ing_name in enumerate(raw):
+                        cooker = cookers[i] if i < len(cookers) else None
+                        if cooker and (ing_name, cooker) not in seen:
+                            seen.add((ing_name, cooker))
+                            needed_all.append((ing_name, cooker))
 
+        # stockpile 计数
         stockpile_counts = {}
         for slot in state.stockpile.values():
             if slot.count > 0 and slot.ingredient_name:
                 stockpile_counts[slot.ingredient_name] = stockpile_counts.get(slot.ingredient_name, 0) + slot.count
 
-        for ing_name, cooker_type, duration in cooking_priority:
+        # 优先烹饪当前订单需要的食材
+        for ing_name, cooker_type in needed_current:
             if cooker_type not in free_cookers:
                 continue
             if self._is_cooking(state, ing_name, cooker_type):
@@ -347,10 +359,13 @@ class DefaultStrategy(Strategy):
                 continue
             if self._has_in_stockpile(state, ing_name, cooker_type):
                 continue
+
+            _, duration = self._ingredient_info.get(ing_name, (None, 3.0))
             order_id = self._get_order_id_for_ingredient(state, ing_name)
             return CookAction(ingredient=ing_name, cooker=cooker_type, duration=duration, order_id=order_id)
 
-        for ing_name, cooker_type, duration in needed_all:
+        # 然后烹饪其他订单需要的食材
+        for ing_name, cooker_type in needed_all:
             if cooker_type not in free_cookers:
                 continue
             if self._is_cooking(state, ing_name, cooker_type):
@@ -359,74 +374,12 @@ class DefaultStrategy(Strategy):
                 continue
             if stockpile_counts.get(ing_name, 0) > 0:
                 continue
+
+            _, duration = self._ingredient_info.get(ing_name, (None, 3.0))
             order_id = self._get_order_id_for_ingredient(state, ing_name)
             return CookAction(ingredient=ing_name, cooker=cooker_type, duration=duration, order_id=order_id)
 
         return None
-
-    # ====================================================================
-    # 主动预烹饪
-    # ====================================================================
-
-    def _try_precook(self, state: UnifiedState, assembly_ings: list[str]) -> CookAction | None:
-        free_cookers = [name for name, c in state.cookers.items() if not c.busy]
-        if not free_cookers:
-            return None
-
-        total_in_stockpile = sum(slot.count for slot in state.stockpile.values())
-        if total_in_stockpile >= self.MAX_PRECOOK_STOCKPILE:
-            return None
-
-        remaining_time = state.game_duration - state.time
-        if remaining_time < 20:
-            return None
-
-        cooking_combos: set[tuple[str, str]] = set()
-        for cooker in state.cookers.values():
-            if cooker.busy:
-                cooking_combos.add((cooker.ingredient_name, cooker.cooker_type))
-
-        active_order_slugs = {o.recipe_slug for o in state.orders if o and not o.done}
-
-        candidates: list[tuple[str, str, float, float]] = []
-        for slug in active_order_slugs:
-            ics = self._recipe_ingredient_cooker.get(slug, [])
-            for ing_name, cooker, duration in ics:
-                combo = (ing_name, cooker)
-                if combo in cooking_combos:
-                    continue
-                if ing_name in assembly_ings:
-                    continue
-                if self._has_in_stockpile(state, ing_name, cooker):
-                    continue
-                if cooker not in free_cookers:
-                    continue
-                score = 10.0 - duration
-                candidates.append((ing_name, cooker, duration, score))
-
-        if not candidates:
-            for slug, ics in self._recipe_ingredient_cooker.items():
-                for ing_name, cooker, duration in ics:
-                    combo = (ing_name, cooker)
-                    if combo in cooking_combos:
-                        continue
-                    if ing_name in assembly_ings:
-                        continue
-                    if self._has_in_stockpile(state, ing_name, cooker):
-                        continue
-                    if cooker not in free_cookers:
-                        continue
-                    score = 1.0 - duration
-                    candidates.append((ing_name, cooker, duration, score))
-
-        if not candidates:
-            return None
-
-        candidates.sort(key=lambda x: x[3], reverse=True)
-        ing_name, cooker, duration, _ = candidates[0]
-        actual_duration = self._ingredient_info.get(ing_name, (None, 3.0))[1]
-        order_id = self._get_order_id_for_ingredient(state, ing_name)
-        return CookAction(ingredient=ing_name, cooker=cooker, duration=actual_duration, order_id=order_id)
 
     # ====================================================================
     # 清理过期食材
@@ -439,7 +392,7 @@ class DefaultStrategy(Strategy):
         return None
 
     # ====================================================================
-    # 存入库存（快速存储）
+    # 存入库存
     # ====================================================================
 
     def _try_store_to_stockpile(self, state: UnifiedState) -> MoveToStockpileAction | None:
@@ -451,24 +404,20 @@ class DefaultStrategy(Strategy):
                 continue
             if state.time < cooker.done_at:
                 continue
+
             ing_name = cooker.ingredient_name
             cooker_type = cooker.cooker_type
             time_since_done = state.time - cooker.done_at
 
             if ing_name in needed:
-                if time_since_done > self.WARN_THRESHOLD:
-                    slot = self._try_increment_stockpile(state, ing_name, cooker_type)
-                    if slot is None:
-                        slot = self._find_available_slot(state, ing_name, cooker_type)
-                    if slot:
-                        return MoveToStockpileAction(cooker=cooker_name, slot=slot)
-            else:
-                if time_since_done > self.PRECOOK_STORE_THRESHOLD:
-                    slot = self._try_increment_stockpile(state, ing_name, cooker_type)
-                    if slot is None:
-                        slot = self._find_available_slot(state, ing_name, cooker_type)
-                    if slot:
-                        return MoveToStockpileAction(cooker=cooker_name, slot=slot)
+                continue
+
+            if time_since_done > self.WARN_THRESHOLD:
+                slot = self._try_increment_stockpile(state, ing_name, cooker_type)
+                if slot is None:
+                    slot = self._find_available_slot(state, ing_name, cooker_type)
+                if slot:
+                    return MoveToStockpileAction(cooker=cooker_name, slot=slot)
 
             if time_since_done > self.EXPIRED_THRESHOLD:
                 slot = self._try_increment_stockpile(state, ing_name, cooker_type)
@@ -484,13 +433,12 @@ class DefaultStrategy(Strategy):
                 if state.time < cooker.done_at:
                     continue
                 if cooker.ingredient_name not in needed:
-                    time_since_done = state.time - cooker.done_at
-                    if time_since_done > self.PRECOOK_STORE_THRESHOLD:
-                        slot = self._try_increment_stockpile(state, cooker.ingredient_name, cooker.cooker_type)
-                        if slot is None:
-                            slot = self._find_available_slot(state, cooker.ingredient_name, cooker.cooker_type)
-                        if slot:
-                            return MoveToStockpileAction(cooker=cooker_name, slot=slot)
+                    slot = self._try_increment_stockpile(state, cooker.ingredient_name, cooker.cooker_type)
+                    if slot is None:
+                        slot = self._find_available_slot(state, cooker.ingredient_name, cooker.cooker_type)
+                    if slot:
+                        return MoveToStockpileAction(cooker=cooker_name, slot=slot)
+            return None
 
         for cooker_name, cooker in state.cookers.items():
             if not cooker.busy or cooker.done_at is None:
@@ -499,13 +447,11 @@ class DefaultStrategy(Strategy):
                 continue
             if cooker.ingredient_name in needed:
                 continue
-            time_since_done = state.time - cooker.done_at
-            if time_since_done > self.PRECOOK_STORE_THRESHOLD:
-                slot = self._try_increment_stockpile(state, cooker.ingredient_name, cooker.cooker_type)
-                if slot is None:
-                    slot = self._find_available_slot(state, cooker.ingredient_name, cooker.cooker_type)
-                if slot:
-                    return MoveToStockpileAction(cooker=cooker_name, slot=slot)
+            slot = self._try_increment_stockpile(state, cooker.ingredient_name, cooker.cooker_type)
+            if slot is None:
+                slot = self._find_available_slot(state, cooker.ingredient_name, cooker.cooker_type)
+            if slot:
+                return MoveToStockpileAction(cooker=cooker_name, slot=slot)
 
         return None
 
@@ -539,17 +485,29 @@ class DefaultStrategy(Strategy):
         present = set(assembly.ingredients_cookers)
 
         if target_slug:
-            ics = self._recipe_ingredient_cooker.get(target_slug, [])
-            present_names = {ing[0] if isinstance(ing, tuple) else ing for ing in present}
-            result = []
-            for ing_name, cooker, _ in ics:
-                if ing_name not in present_names:
-                    result.append((ing_name, cooker))
-            return result
+            recipe = self._recipe_by_slug.get(target_slug)
+            if recipe:
+                raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
+                cookers = self._get_recipe_attr(recipe, "cookers", [])
+                result = []
+                for i, ing in enumerate(raw):
+                    if (ing, cookers[i]) not in present and (ing,) not in present:
+                        cooker = cookers[i] if i < len(cookers) else None
+                        if cooker:
+                            result.append((ing, cooker))
+                return result
 
         for _, order in self._prioritized_orders(state):
-            ics = self._recipe_ingredient_cooker.get(order.recipe_slug, [])
-            return [(n, c) for n, c, _ in ics]
+            recipe = self._recipe_by_slug.get(order.recipe_slug)
+            if recipe:
+                raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
+                cookers = self._get_recipe_attr(recipe, "cookers", [])
+                result = []
+                for i, ing in enumerate(raw):
+                    cooker = cookers[i] if i < len(cookers) else None
+                    if cooker:
+                        result.append((ing, cooker))
+                return result
 
         return []
 
@@ -566,6 +524,7 @@ class DefaultStrategy(Strategy):
 
         if not target_slug:
             present_ing_combos = {(t[0], t[1]) if isinstance(t, tuple) else (t, None) for t in present_with_cooker}
+
             compatible_slugs = []
             for order in state.orders:
                 if not order or order.done:
@@ -597,17 +556,27 @@ class DefaultStrategy(Strategy):
                 return False
 
             for slug in compatible_slugs:
-                ics = self._recipe_ingredient_cooker.get(slug, [])
-                for ing_name, ck, _ in ics:
-                    if ing_name == ingredient and ck == cooker_type:
-                        return True
+                recipe = self._recipe_by_slug.get(slug)
+                if recipe:
+                    raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
+                    cookers = self._get_recipe_attr(recipe, "cookers", [])
+                    for i, r_ing in enumerate(raw):
+                        r_ck = cookers[i] if i < len(cookers) else None
+                        if r_ing == ingredient and r_ck == cooker_type:
+                            return True
             return False
 
-        ics = self._recipe_ingredient_cooker.get(target_slug, [])
+        recipe = self._recipe_by_slug.get(target_slug)
+        if not recipe:
+            return False
+
+        raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
+        cookers = self._get_recipe_attr(recipe, "cookers", [])
         found = False
-        for ing_name, ck, _ in ics:
-            if ing_name == ingredient:
-                if ck != cooker_type:
+        for i, ing in enumerate(raw):
+            if ing == ingredient:
+                cooker_needed = cookers[i] if i < len(cookers) else None
+                if cooker_needed != cooker_type:
                     return False
                 found = True
         if not found:
@@ -658,16 +627,22 @@ class DefaultStrategy(Strategy):
 
     def _get_order_id_for_ingredient_with_cooker(self, state: UnifiedState, ingredient: str, cooker_type: str) -> int | None:
         for _, order in self._prioritized_orders(state):
-            ics = self._recipe_ingredient_cooker.get(order.recipe_slug, [])
-            for ing_name, ck, _ in ics:
-                if ing_name == ingredient and ck == cooker_type:
-                    return order.order_id
+            recipe = self._recipe_by_slug.get(order.recipe_slug)
+            if recipe:
+                raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
+                cookers = self._get_recipe_attr(recipe, "cookers", [])
+                for i, ing in enumerate(raw):
+                    if ing == ingredient:
+                        cooker_needed = cookers[i] if i < len(cookers) else None
+                        if cooker_needed == cooker_type:
+                            return order.order_id
         return None
 
     def _infer_recipe_from_assembly(self, state: UnifiedState) -> str | None:
         assembly = state.assembly
         if not assembly.ingredients_cookers:
             return None
+
         assembly_pairs = set()
         for ing in assembly.ingredients_cookers:
             if isinstance(ing, tuple):
@@ -676,27 +651,37 @@ class DefaultStrategy(Strategy):
                 assembly_pairs.add((ing, None))
 
         for _, order in self._prioritized_orders(state):
-            ics = self._recipe_ingredient_cooker.get(order.recipe_slug, [])
-            recipe_pairs = {(n, c) for n, c, _ in ics}
-            if assembly_pairs == recipe_pairs:
-                return order.recipe_slug
+            recipe = self._recipe_by_slug.get(order.recipe_slug)
+            if recipe:
+                raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
+                cookers = self._get_recipe_attr(recipe, "cookers", [])
+                recipe_pairs = set()
+                for i, ing in enumerate(raw):
+                    cooker = cookers[i] if i < len(cookers) else None
+                    recipe_pairs.add((ing, cooker))
+                if assembly_pairs == recipe_pairs:
+                    return order.recipe_slug
         return None
 
     def _ingredients_match(self, actual: list, recipe) -> bool:
         expected_raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
         expected_cookers = self._get_recipe_attr(recipe, "cookers", [])
+
         if len(actual) != len(expected_raw):
             return False
+
         expected_pairs = set()
         for i, ing in enumerate(expected_raw):
             cooker = expected_cookers[i] if i < len(expected_cookers) else None
             expected_pairs.add((ing, cooker))
+
         actual_pairs = set()
         for ing in actual:
             if isinstance(ing, tuple):
                 actual_pairs.add((ing[0], ing[1] if len(ing) > 1 else None))
             else:
                 actual_pairs.add((ing, None))
+
         return actual_pairs == expected_pairs
 
     def _condiments_complete(self, applied: dict[str, int], needed: dict[str, int]) -> bool:
