@@ -2,7 +2,7 @@
 image_directory: "static/img"
 recipes_data_path: "data/recipes.json"
 log_directory: "logs"
-episode_duration: 100
+episode_duration: 103
 
 cookers: ["grill", "oven", "skillet", "pot"]
 
