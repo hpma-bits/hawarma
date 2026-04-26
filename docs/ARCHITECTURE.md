@@ -68,10 +68,10 @@
 - **地位**: Playground 环境建设计划
 - **状态**: 📝 草案
 - **功能**:
-  - 规划将 `scripts/` 下的模拟/基准/调试工具整合到新的 `playground/` 目录
+  - Playground 已替代旧 `scripts/` 目录，提供 RL 环境、基准测试和策略验证
   - 定义 Strategy Sandbox、Agent Validator、Replay、Benchmark Engine、Parameter Sweeper 的架构
   - 分 Phase 1/2/3 的实施路线图
-- **输入**: 现有 `scripts/` 源码、用户反馈
+- **输入**: 现有 playground/ 源码、用户反馈
 - **输出**: 实施计划文档
 
 ## 🔗 文档关系

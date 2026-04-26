@@ -76,8 +76,8 @@ class MyStrategy(Strategy):
 
 ## 与旧 scripts/ 的关系
 
-Playground 替代了 `scripts/` 下的模拟/基准测试脚本：
+Playground 已完全替代旧 `scripts/` 目录：
 - `scripts/simulate_full_game.py` → `python -m playground run`
 - `scripts/benchmark_agent.py` → `python -m playground bench`
 
-旧脚本保留向后兼容 shim，但新开发请使用 playground。
+旧脚本已删除，所有新开发请使用 playground。

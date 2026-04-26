@@ -27,7 +27,7 @@
 | 修改 UI 操作 | `src/hawarma/bridge/ARCHITECTURE.md` → `src/hawarma/ARCHITECTURE.md` |
 | 修改订单检测 | `src/hawarma/bridge/ARCHITECTURE.md` (scanner) → `docs/game_rules.md` |
 | 添加新测试 | `tests/ARCHITECTURE.md` → 对应模块的 ARCHITECTURE.md |
-| 运行基准测试 | `experiments/ARCHITECTURE.md` → `scripts/` 目录 |
+| 运行基准测试 | `experiments/ARCHITECTURE.md` → `playground/` 目录 |
 | 修改配置 | `configs/config.yaml` → `src/hawarma/config.py` |
 
 ---
@@ -131,13 +131,6 @@ python -m playground run --seed 42                    # 运行单局
 python -m playground bench --games 50                 # 运行基准测试
 python -m playground bench --games 100 --csv out.csv  # 导出 CSV
 python -m playground replay replay.json               # 回放记录
-```
-
-### 旧模拟脚本（已迁移到 Playground）
-```bash
-.venv\Scripts\activate
-python scripts/simulate_full_game.py --seed 42
-python scripts/benchmark_agent.py --seeds 10
 ```
 
 ### 环境设置

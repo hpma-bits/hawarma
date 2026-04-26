@@ -25,7 +25,7 @@ hawarma/
 │       ├── bridge/     # 桥接层（UI 操作、状态追踪、扫描器）
 │       ├── services/   # 服务层（配方管理等）
 │       └── utils/      # 工具函数（图像处理）
-├── scripts/           # 脚本文件（模拟、基准测试）
+├── playground/        # RL 模拟与策略验证环境
 ├── experiments/       # 实验代码和报告
 ├── docs/              # 文档（游戏规则、策略设计、架构说明）
 ├── configs/           # 配置文件
@@ -55,15 +55,6 @@ hawarma/
 ### `tests/` — 测试代码
 - **地位**: 单元测试和集成测试
 - **深入阅读**: [`tests/ARCHITECTURE.md`](tests/ARCHITECTURE.md)
-
-### `scripts/` — 脚本文件
-| 文件 | 功能 |
-|------|------|
-| `simulate_full_game.py` | 单局模拟运行 |
-| `simulate_game.py` | 简化版模拟 |
-| `benchmark_agent.py` | 多局基准测试 |
-| `benchmark_utils.py` | 基准测试工具函数 |
-| `base_strategies.py` | 标准策略定义 |
 
 ### `experiments/` — 实验代码和报告
 - **地位**: 实验代码和报告
