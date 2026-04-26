@@ -15,53 +15,56 @@
 - **功能**: 导出所有 Agent 类和动作类型
 
 ### `agent.py`
-- **地位**: 统一烹饪 Agent
-- **状态**: ✅ 完成（含停滞检测和超时清理）
+- **地位**: 统一烹饪 Agent Shell
+- **状态**: ✅ 完成（重构后：纯 Shell + Strategy 注入）
 - **功能**:
-  - 基于优先级的贪心策略决策
-  - 支持与 GameEnvironment（真实游戏）交互
-  - 7级优先级动作选择
-  - 调料追踪、订单优先级排序（rush 优先）
+  - **Agent Shell**：封装环境状态、调用 Strategy、返回 Action
+  - **Strategy 注入**：默认加载 `playground.strategies.default.DefaultStrategy`，支持外部策略替换
+  - **状态封装**：`_build_unified_state()` 将 `GameEnvironment` 状态转换为 `UnifiedState`
   - **停滞检测**：`step_with_diagnostics()` 追踪连续无行动时间，5秒后输出诊断日志
-  - **组装站超时清理**：`_check_stale_assembly()` 检测食材齐全但调料缺失超过15秒的情况，自动清空
-  - **配方推断**：`_infer_recipe_from_assembly()` 从食材反推目标配方
-- **输入**: GameEnvironment 实例、配方列表
+  - **统计维护**：`orders_served`, `total_score`, `orders_timeout`, `actions_taken`
+  - **动作类型定义**：`CookAction`, `ServeOrderAction`, `ClearAssemblyAction` 等
+- **输入**: GameEnvironment 实例、配方列表、可选 Strategy
 - **输出**: 动作对象供执行器执行
 - **关键类**: `CookingAgent`, 各种 `Action` 子类
+- **注意**: 所有决策逻辑已迁移到 `playground/strategies/default.py` 的 `DefaultStrategy`
 
 ---
 
-## 🎯 Agent 决策机制详解
+## 🎯 Agent Shell 架构
 
-### 优先级决策模型
+### 重构后架构
 
-Agent 采用 **7级优先级贪心策略**，在每个决策点按优先级从高到低尝试动作：
+CookingAgent 不再包含决策逻辑，而是作为 **Agent Shell** 运行：
 
 ```
-优先级 1: 送餐 (ServeOrderAction)
-    ↓ (如果无法送餐)
-优先级 2: 清理过期食材 (ClearCookerAction)
-    ↓ (如果没有过期食材)
-优先级 3: 从灶台移到组装站 (MoveToAssemblyAction)
-    ↓ (如果灶台没有完成的食材)
-优先级 4: 开始烹饪 (CookAction)
-    ↓ (如果所有灶台都在忙)
-优先级 5: 添加调料 (AddCondimentAction)
-    ↓ (如果无需调料)
-优先级 6: 多余食材存入库存 (MoveToStockpileAction)
-    ↓ (如果没有多余食材)
-优先级 7: 从库存取用到组装站 (PullFromStockpileAction)
-    ↓ (如果库存没有需要的食材)
+RealGameBridge
+    │
+    ├─→ CookingAgent (Agent Shell)
+    │       │
+    │       ├── _build_unified_state()  ──→ UnifiedState
+    │       │
+    │       └── strategy.decide(state) ──→ Action
+    │               │
+    │               └─→ DefaultStrategy (决策逻辑)
+    │
+    └─→ _execute_action() - 执行 Agent 返回的动作
 ```
+
+### Agent Shell 职责
+
+| 职责 | 方法 | 说明 |
+|------|------|------|
+| 状态封装 | `_build_unified_state()` | 将 GameEnvironment 转换为 UnifiedState |
+| 决策委托 | `step()` → `strategy.decide(state)` | 纯透传，不干预决策 |
+| 停滞检测 | `step_with_diagnostics()` | 5秒无动作输出诊断日志 |
+| 统计维护 | `stats` / `on_order_served()` | 追踪订单完成、超时、得分 |
 
 ### 设计原理
 
-1. **送餐优先**：完成订单是最终目标，一旦组装站有匹配订单的完整菜品立即送餐
-2. **清理优先**：过期食材占用灶台资源，必须优先清理，防止阻塞烹饪
-3. **移动优先于烹饪**：已完成的食材应尽快移到组装站，释放灶台
-4. **烹饪优先于调味**：灶台是异步的，尽早开始烹饪可以让灶台更早工作；调味可以在烹饪期间进行
-5. **库存缓冲**：多余的完成食材存入库存，以备后续订单使用
-6. **库存取用**：当库存有需要的食材时，直接取用比重新烹饪更快
+1. **Strategy 可插拔**：同一套决策逻辑可在 Playground 和真实游戏中复用
+2. **Agent 无决策**：`step()` 只负责构建状态和调用 `strategy.decide()`
+3. **诊断独立**：停滞检测不影响 Strategy 决策，仅用于调试
 
 ### 动作类型定义
 
@@ -112,98 +115,61 @@ class ClearCookerAction(Action):
 
 ## 🔄 Agent 与环境交互流程
 
-### 单步决策流程
+### 单步决策流程（重构后）
 
 ```python
 def step(self) -> Optional[Action]:
     """
-    单步决策：选择并执行最优动作
+    单步决策：Agent Shell + Strategy 注入模式
     
-    Returns:
-        执行的动作，如果没有动作可执行则返回 None
+    流程：
+    1. 构建 UnifiedState 从 env
+    2. 调用 Strategy.decide(state) 获取动作
+    3. 返回动作
     """
-    # 1. 送餐（最高优先级）
-    if action := self._try_serve():
-        return action
-    
-    # 2. 从灶台移到组装站
-    if action := self._try_move_to_assembly():
-        return action
-    
-    # 3. 开始烹饪（让灶台尽早开始工作）
-    if action := self._try_start_cooking():
-        return action
-    
-    # 4. 添加调料（可在烹饪期间进行）
-    if action := self._try_add_condiment():
-        return action
-    
-    # 5. 从库存取用到组装站
-    if action := self._try_pull_from_stockpile():
-        return action
-    
-    # 6. 清理过期食材
-    if action := self._try_clear_expired():
-        return action
-    
-    # 7. 多余食材存入库存
-    if action := self._try_store_to_stockpile():
-        return action
-    
-    return None
+    state = self._build_unified_state()
+    action = self._strategy.decide(state)
+    return action
 ```
 
-### 关键判断逻辑
+### Strategy 默认实现
 
-#### 送餐判断 (`_try_serve`)
-```python
-def _try_serve(self) -> Optional[ServeOrderAction]:
-    # 1. 检查是否在动画窗口（防止冲突）
-    if self.env.is_in_animation_window():
-        return None
-    
-    # 2. 检查组装站是否有食材
-    assembly = self.env.assembly
-    if not assembly.ingredients:
-        return None
-    
-    # 3. 遍历订单，找到匹配的订单
-    for slot_idx, order in enumerate(self.env.orders):
-        if order is None:
-            continue
-        
-        # 4. 检查配方是否匹配
-        recipe = self._recipe_by_slug.get(order.recipe_slug)
-        if recipe and self._ingredients_match(assembly.ingredients, recipe):
-            return ServeOrderAction(slot_idx=slot_idx)
-    
-    return None
-```
+决策逻辑位于 `playground/strategies/default.py` 的 `DefaultStrategy`：
 
-#### 烹饪判断 (`_try_start_cooking`)
 ```python
-def _try_start_cooking(self) -> Optional[CookAction]:
-    # 1. 获取空闲灶台
-    free_cookers = self._get_free_cookers()
-    if not free_cookers:
-        return None
-    
-    # 2. 获取需要烹饪的食材（按优先级）
-    to_cook = self._get_ingredients_to_cook()
-    
-    # 3. 优先烹饪订单需要的食材（按需响应）
-    for ing_name, cooker_type in to_cook:
-        if cooker_type in free_cookers:
-            # 检查是否已在烹饪
-            if self._is_cooking(ing_name):
-                continue
-            # 检查库存是否有（优先使用库存）
-            if self._has_in_stockpile(ing_name):
-                continue
-            # 开始烹饪
-            return CookAction(...)
-    
-    # 4. 不预烹饪 - 按需响应策略更可靠
+def decide(self, state: UnifiedState) -> Action | None:
+    # 0. 检查组装站是否需要清理
+    if action := self._try_clear_assembly(state, assembly_ings):
+        return action
+
+    # 1. 送餐
+    if action := self._try_serve(state, assembly_ings):
+        return action
+
+    # 2. 清理过期食材
+    if action := self._try_clear_expired(state):
+        return action
+
+    # 3. 移动完成食材到组装站
+    if action := self._try_move_to_assembly(state, assembly_ings):
+        return action
+
+    # 4. 开始烹饪（多订单并行）
+    if action := self._try_parallel_cooking(state, assembly_ings):
+        return action
+
+    # 5. 添加调料
+    if action := self._try_add_condiment(state, assembly_ings):
+        return action
+
+    # 6. 存入 stockpile
+    if action := self._try_store_to_stockpile(state):
+        return action
+
+    # 7. 从库存取用
+    if action := self._try_pull_from_stockpile(state):
+        return action
+
     return None
 ```
 
@@ -211,26 +177,29 @@ def _try_start_cooking(self) -> Optional[CookAction]:
 
 ## 📊 状态查询接口
 
-Agent 通过 `self.env` 访问 GameEnvironment 提供的状态接口：
+Agent Shell 通过 `self.env` 访问 GameEnvironment 提供的状态接口，并封装为 `UnifiedState` 供 Strategy 使用：
 
-### 环境状态
+### 环境状态（内部使用）
 - `self.env.time` - 当前游戏时间（秒）
 - `self.env.orders` - 订单列表（4个槽位）
 - `self.env.cookers` - 灶台状态字典
 - `self.env.assembly` - 组装站状态
 - `self.env.stockpile` - 库存状态字典
 
-### 状态判断方法
-- `self.env.is_in_animation_window()` - 是否在动画窗口期
-- `self.env.is_game_over()` - 游戏是否结束
-- `self.env.is_cooking_done(cooker)` - 灶台烹饪是否完成
+### UnifiedState（Strategy 输入）
+- `time` - 当前游戏时间
+- `orders` - 订单元组（4个槽位）
+- `cookers` - 灶台状态字典
+- `assembly` - 组装站状态
+- `stockpile` - 库存状态字典
+- `recipes` - 配方字典
+- `game_duration` - 游戏总时长
+- `is_in_animation_window` - 是否在动画窗口期
 
-### 辅助查询方法
-- `self._get_free_cookers()` - 获取空闲灶台列表
-- `self._get_needed_ingredients()` - 获取当前订单需要的食材
-- `self._is_cooking(ingredient)` - 检查食材是否正在烹饪
-- `self._has_in_stockpile(ingredient)` - 检查库存是否有食材
-- `self._infer_recipe_from_assembly()` - 根据组装站食材推断匹配的配方
+### Agent Shell 保留的辅助方法
+- `self._get_free_cookers()` - 获取空闲灶台列表（诊断用）
+- `self._prioritized_orders()` - 按优先级排序订单（诊断用）
+- `self._infer_recipe_from_assembly()` - 根据组装站食材推断配方（诊断用）
 
 ---
 

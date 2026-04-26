@@ -38,10 +38,11 @@
 - **功能**: Event、EventType、Recipe、Order 等类型
 
 ### `agent/` 子目录
-- **地位**: Agent 决策逻辑
-- **功能**: 7 级优先级贪心策略，输出动作对象
+- **地位**: Agent Shell + Action 类型定义
+- **功能**: 封装环境状态、注入 Strategy、输出 Action
 - **文件**:
-  - `agent.py`: 统一 CookingAgent，Action 类型定义
+  - `agent.py`: CookingAgent Shell（默认注入 `DefaultStrategy`），Action 类型定义
+- **注意**: 决策逻辑已迁移到 `playground/strategies/default.py`
 
 ### `bridge/` 子目录
 - **地位**: Agent 与真实游戏的桥接层
