@@ -60,6 +60,8 @@ class RealGameBridge:
         self._running = False
         self._game_started = False
         self._executing_action = False  # 是否正在执行 UI 操作
+        self._agent_wakeup = asyncio.Event()  # 事件驱动：唤醒 agent 决策
+        self._last_served: dict[tuple[str, bool], float] = {}  # (recipe_slug, is_rush) -> serve_time
 
     def set_agent(self, agent) -> None:
         """设置 Agent"""
@@ -117,8 +119,18 @@ class RealGameBridge:
         """订单扫描循环（自适应频率），动画窗口期间暂停"""
         while self._running and not self.env.is_game_over():
             try:
-                if not self.env.is_in_animation_window():
-                    await self._sync_orders_from_scan()
+                if self.env.is_in_animation_window():
+                    # 动画窗口期间：sleep 到动画结束后再扫描
+                    remaining = self.env._animation_until - time.time()
+                    if remaining > 0:
+                        await asyncio.sleep(remaining + 0.1)
+                    # 动画结束后唤醒 agent
+                    self._agent_wakeup.set()
+                    continue
+
+                await self._sync_orders_from_scan()
+                # 扫描完成后唤醒 agent（有新信息）
+                self._agent_wakeup.set()
 
                 interval = self._compute_scan_interval()
                 await asyncio.sleep(interval)
@@ -148,48 +160,92 @@ class RealGameBridge:
 
     async def _sync_orders_from_scan(self) -> None:
         """
-        强制将 env.orders 与扫描结果同步。
+        将 env.orders 与扫描结果增量同步。
 
         策略：
-        1. 检查当前订单是否有 done=True 的，有则跳过
-        2. 按扫描结果重建 env.orders
-        3. 忽略 None 的 slot（表示该位置没有订单）
+        1. 扫描当前订单
+        2. 收集扫描到的订单类型，按从左到右顺序（忽略扫描器报告的 slot gap）
+        3. 按 (recipe_slug, is_rush) 匹配现有活跃订单，保留 order_id/created_at/timeout_at
+        4. 未匹配的扫描结果创建新订单
+        5. 1.5s 内刚 serve 过的订单类型，若 env 中已无该类型活跃订单，则跳过（防幽灵）
+        6. 最终结果左对齐，保证 slot0 不为 None 时右侧有订单
         """
         start_time = asyncio.get_event_loop().time()
         scanned = await self.scanner.scan_new_orders()
         scan_duration = asyncio.get_event_loop().time() - start_time
 
-        # 构建扫描结果的 slot -> order 映射
-        scan_by_slot: dict[int, tuple[str, bool]] = {}  # type: ignore
-        for d in scanned:
-            scan_by_slot[d.slot_idx] = (d.recipe_slug, d.is_rush)
+        # 收集扫描到的订单类型，按扫描 slot 排序（扫描器通常从左到右）
+        scanned_types: list[tuple[str, bool]] = []
+        for d in sorted(scanned, key=lambda x: x.slot_idx):
+            scanned_types.append((d.recipe_slug, d.is_rush))
 
-        # 直接重建 env.orders：从左到右填充扫描到的订单
-        new_orders: list[OrderInfo | None] = []
-        for slot_idx in range(4):
-            if slot_idx in scan_by_slot:
-                recipe_slug, is_rush = scan_by_slot[slot_idx]
-                now = time.time()
-                timeout = 40.0 if is_rush else 70.0
-                order = OrderInfo(
-                    order_id=self.env._next_order_id,
-                    recipe_slug=recipe_slug,
-                    is_rush=is_rush,
-                    created_at=now,
-                    timeout_at=now + timeout,
-                    done=False,
+        now = time.time()
+        new_orders: list[OrderInfo | None] = [None] * 4
+        reused_ids: set[int] = set()
+
+        for i, (recipe_slug, is_rush) in enumerate(scanned_types):
+            if i >= 4:
+                break
+
+            # 幽灵订单保护：1.5s 内刚 serve 过该类型，且 env 中已无活跃同类型订单
+            last_served_at = self._last_served.get((recipe_slug, is_rush), 0)
+            if now - last_served_at < 1.5:
+                has_active = any(
+                    o and not o.done and o.recipe_slug == recipe_slug and o.is_rush == is_rush
+                    for o in self.env._orders
                 )
-                self.env._next_order_id += 1
-                new_orders.append(order)
+                if not has_active:
+                    continue  # 跳过幽灵
+
+            # 尝试匹配现有活跃订单（优先同位置，再其他位置）
+            matched = None
+            # 1) 优先同位置
+            existing = self.env._orders[i] if i < len(self.env._orders) else None
+            if (
+                existing
+                and not existing.done
+                and existing.recipe_slug == recipe_slug
+                and existing.is_rush == is_rush
+                and id(existing) not in reused_ids
+            ):
+                matched = existing
             else:
-                new_orders.append(None)
+                # 2) 匹配其他位置的活跃订单（订单位移）
+                for other in self.env._orders:
+                    if (
+                        other
+                        and not other.done
+                        and other.recipe_slug == recipe_slug
+                        and other.is_rush == is_rush
+                        and id(other) not in reused_ids
+                    ):
+                        matched = other
+                        break
 
-        # 直接替换
+            if matched:
+                new_orders[i] = matched
+                reused_ids.add(id(matched))
+                continue
+
+            # 创建新订单
+            timeout = 40.0 if is_rush else 70.0
+            order = OrderInfo(
+                order_id=self.env._next_order_id,
+                recipe_slug=recipe_slug,
+                is_rush=is_rush,
+                created_at=now,
+                timeout_at=now + timeout,
+                done=False,
+            )
+            self.env._next_order_id += 1
+            new_orders[i] = order
+
         self.env._orders = new_orders
-
         self.env._log_orders_state("sync")
         logger.debug(
-            f"[t={self.env.time:.1f}s] Scan completed: {len(scanned)} detected, duration={scan_duration * 1000:.1f}ms"
+            f"[t={self.env.time:.1f}s] Scan completed: {len(scanned)} detected, "
+            f"duration={scan_duration * 1000:.1f}ms, reused={len(reused_ids)}, "
+            f"ghost_protected={len(scanned_types) - len([o for o in new_orders if o])}"
         )
 
     # ========================================================================
@@ -197,13 +253,15 @@ class RealGameBridge:
     # ========================================================================
 
     async def _timeout_loop(self) -> None:
-        """订单超时检测循环（每 0.3s）"""
+        """订单超时检测循环（每 0.3s），有变化时唤醒 agent"""
         while self._running and not self.env.is_game_over():
             try:
                 timed_out = self.env.check_and_remove_timed_out_orders()
-                for order_id in timed_out:
-                    self.agent.on_order_timeout(order_id)
-                # G.DEVICE.snapshot()  # 用于刷新缓存的截图
+                if timed_out:
+                    for order_id in timed_out:
+                        self.agent.on_order_timeout(order_id)
+                    # 订单超时后唤醒 agent（状态变化）
+                    self._agent_wakeup.set()
                 await asyncio.sleep(0.3)
             except Exception as e:
                 logger.error(f"Timeout loop error: {e}")
@@ -214,31 +272,47 @@ class RealGameBridge:
     # ========================================================================
 
     async def _agent_loop(self) -> None:
-        """Agent 决策循环（每 0.05s），带停滞检测，动画窗口期间允许烹饪"""
+        """Agent 决策循环（事件驱动），只在有信息变化时唤醒"""
         while self._running and not self.env.is_game_over():
             try:
                 if self._executing_action:
-                    await asyncio.sleep(0.05)
+                    # 等待操作完成后的自动唤醒
+                    await asyncio.wait_for(
+                        self._agent_wakeup.wait(), timeout=2.0
+                    )
+                    self._agent_wakeup.clear()
                     continue
+
+                # 等待被唤醒（扫描完成 / 操作完成 / 动画结束 / 超时 / 定时器）
+                try:
+                    await asyncio.wait_for(
+                        self._agent_wakeup.wait(), timeout=0.5
+                    )
+                    self._agent_wakeup.clear()
+                except asyncio.TimeoutError:
+                    # 0.5s 内无事件：被动唤醒（安全检查，防止死锁）
+                    pass
 
                 in_animation = self.env.is_in_animation_window()
 
-                action = await asyncio.to_thread(self.agent.step_with_diagnostics)
+                action = self.agent.step_with_diagnostics()
                 if action:
                     action_type = type(action).__name__
                     if in_animation and action_type == "ServeOrderAction":
-                        await asyncio.sleep(0.05)
+                        # serve 在动画窗口期间被跳过，等待动画结束
                         continue
 
                     self.agent.stats["actions_taken"] += 1
                     self._executing_action = True
                     await self._execute_action(action)
                     self._executing_action = False
-                await asyncio.sleep(0.05)
+                    # 操作完成后立即触发下一次决策（状态已变化）
+                    self._agent_wakeup.set()
             except Exception as e:
                 logger.error(f"Agent loop error: {e}")
                 self._executing_action = False
-                await asyncio.sleep(0.05)
+                # 错误后也唤醒一次，避免永久阻塞
+                self._agent_wakeup.set()
 
     # ========================================================================
     # 动作执行
@@ -333,14 +407,22 @@ class RealGameBridge:
 
         if success_slot is not None:
             self.agent.on_order_served()
-            self.env.clear_assembly()
-            self.env.set_animation_window(1.5)
+            order = self.env.orders[success_slot] if success_slot < len(self.env.orders) else None
+            if self.env.serve_order(success_slot):
+                if order:
+                    # 记录刚 serve 的订单类型，用于扫描时识别幽灵订单
+                    self._last_served[(order.recipe_slug, order.is_rush)] = time.time()
+            else:
+                logger.warning(
+                    f"[t={self.env.time:.1f}s] env.serve_order({success_slot}) failed, "
+                    f"order may have timed out"
+                )
         else:
             logger.warning(
-                f"[t={self.env.time:.1f}s] Serve failed after all retries. "
-                f"Assembly cleared."
+                f"[t={self.env.time:.1f}s] Serve verification failed. "
+                f"Assembly preserved: {self.env.assembly.ingredients_cookers}"
             )
-            self.env.clear_assembly()
+            # 不再自动清空 assembly，让 agent 的 _try_clear_assembly 决策是否清理
 
     async def _serve_with_verify(
         self, slot_idx: int, max_retries: int = 2
@@ -380,12 +462,10 @@ class RealGameBridge:
                 )
                 return try_slot
 
-        # 全部失败，清空 assembly
+        # 全部失败，保留 assembly 让 agent 决策是否清理
         logger.warning(
-            f"[t={self.env.time:.1f}s] All serve attempts failed. Clearing assembly."
+            f"[t={self.env.time:.1f}s] All serve attempts failed. Assembly preserved."
         )
-        await self.ui.clear_assembly()
-        self.env.clear_assembly()
         return None
 
     async def _verify_with_multi_snapshot(self) -> bool:

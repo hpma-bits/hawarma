@@ -44,6 +44,35 @@ class TestRecipeRewardLookup:
         score = lookup.get_score("Unknown Recipe", has_condiments=True, is_rush=False)
         assert score == 0.0
 
+    def test_get_score_with_visibility_tiers(self):
+        """测试不同 total_visibility 区间的得分加成"""
+        lookup = RecipeRewardLookup()
+        # gildedShoreRisotto with cond: base 106 + visibility 32 = 138
+        # tier 0 [0, 40):  normal 1.0x, rush 1.6x
+        assert lookup.get_score("gildedShoreRisotto", True, False, 0) == 138.0
+        assert lookup.get_score("gildedShoreRisotto", True, True, 0) == 220.8
+        # tier 1 [40, 80):  normal 1.1x, rush 2.0x
+        assert lookup.get_score("gildedShoreRisotto", True, False, 40) == 151.8
+        assert lookup.get_score("gildedShoreRisotto", True, True, 40) == 276.0
+        # tier 2 [80, 160): normal 1.2x, rush 2.5x
+        assert lookup.get_score("gildedShoreRisotto", True, False, 80) == 165.6
+        assert lookup.get_score("gildedShoreRisotto", True, True, 80) == 345.0
+        # tier 3 [160, 240): normal 1.3x, rush 3.0x
+        assert lookup.get_score("gildedShoreRisotto", True, False, 160) == 179.4
+        assert lookup.get_score("gildedShoreRisotto", True, True, 160) == 414.0
+        # tier 4 [240, 360): normal 1.4x, rush 3.5x
+        assert lookup.get_score("gildedShoreRisotto", True, False, 240) == 193.2
+        assert lookup.get_score("gildedShoreRisotto", True, True, 240) == 483.0
+        # tier 5 [360, ∞):  normal 1.5x, rush 4.0x
+        assert lookup.get_score("gildedShoreRisotto", True, False, 360) == 207.0
+        assert lookup.get_score("gildedShoreRisotto", True, True, 360) == 552.0
+
+    def test_get_visibility(self):
+        lookup = RecipeRewardLookup()
+        assert lookup.get_visibility("gildedShoreRisotto", True) == 32
+        assert lookup.get_visibility("gildedShoreRisotto", False) == 16
+        assert lookup.get_visibility("Unknown Recipe", True) == 0
+
     def test_all_recipes_in_lookup(self):
         """验证 recipes.json 中的所有菜品都在 reward.csv 中"""
         import json
@@ -151,6 +180,36 @@ class TestGameDataReward:
         reward = reward_fn.compute(prev_state, None, prev_state, events)
         # (106 + 32) * 1.6 = 220.8
         assert reward == 220.8
+
+    def test_serve_with_high_visibility(self, reward_fn):
+        """测试 spawned_at_visibility 锁定得分加成"""
+        prev_state = UnifiedState(
+            time=10.0,
+            orders=(
+                OrderInfo(order_id=1, recipe_slug="gildedShoreRisotto", is_rush=False,
+                         created_at=0.0, timeout_at=60.0),
+            ),
+            cookers={},
+            assembly=AssemblyState(condiments={"salt": 1}),
+            stockpile={},
+            recipes={},
+            game_duration=90.0,
+            is_in_animation_window=False,
+        )
+        events = [
+            Event(
+                timestamp=10.0,
+                event_type=EventType.ORDER_SERVED,
+                details={
+                    "order_id": 1,
+                    "recipe": "gildedShoreRisotto",
+                    "spawned_at_visibility": 240.0,  # tier 4: normal +40%
+                },
+            )
+        ]
+        reward = reward_fn.compute(prev_state, None, prev_state, events)
+        # (106 + 32) * 1.4 = 193.2
+        assert reward == 193.2
 
     def test_multiple_serves(self, reward_fn):
         prev_state = UnifiedState(

@@ -12,6 +12,7 @@
 - 订单超时：与 recipe 食材耗时相关，普通订单 55-75 秒，rush 订单 30-45 秒
 - 游戏时长：90-110 秒（根据玩家等级/进度，可配置）
 - 动画窗口限制：因 UI 变化导致扫描不稳定，非游戏本身限制
+- Visibility 加成：已完成订单的总 visibility 决定后续订单的得分倍率（详见 docs/game_rules.md）
 
 ⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新
 """
@@ -37,7 +38,7 @@ from .env_simulator_types import (
     IngredientRequirement,
     GameConfig,
 )
-from hawarma.rewards import RecipeTimeoutLookup
+from hawarma.rewards import RecipeRewardLookup, RecipeTimeoutLookup
 
 
 # ============================================================================
@@ -54,7 +55,7 @@ class ActionResult:
     success: bool
     events: tuple[Event, ...] = field(default_factory=tuple)
     error_message: str | None = None
-    score_earned: int = 0  # 如果是 serve_order，记录得分
+    score_earned: float = 0.0  # 如果是 serve_order，记录得分
     
     def __bool__(self) -> bool:
         """允许使用 `if result:` 语法"""
@@ -70,7 +71,7 @@ class ActionResult:
         return self.error_message or "Unknown error"
     
     @classmethod
-    def success_result(cls, events: list[Event] = None, score: int = 0) -> ActionResult:
+    def success_result(cls, events: list[Event] = None, score: float = 0.0) -> ActionResult:
         """快速创建成功结果"""
         return cls(
             success=True,
@@ -187,6 +188,9 @@ class GameSimulator:
         
         # 订单超时查表
         self._timeout_lookup: RecipeTimeoutLookup | None = None
+        
+        # 订单得分查表
+        self._reward_lookup: RecipeRewardLookup | None = None
     
     # ------------------------------------------------------------------
     # 配置和初始化
@@ -531,7 +535,7 @@ class GameSimulator:
                 f"Slot {slot_idx} is already occupied"
             )
         
-        # 创建订单
+        # 创建订单（加成比例在生成瞬间锁定）
         timeout = self._calculate_timeout(recipe, is_rush)
         order = Order(
             order_id=self._next_order_id,
@@ -539,7 +543,8 @@ class GameSimulator:
             is_rush=is_rush,
             created_at=self._state.time,
             timeout_at=self._state.time + timeout,
-            condiments_applied=condiments if condiments else {}
+            condiments_applied=condiments if condiments else {},
+            spawned_at_visibility=self._state.total_visibility,
         )
         
         self._next_order_id += 1
@@ -1196,8 +1201,15 @@ class GameSimulator:
                     f"(need {required_count}, have {actual_count})"
                 )
         
-        # 计算得分
+        # 计算得分（使用订单生成时锁定的 spawned_at_visibility）
         score = self._calculate_score(order, assembly_condiments)
+        
+        # 累加本订单的 visibility 到总 visibility（不影响本次得分）
+        if self._reward_lookup is None:
+            self._reward_lookup = RecipeRewardLookup()
+        has_condiments = bool(assembly_condiments)
+        visibility = self._reward_lookup.get_visibility(order.recipe.slug, has_condiments)
+        self._state.total_visibility += visibility
         
         # 标记订单完成
         order.served_at = self._state.time
@@ -1220,14 +1232,16 @@ class GameSimulator:
                 'slot': slot_idx,
                 'recipe': order.recipe.slug,
                 'score': score,
-                'served_at': order.served_at
+                'served_at': order.served_at,
+                'visibility': visibility,
+                'spawned_at_visibility': order.spawned_at_visibility,
             }
         )
         
         self._event_history.append(event)
         
         if self._debug:
-            print(f"Order {order.order_id} served from slot {slot_idx}, score: {score}")
+            print(f"Order {order.order_id} served from slot {slot_idx}, score: {score}, total_visibility: {self._state.total_visibility}")
         
         return ActionResult.success_result([event], score=score)
     
@@ -1248,11 +1262,11 @@ class GameSimulator:
         
         return ActionResult.success_result()
     
-    def _calculate_score(self, order: Order, assembly_condiments: dict[str, int]) -> int:
+    def _calculate_score(self, order: Order, assembly_condiments: dict[str, int]) -> float:
         """
         计算订单得分
         
-        基础分 + 时间奖励 + 调料匹配奖励
+        基于 reward.csv 查表，并应用订单生成时锁定的 visibility 区间加成。
         
         Args:
             order: 订单
@@ -1261,28 +1275,16 @@ class GameSimulator:
         Returns:
             得分
         """
-        # 基础分数
-        base_score = 100
+        if self._reward_lookup is None:
+            self._reward_lookup = RecipeRewardLookup()
         
-        # Rush订单额外加分
-        if order.is_rush:
-            base_score = 150
-        
-        # 时间奖励：剩余时间越多，奖励越高
-        time_elapsed = self._state.time - order.created_at
-        time_limit = order.timeout_at - order.created_at
-        time_ratio = max(0.0, 1.0 - (time_elapsed / time_limit))
-        time_bonus = int(50 * time_ratio)
-        
-        # 调料匹配奖励
-        condiment_bonus = 0
-        recipe = order.recipe
-        for condiment_name, required_count in recipe.condiments.items():
-            actual_count = assembly_condiments.get(condiment_name, 0)
-            if actual_count >= required_count:
-                condiment_bonus += 10
-        
-        return base_score + time_bonus + condiment_bonus
+        has_condiments = bool(assembly_condiments)
+        return self._reward_lookup.get_score(
+            order.recipe.slug,
+            has_condiments=has_condiments,
+            is_rush=order.is_rush,
+            total_visibility=order.spawned_at_visibility,
+        )
     
     def _advance_slots(self, current_time: float) -> None:
         """触发槽位前移"""
@@ -1518,20 +1520,21 @@ class GameSimulator:
         else:
             recipe = list(self._recipes.values())[0]
         
-        # 随机决定是否rush（25%概率）
-        is_rush = random.random() < 0.25
+        # 随机决定是否rush（10%概率）
+        is_rush = random.random() < 0.10
         
         # 计算超时时间（基于recipe）
         timeout = self._calculate_timeout(recipe, is_rush)
         
-        # 创建订单
+        # 创建订单（加成比例在生成瞬间锁定）
         order = Order(
             order_id=self._next_order_id,
             recipe=recipe,
             is_rush=is_rush,
             created_at=created_at,
             timeout_at=created_at + timeout,
-            condiments_applied={}
+            condiments_applied={},
+            spawned_at_visibility=self._state.total_visibility,
         )
         
         self._next_order_id += 1

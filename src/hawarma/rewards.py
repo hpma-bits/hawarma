@@ -41,12 +41,26 @@ class RecipeRewardLookup:
                     "visibility_without_cond": int(row["visibility without cond"]),
                 }
 
+    def _get_multiplier(self, total_visibility: float, is_rush: bool) -> float:
+        """根据总 visibility 区间和订单类型返回得分倍率。"""
+        if total_visibility < 40:
+            return 1.6 if is_rush else 1.0
+        if total_visibility < 80:
+            return 2.0 if is_rush else 1.1
+        if total_visibility < 160:
+            return 2.5 if is_rush else 1.2
+        if total_visibility < 240:
+            return 3.0 if is_rush else 1.3
+        if total_visibility < 360:
+            return 3.5 if is_rush else 1.4
+        return 4.0 if is_rush else 1.5
+
     def get_score(
         self,
         recipe_name: str,
         has_condiments: bool,
         is_rush: bool,
-        visibility_level: int | None = None,
+        total_visibility: float | None = None,
     ) -> float:
         """
         计算 serve 的精确分数。
@@ -55,7 +69,7 @@ class RecipeRewardLookup:
             recipe_name: 菜品名称（slug）
             has_condiments: 是否添加了调料
             is_rush: 是否为 rush 订单
-            visibility_level: visibility 等级 (0-6)，None 表示使用 CSV 中的默认值
+            total_visibility: 已完成订单的总 visibility，None 视为 0
 
         Returns:
             float: 该订单的得分
@@ -72,12 +86,24 @@ class RecipeRewardLookup:
             vis = row["visibility_without_cond"]
 
         total = base + vis
+        multiplier = self._get_multiplier(total_visibility or 0.0, is_rush)
+        return float(total * multiplier)
 
-        # rush 订单：基础分数 + 60%（简化处理）
-        if is_rush:
-            total *= 1.6
+    def get_visibility(self, recipe_name: str, has_condiments: bool) -> int:
+        """
+        获取订单的 visibility 值。
 
-        return float(total)
+        Args:
+            recipe_name: 菜品名称（slug）
+            has_condiments: 是否添加了调料
+
+        Returns:
+            int: visibility 值，找不到返回 0
+        """
+        row = self._data.get(recipe_name)
+        if not row:
+            return 0
+        return row["visibility_with_cond"] if has_condiments else row["visibility_without_cond"]
 
     def __contains__(self, recipe_slug: str) -> bool:
         return recipe_slug in self._data

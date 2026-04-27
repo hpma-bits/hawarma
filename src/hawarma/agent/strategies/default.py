@@ -157,19 +157,34 @@ class DefaultStrategy(Strategy):
             )
             if not has_active:
                 return ClearAssemblyAction()
-        if not target_slug:
-            active_slugs = {o.recipe_slug for o in state.orders if o and not o.done}
-            if not active_slugs:
-                return ClearAssemblyAction()
-            for order in state.orders:
-                if order and not order.done:
-                    recipe = self._recipe_by_slug.get(order.recipe_slug)
-                    if recipe:
-                        recipe_ings = set(self._get_recipe_attr(recipe, "raw_ingredients", []))
-                        if all(ing in recipe_ings for ing in assembly_ings):
-                            return None
-            return ClearAssemblyAction()
-        return None
+            return None
+
+        # target_slug 为 None：严格检查 assembly 是否可能匹配任何活跃订单
+        # 1) 先尝试完整匹配（食材 + cooker 完全一致）
+        inferred = self._infer_recipe_from_assembly(state)
+        if inferred and any(
+            o and not o.done and o.recipe_slug == inferred for o in state.orders
+        ):
+            return None
+
+        # 2) 再检查是否是某个活跃订单的部分组装（真子集）
+        assembly_pairs = set()
+        for ing in assembly.ingredients_cookers:
+            if isinstance(ing, tuple):
+                assembly_pairs.add((ing[0], ing[1] if len(ing) > 1 else None))
+            else:
+                assembly_pairs.add((ing, None))
+
+        for order in state.orders:
+            if not order or order.done:
+                continue
+            ics = self._recipe_ingredient_cooker.get(order.recipe_slug, [])
+            recipe_pairs = {(n, c) for n, c, _ in ics}
+            if assembly_pairs.issubset(recipe_pairs):
+                return None  # 部分组装中，保留等待后续食材
+
+        # 既不完全匹配，也不是任何活跃订单的部分组装 → 死锁，清理
+        return ClearAssemblyAction()
 
     # ====================================================================
     # 调料优先
@@ -297,13 +312,29 @@ class DefaultStrategy(Strategy):
             return None
         assembly = state.assembly
 
-        assembly_missing: list[tuple[str, str, float]] = []
+        # 如果 assembly 已被某个活跃订单占用，只烹饪该订单需要的食材
+        # 避免为其他订单烹饪的食材完成后无法进入 assembly 而浪费
         if assembly.target_recipe_slug:
-            ics = self._recipe_ingredient_cooker.get(assembly.target_recipe_slug, [])
-            for ing_name, cooker, duration in ics:
-                if ing_name not in assembly_ings:
-                    assembly_missing.append((ing_name, cooker, duration))
+            has_active = any(
+                o and not o.done and o.recipe_slug == assembly.target_recipe_slug
+                for o in state.orders
+            )
+            if has_active:
+                ics = self._recipe_ingredient_cooker.get(assembly.target_recipe_slug, [])
+                for ing_name, cooker, duration in ics:
+                    if ing_name in assembly_ings:
+                        continue
+                    if cooker not in free_cookers:
+                        continue
+                    if self._is_cooking(state, ing_name, cooker):
+                        continue
+                    if self._has_in_stockpile(state, ing_name, cooker):
+                        continue
+                    order_id = self._get_order_id_for_ingredient(state, ing_name)
+                    return CookAction(ingredient=ing_name, cooker=cooker, duration=duration, order_id=order_id)
+                return None
 
+        # assembly 为空：按原逻辑，优先当前订单，再考虑所有订单
         needed_current: list[tuple[str, str, float]] = []
         for _, order in self._prioritized_orders(state):
             ics = self._recipe_ingredient_cooker.get(order.recipe_slug, [])
@@ -312,15 +343,7 @@ class DefaultStrategy(Strategy):
                     needed_current.append((ing_name, cooker, duration))
             break
 
-        assembly_missing.sort(key=lambda x: x[2], reverse=True)
         needed_current.sort(key=lambda x: x[2], reverse=True)
-
-        cooking_priority: list[tuple[str, str, float]] = list(assembly_missing)
-        seen = {(n, c) for n, c, _ in cooking_priority}
-        for item in needed_current:
-            if (item[0], item[1]) not in seen:
-                cooking_priority.append(item)
-                seen.add((item[0], item[1]))
 
         needed_all: list[tuple[str, str, float]] = []
         seen_all: set[tuple[str, str]] = set()
@@ -338,7 +361,7 @@ class DefaultStrategy(Strategy):
             if slot.count > 0 and slot.ingredient_name:
                 stockpile_counts[slot.ingredient_name] = stockpile_counts.get(slot.ingredient_name, 0) + slot.count
 
-        for ing_name, cooker_type, duration in cooking_priority:
+        for ing_name, cooker_type, duration in needed_current:
             if cooker_type not in free_cookers:
                 continue
             if self._is_cooking(state, ing_name, cooker_type):
@@ -386,7 +409,19 @@ class DefaultStrategy(Strategy):
             if cooker.busy:
                 cooking_combos.add((cooker.ingredient_name, cooker.cooker_type))
 
-        active_order_slugs = {o.recipe_slug for o in state.orders if o and not o.done}
+        assembly = state.assembly
+        # 如果 assembly 已被某个活跃订单占用，只预烹饪该订单的食材
+        if assembly.target_recipe_slug:
+            has_active = any(
+                o and not o.done and o.recipe_slug == assembly.target_recipe_slug
+                for o in state.orders
+            )
+            if has_active:
+                active_order_slugs = {assembly.target_recipe_slug}
+            else:
+                active_order_slugs = {o.recipe_slug for o in state.orders if o and not o.done}
+        else:
+            active_order_slugs = {o.recipe_slug for o in state.orders if o and not o.done}
 
         candidates: list[tuple[str, str, float, float]] = []
         for slug in active_order_slugs:

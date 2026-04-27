@@ -126,6 +126,11 @@ class GameDataReward(RewardFunction):
                 # 从 prev_state.assembly 判断是否有调料（serve 前 assembly 还未清空）
                 has_condiments = bool(prev_state.assembly.condiments)
 
-                score = self._lookup.get_score(recipe_name, has_condiments, is_rush)
+                # 从 event details 读取订单生成时锁定的 visibility
+                spawned_vis = event.details.get("spawned_at_visibility", 0.0)
+                score = self._lookup.get_score(
+                    recipe_name, has_condiments, is_rush,
+                    total_visibility=spawned_vis,
+                )
                 total += score
         return total

@@ -53,6 +53,9 @@ class UnifiedState:
     is_in_animation_window: bool
     """是否处于动画窗口期间（禁止送餐等操作）"""
 
+    total_visibility: float = 0.0
+    """已完成订单的总 visibility（用于得分加成）"""
+
     @property
     def remaining_time(self) -> float:
         """剩余游戏时间"""

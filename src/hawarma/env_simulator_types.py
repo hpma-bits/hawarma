@@ -124,6 +124,7 @@ class Order:
     timeout_at: float = 0.0             # 订单超时时间
     served_at: float | None = None   # 订单完成时间
     condiments_applied: dict[str, int] = field(default_factory=dict)  # 已添加的调料
+    spawned_at_visibility: float = 0.0  # 订单生成时的总 visibility（决定得分加成）
     
     @property
     def is_completed(self) -> bool:
@@ -292,6 +293,7 @@ class GameState:
     assembly: AssemblyState = field(default_factory=AssemblyState)
     stockpile: dict[str, StockpileSlot] = field(default_factory=dict)
     time: float = 0.0
+    total_visibility: float = 0.0
     
     def copy(self) -> GameState:
         """创建状态的深拷贝"""

@@ -69,7 +69,7 @@ matching:
 
 # 游戏规则参数
 game:
-  cooker_retention: 5.0  # 灶台食材保留时间（秒）
+  cooker_retention: 4.8  # 灶台食材保留时间（秒），保守设置防止食材过期后仍被移动
   rush_red_threshold: 180  # Rush 订单检测红色阈值
   rush_detection_positions:  # Rush 订单检测像素坐标
     - [480, 195]

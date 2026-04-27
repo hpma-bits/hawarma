@@ -194,6 +194,7 @@ class GameEnvImpl(GameEnv):
             recipes=dict(self._recipe_adapters),
             game_duration=self._sim._game_duration,
             is_in_animation_window=self._sim.is_in_animation_window(),
+            total_visibility=sim_state.total_visibility,
         )
 
     def is_game_over(self) -> bool:
