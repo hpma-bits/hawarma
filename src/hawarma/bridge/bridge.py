@@ -379,12 +379,22 @@ class RealGameBridge:
 
     async def _exec_move_to_stockpile(self, action) -> None:
         """移到库存"""
-        await self.ui.move_to_stockpile(action.cooker, action.slot)
         cooker = self.env.cookers.get(action.cooker)
-        ingredient = cooker.ingredient_name if cooker else "?"
+        if cooker is None or not cooker.busy:
+            logger.warning(
+                f"[t={self.env.time:.1f}s] Cooker {action.cooker} not busy, skipping stockpile move"
+            )
+            return
+        if cooker.is_expired(self.env.time):
+            logger.warning(
+                f"[t={self.env.time:.1f}s] {cooker.ingredient_name} on {action.cooker} expired, skipping stockpile move"
+            )
+            return
+
+        await self.ui.move_to_stockpile(action.cooker, action.slot)
         self.env.move_to_stockpile(action.cooker, action.slot)
         logger.info(
-            f"[t={self.env.time:.1f}s] Stored {ingredient} from {action.cooker} -> {action.slot}"
+            f"[t={self.env.time:.1f}s] Stored {cooker.ingredient_name} from {action.cooker} -> {action.slot}"
         )
 
     async def _exec_pull_from_stockpile(self, action) -> None:

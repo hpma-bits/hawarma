@@ -46,7 +46,7 @@ class CookerState:
 
     def is_expired(self, current_time: float) -> bool:
         """检查食材是否已过期"""
-        return self.expired_at is not None and current_time >= self.expired_at
+        return self.expired_at is not None and current_time > self.expired_at
 
 
 @dataclass
