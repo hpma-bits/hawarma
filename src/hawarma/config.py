@@ -69,6 +69,8 @@ class AppConfig(BaseModel):
     matching: MatchingConfig
     game: GameConfig = Field(default_factory=GameConfig)
     debug: DebugConfig = Field(default_factory=DebugConfig)
+    strategy: str = "default"
+    """策略名称，可选: default, cpm, cpm_v2, score_aware, score_preempt, visibility_aware, cooking_first_v2, stockpile_first"""
 
 
 def load_config(config_path: Path | str = "configs/config.yaml") -> AppConfig:

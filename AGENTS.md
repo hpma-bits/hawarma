@@ -98,23 +98,16 @@ python main.py
 
 #### 切换策略
 
-`CookingAgent` 支持策略注入，可通过修改 `main.py` 的 `run_game()` 函数切换：
+策略通过配置文件或命令行参数切换，无需修改代码。详见 [`docs/agent_strategy.md`](docs/agent_strategy.md)。
 
-```python
-# 使用 DefaultStrategy（默认，推荐）
-from playground.strategies.default import DefaultStrategy
-agent = CookingAgent(bridge.env, ordered_recipes, strategy=DefaultStrategy())
+```bash
+# 配置文件: configs/config.yaml
+strategy: "cpm"
 
-# 使用 CookingFirstV2Strategy（旧版 Cooking First v2）
-from playground.strategies.cooking_first_v2 import CookingFirstV2Strategy
-agent = CookingAgent(bridge.env, ordered_recipes, strategy=CookingFirstV2Strategy())
-
-# 使用 StockpileFirstStrategy
-from playground.strategies.stockpile_first import StockpileFirstStrategy
-agent = CookingAgent(bridge.env, ordered_recipes, strategy=StockpileFirstStrategy())
+# 命令行覆盖
+python main.py --strategy cpm
+python -m playground bench --games 50 --strategies default,cpm
 ```
-
-当前 `main.py` 已默认使用 `DefaultStrategy`。
 
 ### 运行测试
 ```bash

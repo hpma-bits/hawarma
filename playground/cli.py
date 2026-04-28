@@ -7,6 +7,9 @@ Playground CLI
     run     运行单局游戏
     bench   运行基准测试
     replay  回放游戏记录
+
+策略通过 hawarma.agent.strategy_registry 注册表加载，
+与真实游戏共享同一套策略配置。
 """
 
 from __future__ import annotations
@@ -15,7 +18,9 @@ import argparse
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from hawarma.agent.strategy_registry import list_strategies, get_strategy
 
 
 def _parse_recipes(recipes_arg: str | None) -> list[str] | None:
@@ -25,16 +30,25 @@ def _parse_recipes(recipes_arg: str | None) -> list[str] | None:
     return [s.strip() for s in recipes_arg.split(",")]
 
 
+def _load_strategy(name: str):
+    """通过注册表加载策略"""
+    try:
+        return get_strategy(name)
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+
 def cmd_run(args):
     """运行单局游戏"""
     from playground.env.game_env_impl import GameEnvImpl
     from playground.agents.base import Agent
-    from playground.strategies.default import DefaultStrategy
     from playground.core.runner import run_episode
     from playground.replay.recorder import save_replay
 
+    strategy = _load_strategy(args.strategy)
+
     env = GameEnvImpl()
-    strategy = DefaultStrategy()
     agent = Agent(strategy)
 
     result = run_episode(
@@ -60,21 +74,24 @@ def cmd_run(args):
 def cmd_bench(args):
     """运行基准测试"""
     from playground.env.game_env_impl import GameEnvImpl
-    from playground.strategies.default import DefaultStrategy
-    from playground.strategies.cooking_first_v2 import CookingFirstV2Strategy
-    from playground.strategies.stockpile_first import StockpileFirstStrategy
     from playground.bench.runner import run_benchmark
     from playground.bench.compare import print_comparison, export_csv, export_json
 
-    strategies = {
-        "default": DefaultStrategy(),
-        "cooking_first_v2": CookingFirstV2Strategy(),
-        "stockpile_first": StockpileFirstStrategy(),
-    }
+    all_strategies = list_strategies()
 
     if args.strategies:
         names = [s.strip() for s in args.strategies.split(",")]
-        strategies = {k: v for k, v in strategies.items() if k in names}
+    else:
+        # 默认只比较表现最好的几个策略
+        names = ["default", "cpm"]
+
+    strategies = {}
+    for name in names:
+        if name not in all_strategies:
+            print(f"Unknown strategy: {name}")
+            print(f"Available: {', '.join(all_strategies)}")
+            sys.exit(1)
+        strategies[name] = _load_strategy(name)
 
     def env_factory():
         return GameEnvImpl()
@@ -100,6 +117,11 @@ def cmd_replay(args):
     replay_cli(args.file)
 
 
+def _format_strategy_list() -> str:
+    """格式化策略列表用于 help 文本"""
+    return ", ".join(list_strategies())
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="playground",
@@ -107,9 +129,17 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    available_strategies = _format_strategy_list()
+
     # run
     run_parser = subparsers.add_parser("run", help="Run a single game")
     run_parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    run_parser.add_argument(
+        "--strategy",
+        type=str,
+        default="default",
+        help=f"Strategy name ({available_strategies})",
+    )
     run_parser.add_argument("--record", action="store_true", help="Record replay")
     run_parser.add_argument("--output", type=str, default="playground_replay.json", help="Replay output file")
     run_parser.add_argument("--recipes", type=str, default=None, help="Comma-separated recipe slugs (e.g. beef_wrap,chicken_wrap)")
@@ -118,7 +148,12 @@ def main():
     # bench
     bench_parser = subparsers.add_parser("bench", help="Run benchmark")
     bench_parser.add_argument("--games", type=int, default=50, help="Number of games per strategy")
-    bench_parser.add_argument("--strategies", type=str, default=None, help="Comma-separated strategy names")
+    bench_parser.add_argument(
+        "--strategies",
+        type=str,
+        default=None,
+        help=f"Comma-separated strategy names ({available_strategies})",
+    )
     bench_parser.add_argument("--recipes", type=str, default=None, help="Comma-separated recipe slugs (e.g. beef_wrap,chicken_wrap)")
     bench_parser.add_argument("--csv", type=str, default=None, help="Export to CSV")
     bench_parser.add_argument("--json", type=str, default=None, help="Export to JSON")

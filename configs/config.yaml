@@ -67,6 +67,9 @@ matching:
   ingredients_threshold: 0.7
   save_best_match_images: False
 
+# Agent 策略配置
+strategy: "default"  # 可选: default, cpm, cpm_v2, score_aware, score_preempt, visibility_aware, cooking_first_v2, stockpile_first
+
 # 游戏规则参数
 game:
   cooker_retention: 4.8  # 灶台食材保留时间（秒），保守设置防止食材过期后仍被移动

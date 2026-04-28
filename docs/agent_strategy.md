@@ -231,95 +231,102 @@ t=15.5s  移动 clearwater_fish 到组装站
 
 详见 `docs/assembly_deadlock_analysis.md`。
 
-## 6. 结论
+## 6. 策略配置与切换
 
-### 6.1 当前最优策略
+策略通过统一注册表管理，支持配置文件和命令行两种方式切换，无需修改代码。
 
-**OptimizedStrategy**（主动预烹饪 + 决策优先级调整）：
+### 6.1 可用策略
 
-| 指标 | DefaultStrategy | OptimizedStrategy | 提升 |
-|------|----------------|-------------------|------|
-| 完成订单 | 17.0 | 18.9 | +11% |
-| 平均得分 | 2880 | 3177 | +10.3% |
-| 超时率 | 0% | 0% | - |
-| 最大订单 | 20 | 25 | +25% |
+| 策略 | 名称 | 特点 | Playground 50局均分 |
+|------|------|------|-------------------|
+| **DefaultStrategy** | `default` | rush+age 排序 + 预烹饪，稳定保守 | 3517 |
+| **CPMStrategy** | `cpm` | 关键路径法（SPT）+ assembly 抢占 | **3596** |
+| **CPMStrategyV2** | `cpm_v2` | CPM 无抢占变体 | 3588 |
+| **ScoreAwareCPMStrategy** | `score_aware` | 分数/时间效率排序 | 3600 |
+| **ScorePreemptStrategy** | `score_preempt` | 纯分数优先 + 抢占，激进 | 3483 |
+| **VisibilityAwareStrategy** | `visibility_aware` | visibility 阈值跨越加成 | 3572 |
+| **CookingFirstV2Strategy** | `cooking_first_v2` | 旧版策略 | - |
+| **StockpileFirstStrategy** | `stockpile_first` | 库存优先策略 | - |
 
-### 6.2 核心优化
+### 6.2 配置方式
+
+**1. 配置文件（configs/config.yaml）**
+
+```yaml
+strategy: "cpm"  # 可选值见上表
+```
+
+**2. 命令行参数（覆盖配置文件）**
+
+```bash
+# 真实游戏
+python main.py --strategy cpm
+
+# Playground
+python -m playground run --strategy cpm --seed 42
+python -m playground bench --games 50 --strategies default,cpm
+```
+
+**3. 代码中使用注册表**
+
+```python
+from hawarma.agent.strategy_registry import get_strategy, list_strategies
+
+strategy = get_strategy("cpm")  # 返回策略实例
+```
+
+### 6.3 策略实验结论
+
+- **CPM 是 playground 上表现最好的策略**（avg 3596），但仍有 22% 的局低于 3200
+- 显式按分数排序（ScorePreempt）反而降低了吞吐量，过度追求高分订单导致简单订单被耽搁
+- visibility 跨越加成（VisibilityAware）效果有限，因为 SPT 已隐式利用了快速积累 visibility 的机制
+- 重要结论需在真实环境中验证，模拟器可能无法完全反映真实游戏的并行性
+
+## 7. 结论
+
+### 7.1 当前最优策略
+
+**DefaultStrategy**（真实游戏默认）和 **CPMStrategy**（Playground 推荐）：
+
+| 指标 | DefaultStrategy | CPMStrategy | 说明 |
+|------|----------------|-------------|------|
+| Playground 均分 | 3517 | **3596** | 50 seeds, 4-recipe combo |
+| < 3200 比例 | 28% | **22%** | 稳定性指标 |
+| 最高分 | 4411 | 4416 | - |
+
+### 7.2 核心优化经验
 
 | 优化 | 说明 | 效果 |
 |------|------|------|
-| 调料优先 | 组装站食材齐全时立即添加调料，而非先烹饪再添加 | 更快释放组装站 |
-| 最长烹饪优先 | 按烹饪时长降序排列食材，先煮最慢的 | 最大化并行重叠 |
-| 主动预烹饪 | 灶台空闲时预烹饪活跃订单的未来食材 | 减少灶台空闲时间 |
-| 快速存储 | 非必要食材2秒后存储（vs 4秒） | 更快释放灶台 |
-| 过期优先移动 | 优先移动接近过期的食材到组装站 | 减少食材浪费 |
-| 库存优先取用 | 为组装站目标优先拉取库存食材 | 跳过烹饪等待 |
+| 调料优先 | 组装站食材齐全时立即添加调料 | 更快释放组装站 |
+| 最长烹饪优先 | 按烹饪时长降序排列食材 | 最大化并行重叠 |
+| 主动预烹饪 | 灶台空闲时预烹饪活跃订单食材 | 减少灶台空闲时间 |
+| 动画期间允许烹饪 | 送餐动画不阻塞烹饪决策 | +11.2% 订单数 |
+| 快速存储 | 非必要食材2秒后存储 | 更快释放灶台 |
 
-### 6.3 已验证无效的优化
+### 7.3 已验证无效的优化
 
 | 优化 | 说明 | 效果 |
 |------|------|------|
 | 预烹饪到assembly | 与订单不匹配 | -30% |
 | 预烹饪到stockpile（旧版） | 额外开销且不可控 | -2% |
-| 保守预烹饪（仅活跃订单+库存限制<2） | 过于保守，未触发预烹饪 | ≈0% |
+| 纯分数优先抢占 | 过度追求高分，吞吐量下降 | -113 均分 |
 
-### 6.4 进一步优化空间
+### 7.4 进一步优化空间
 
-当前完成18.9个订单（模拟器基准），理论最大约22-25个。进一步优化可能需要：
-- 更智能的订单选择策略（基于完成时间而非仅紧迫度）
-- 组装站抢占策略（低优先级订单为高优先级让位）
-- 游戏后期的激进策略（最后20秒不再预烹饪）
+- 调优 CPM 的 `PREEMPT_THRESHOLD`（当前 3.0s）
+- 混合策略：前期 SPT 积累 visibility，后期按分数排序
+- 真实游戏测试验证 playground 结论
 
-### 6.5 核心代码
-
-**文件**：`playground/strategies/optimized.py`（OptimizedStrategy）
-
-**决策优先级**：
-1. 清理组装站（超时订单）
-2. 送餐
-3. 清理过期食材
-4. **添加调料（食材齐全时优先）** ← 相比DefaultStrategy提前
-5. 移动完成食材到组装站
-6. **从库存紧急取用** ← 相比DefaultStrategy提前
-7. 烹饪（**最长优先排序**）
-8. 添加调料（回退）
-9. **主动预烹饪** ← 新增
-10. 存入库存（**2秒快速存储**）
-11. 从库存取用
-
-**文件**：`src/hawarma/agent/agent.py`（真实游戏使用的Agent Shell）
-
-**关键方法**：
-- `step()`: 透传到Strategy.decide()
-- `_get_assembly_stage()`: 判断assembly阶段
-- `_try_parallel_cooking()`: 并行烹饪
-
-**文件**：`src/hawarma/bridge/bridge.py`
-
-**关键方法**：
-- `_agent_loop()`: 动画窗口期间允许烹饪，只禁止送餐
-
-### 6.6 重要原则
-
-> **从文档出发思考问题，代码要与文档保持一致**
-> 
-> 不要过度依赖模拟器，重要结论需要在真实环境中验证。
-
-## 7. 运行基准测试
+### 7.5 运行基准测试
 
 ```bash
-# 模拟器基准测试（推荐）
-python -m playground bench --games 100 --strategies default,optimized
+# 模拟器基准测试
+python -m playground bench --games 50 --strategies default,cpm
 
 # 单局游戏
-python -m playground run --seed 42
+python -m playground run --seed 42 --strategy cpm
 
-# 导出CSV
-python -m playground bench --games 200 --csv results.csv
-
-# 真实游戏测试（推荐使用真实设备）
-python main.py
-
-# 查看日志分析性能
-# 日志位置：logs/game_*.log
+# 真实游戏
+python main.py --strategy cpm
 ```

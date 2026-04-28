@@ -96,25 +96,25 @@ def get_recipe_selection(all_recipes):
     return ordered_recipes
 
 
-async def run_game(config, ordered_recipes, strategy_class=None):
+async def run_game(config, ordered_recipes, strategy=None):
     """Run the agent game loop.
 
     Args:
         config: AppConfig instance
         ordered_recipes: List of selected Recipe objects
-        strategy_class: Optional strategy class to use. Defaults to OptimizedStrategy.
+        strategy: Optional strategy instance to use. Defaults to config.strategy.
     """
     from hawarma.bridge import RealGameBridge
     from hawarma.agent import CookingAgent
-    from hawarma.agent.strategies.default import DefaultStrategy
+    from hawarma.agent.strategy_registry import get_strategy
 
     bridge = RealGameBridge(config, ordered_recipes)
 
-    # 使用 DefaultStrategy 作为默认策略，可通过参数覆盖
-    if strategy_class is None:
-        strategy_class = DefaultStrategy
+    # 使用配置中的策略，可通过参数覆盖
+    if strategy is None:
+        strategy = get_strategy(config.strategy)
 
-    agent = CookingAgent(bridge.env, ordered_recipes, strategy=strategy_class())
+    agent = CookingAgent(bridge.env, ordered_recipes, strategy=strategy)
     bridge.set_agent(agent)
 
     logger.info("=" * 60)
@@ -139,11 +139,32 @@ async def run_game(config, ordered_recipes, strategy_class=None):
 
 def main():
     """Main entry point."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Hawarma - Cooking Game Agent")
+    parser.add_argument(
+        "--strategy",
+        type=str,
+        default=None,
+        help="Strategy name (default, cpm, cpm_v2, score_aware, score_preempt, visibility_aware, cooking_first_v2, stockpile_first)",
+    )
+    args = parser.parse_args()
+
     setup_logging()
     device = setup_airtest()
     apply_patch()
 
     config = load_config()
+
+    # 命令行参数可覆盖配置文件中的策略
+    if args.strategy:
+        from hawarma.agent.strategy_registry import get_strategy
+        strategy = get_strategy(args.strategy)
+        logger.info(f"Using strategy from CLI: {args.strategy}")
+    else:
+        strategy = None
+        logger.info(f"Using strategy from config: {config.strategy}")
+
     recipe_manager = RecipeManager(recipes_path="data/recipes.json")
     all_recipes = recipe_manager.get_all_recipes()
 
@@ -155,7 +176,7 @@ def main():
             continue
 
         try:
-            asyncio.run(run_game(config, ordered_recipes))
+            asyncio.run(run_game(config, ordered_recipes, strategy=strategy))
         except KeyboardInterrupt:
             logger.info("Interrupted.")
         except Exception as e:
