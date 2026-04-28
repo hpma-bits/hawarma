@@ -419,28 +419,25 @@ class RealGameBridge:
                 )
         else:
             logger.warning(
-                f"[t={self.env.time:.1f}s] Serve verification failed. "
-                f"Assembly preserved: {self.env.assembly.ingredients_cookers}"
+                f"[t={self.env.time:.1f}s] Serve verification failed, assembly discarded."
             )
             # 不再自动清空 assembly，让 agent 的 _try_clear_assembly 决策是否清理
 
-    async def _serve_with_verify(
-        self, slot_idx: int, max_retries: int = 2
-    ) -> int | None:
+    async def _serve_with_verify(self, slot_idx: int) -> int | None:
         """
         执行送餐并验证是否成功。
 
-        新方案：使用快速重试机制取代扫描匹配
-        1. 执行 serve swipe
-        2. 多点 snapshot 验证（4张，用最后一张）
-        3. 失败后快速重试所有 slot（0,1,2,3）
-        4. 全部失败后清空 assembly
+        1. 执行 serve swipe 到目标 slot
+        2. 等待动画 + 多点 snapshot 验证
+        3. 失败后重试相邻左侧 slot（slot_idx - 1）
+        4. 两次都失败则丢弃菜品，清空 assembly
 
         Returns:
             成功的 slot_idx，如果失败返回 None
         """
         # 第一次尝试：原始 slot
         await self.ui.serve_order(slot_idx)
+        await asyncio.sleep(0.2)  # 等待动画渲染
         if await self._verify_with_multi_snapshot():
             return slot_idx
 
@@ -449,22 +446,23 @@ class RealGameBridge:
             f"Assembly still has: {self.env.assembly.ingredients_cookers}"
         )
 
-        # 快速重试所有 slot（0,1,2,3），跳过已尝试的
-        for try_slot in range(4):
-            if try_slot == slot_idx:
-                continue
-
+        # 重试相邻左侧 slot
+        retry_slot = slot_idx - 1
+        if retry_slot >= 0:
             await asyncio.sleep(0.05)
-            await self.ui.serve_order(try_slot)
+            await self.ui.serve_order(retry_slot)
+            await asyncio.sleep(0.2)  # 等待动画渲染
             if await self._verify_with_multi_snapshot():
                 logger.info(
-                    f"[t={self.env.time:.1f}s] Serve succeeded at slot {try_slot}"
+                    f"[t={self.env.time:.1f}s] Serve succeeded at slot {retry_slot}"
                 )
-                return try_slot
+                return retry_slot
 
-        # 全部失败，保留 assembly 让 agent 决策是否清理
+        # 两次都失败，丢弃菜品
+        await self.ui.clear_assembly()
+        self.env.clear_assembly()
         logger.warning(
-            f"[t={self.env.time:.1f}s] All serve attempts failed. Assembly preserved."
+            f"[t={self.env.time:.1f}s] Both serve attempts failed. Assembly discarded."
         )
         return None
 

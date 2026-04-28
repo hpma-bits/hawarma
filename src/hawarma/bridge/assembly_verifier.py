@@ -47,7 +47,7 @@ class AssemblyVerifier:
         if not empty_path.exists():
             logger.warning(f"Empty assembly template not found: {empty_path}")
             return
-        self._empty_template = Template(str(empty_path), threshold=0.7)
+        self._empty_template = Template(str(empty_path), threshold=0.95)
         logger.info(f"AssemblyVerifier loaded template from {empty_path}")
 
     def is_assembly_empty(self) -> bool:
@@ -71,22 +71,21 @@ class AssemblyVerifier:
         is_empty = match is not None
 
         if self._save_debug:
-            self._save_debug_screenshot(cropped, is_empty)
+            self._save_debug_screenshot(screen, is_empty)
 
         return is_empty
 
-    def _save_debug_screenshot(self, cropped, is_empty: bool) -> None:
-        """保存调试截图"""
+    def _save_debug_screenshot(self, screen, is_empty: bool) -> None:
+        """保存完整调试截图"""
         try:
             import cv2
             import time
 
             timestamp = int(time.time() * 1000)
             status = "empty" if is_empty else "not_empty"
-            filename = f"assembly_{timestamp}_{status}.jpg"
+            filename = f"assembly_full_{timestamp}_{status}.jpg"
             filepath = self._debug_dir / filename
-
-            cv2.imwrite(str(filepath), cropped)
-            logger.debug(f"Saved assembly verify debug: {filepath.name}")
+            cv2.imwrite(str(filepath), screen)
+            logger.debug(f"Saved assembly verify debug: {filename}")
         except Exception as e:
             logger.warning(f"Failed to save assembly verify debug: {e}")
