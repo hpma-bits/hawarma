@@ -31,6 +31,16 @@ class StrategyStats:
     avg_actions: float
     max_reward: float
     min_reward: float
+    # 效率指标（有 metrics 的游戏才统计）
+    avg_idle_ratio: float = 0.0
+    avg_expired: float = 0.0
+    avg_clear_asm: float = 0.0
+    avg_serve_gap: float = 0.0
+    avg_none_ratio: float = 0.0
+    avg_stockpile_in: float = 0.0
+    avg_stockpile_out: float = 0.0
+    avg_stockpile_max: float = 0.0
+    has_metrics: bool = False
 
 
 def compute_stats(results: list[EpisodeResult]) -> StrategyStats:
@@ -38,6 +48,39 @@ def compute_stats(results: list[EpisodeResult]) -> StrategyStats:
     rewards = [r.total_reward for r in results]
     steps = [r.steps for r in results]
     actions = [r.actions_taken for r in results]
+
+    # 效率指标
+    has_metrics = any(r.metrics is not None for r in results)
+    if has_metrics:
+        metrics_list = [r.metrics for r in results if r.metrics is not None]
+        idle_ratios = [m.cooker_idle_ratio for m in metrics_list]
+        expireds = [m.expired_ingredients for m in metrics_list]
+        clear_asms = [m.clear_assembly_count for m in metrics_list]
+        serve_gaps = [m.avg_serve_interval for m in metrics_list]
+        none_ratios = [m.none_ratio for m in metrics_list]
+        stock_ins = [m.stockpile_inserts for m in metrics_list]
+        stock_outs = [m.stockpile_pulls for m in metrics_list]
+        stock_maxs = [m.stockpile_max_occupancy for m in metrics_list]
+
+        return StrategyStats(
+            name=results[0].strategy_name,
+            games=len(results),
+            avg_reward=mean(rewards),
+            std_reward=stdev(rewards) if len(rewards) > 1 else 0.0,
+            avg_steps=mean(steps),
+            avg_actions=mean(actions),
+            max_reward=max(rewards),
+            min_reward=min(rewards),
+            avg_idle_ratio=mean(idle_ratios),
+            avg_expired=mean(expireds),
+            avg_clear_asm=mean(clear_asms),
+            avg_serve_gap=mean(serve_gaps),
+            avg_none_ratio=mean(none_ratios),
+            avg_stockpile_in=mean(stock_ins),
+            avg_stockpile_out=mean(stock_outs),
+            avg_stockpile_max=mean(stock_maxs),
+            has_metrics=True,
+        )
 
     return StrategyStats(
         name=results[0].strategy_name,
@@ -135,20 +178,53 @@ def print_comparison(results: dict[str, list[EpisodeResult]]) -> None:
                 f"{name:<20} {delta:>+10.1f} {t:>8.2f} {p:>8.2f} {sig}"
             )
 
+    # 效率指标表
+    if any(s.has_metrics for s in stats.values()):
+        print("\n" + "-" * 80)
+        print("Efficiency Metrics (averages)")
+        print(f"{'Strategy':<20} {'Idle%':>6} {'Expired':>8} {'ClrAsm':>7} {'SrvGap':>7} {'None%':>6} {'StkIn':>6} {'StkOut':>6} {'StkMax':>6}")
+        print("-" * 80)
+        for name in sorted_names:
+            s = stats[name]
+            if s.has_metrics:
+                print(
+                    f"{s.name:<20} {s.avg_idle_ratio*100:>5.1f}% {s.avg_expired:>8.1f} "
+                    f"{s.avg_clear_asm:>7.1f} {s.avg_serve_gap:>7.1f}s {s.avg_none_ratio*100:>5.1f}% "
+                    f"{s.avg_stockpile_in:>6.1f} {s.avg_stockpile_out:>6.1f} {s.avg_stockpile_max:>6.1f}"
+                )
+
     print("=" * 80)
 
 
 def export_csv(results: dict[str, list[EpisodeResult]], filepath: str) -> None:
-    """导出为 CSV"""
+    """导出为 CSV（含效率指标）"""
     path = Path(filepath)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["strategy", "seed", "reward", "steps", "actions"])
+        header = ["strategy", "seed", "reward", "steps", "actions",
+                  "idle_ratio", "expired", "clear_asm", "serve_gap",
+                  "none_ratio", "stockpile_in", "stockpile_out", "stockpile_max"]
+        writer.writerow(header)
         for name, rs in results.items():
             for r in rs:
-                writer.writerow([name, r.seed, r.total_reward, r.steps, r.actions_taken])
+                m = r.metrics
+                row = [name, r.seed, r.total_reward, r.steps, r.actions_taken]
+                if m:
+                    row.extend([
+                        round(m.cooker_idle_ratio, 3),
+                        m.expired_ingredients,
+                        m.clear_assembly_count,
+                        round(m.avg_serve_interval, 2),
+                        round(m.none_ratio, 3),
+                        m.stockpile_inserts,
+                        m.stockpile_pulls,
+                        m.stockpile_max_occupancy,
+                    ])
+                else:
+                    row.extend([""] * 8)
+                writer.writerow(row)
 
     print(f"Exported to {filepath}")
 

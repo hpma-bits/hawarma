@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from playground.env.game_env import GameEnv
     from playground.strategies.base import Strategy
 
+from playground.bench.metrics import EfficiencyMetrics, MetricsCollector
+
 
 @dataclass
 class EpisodeResult:
@@ -33,6 +35,8 @@ class EpisodeResult:
     strategy_name: str
     history: list[tuple[float, object, Action | None]] = field(default_factory=list)
     """[(time, state, action), ...] 用于 replay"""
+    metrics: EfficiencyMetrics | None = None
+    """效率指标（详见 playground/bench/metrics.py）"""
 
 
 def run_episode(
@@ -42,6 +46,7 @@ def run_episode(
     record_history: bool = False,
     max_steps: int = 2000,
     recipe_slugs: list[str] | None = None,
+    collect_metrics: bool = False,
 ) -> EpisodeResult:
     """
     运行单局游戏。
@@ -52,6 +57,7 @@ def run_episode(
         seed: 随机种子
         record_history: 是否记录完整历史（用于 replay）
         max_steps: 最大步数（安全上限）
+        collect_metrics: 是否收集效率指标（cooker idle, stockpile turnover 等）
 
     Returns:
         EpisodeResult: 游戏结果
@@ -66,6 +72,11 @@ def run_episode(
     orders_served = 0
     orders_timeout = 0
     history = []
+
+    # 效率指标收集器
+    total_cookers = len(obs.cookers)
+    total_stockpile = len(obs.stockpile)
+    collector = MetricsCollector(total_cookers=total_cookers, total_stockpile_slots=total_stockpile) if collect_metrics else None
 
     while steps < max_steps:
         action = agent.act(obs)
@@ -90,6 +101,10 @@ def run_episode(
             elif event.event_type == EventType.ORDER_TIMEOUT:
                 orders_timeout += 1
 
+        # 效率指标收集
+        if collector is not None:
+            collector.update(result.observation, action, result)
+
         if result.terminated or result.truncated:
             break
 
@@ -105,6 +120,7 @@ def run_episode(
         seed=seed,
         strategy_name=type(agent.strategy).__name__,
         history=history if record_history else [],
+        metrics=collector.summarize() if collector else None,
     )
 
 
@@ -138,7 +154,7 @@ def run_benchmark(
         for name, strategy in strategies.items():
             env = env_factory()
             agent = Agent(strategy)
-            result = run_episode(env, agent, seed=seed, recipe_slugs=recipe_slugs)
+            result = run_episode(env, agent, seed=seed, recipe_slugs=recipe_slugs, collect_metrics=True)
             results[name].append(result)
 
     return results

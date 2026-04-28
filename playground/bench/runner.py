@@ -51,7 +51,7 @@ def run_benchmark(
         for name, strategy in strategies.items():
             env = env_factory()
             agent = Agent(strategy)
-            result = run_episode(env, agent, seed=seed, recipe_slugs=recipe_slugs)
+            result = run_episode(env, agent, seed=seed, recipe_slugs=recipe_slugs, collect_metrics=True)
             results[name].append(result)
 
         if (i + 1) % 10 == 0 or i == len(seeds) - 1:
