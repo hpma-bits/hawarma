@@ -298,8 +298,6 @@ class DefaultStrategy(Strategy):
 
     def _try_pull_from_stockpile(self, state: UnifiedState) -> PullFromStockpileAction | None:
         assembly = state.assembly
-        if assembly.ingredients_cookers and not assembly.target_recipe_slug:
-            return None
         if assembly.target_recipe_slug:
             has_active = any(
                 o and not o.done and o.recipe_slug == assembly.target_recipe_slug
@@ -585,9 +583,25 @@ class DefaultStrategy(Strategy):
                     result.append((ing_name, cooker))
             return result
 
+        present_ing_names = set()
+        for ing in present:
+            name = ing[0] if isinstance(ing, tuple) else ing
+            present_ing_names.add(name)
+
+        if not present_ing_names:
+            for _, order in self._prioritized_orders(state):
+                ics = self._recipe_ingredient_cooker.get(order.recipe_slug, [])
+                return [(n, c) for n, c, _ in ics]
+            return []
+
         for _, order in self._prioritized_orders(state):
-            ics = self._recipe_ingredient_cooker.get(order.recipe_slug, [])
-            return [(n, c) for n, c, _ in ics]
+            recipe = self._recipe_by_slug.get(order.recipe_slug)
+            if not recipe:
+                continue
+            raw_ings = set(self._get_recipe_attr(recipe, "raw_ingredients", []))
+            if present_ing_names.issubset(raw_ings):
+                ics = self._recipe_ingredient_cooker.get(order.recipe_slug, [])
+                return [(n, c) for n, c, _ in ics if n not in present_ing_names]
 
         return []
 
