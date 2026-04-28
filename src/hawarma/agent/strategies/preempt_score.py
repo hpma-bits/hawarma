@@ -134,6 +134,18 @@ class PreemptScoreStrategy(CPMStrategy):
         if len(assembly.ingredients_cookers) > self.MAX_ASSEMBLY_INGREDIENTS_FOR_PREEMPT:
             return None
 
+        # 3.5) 如果 assembly 已集齐所有主食材（只剩调料），不抢占
+        target_recipe = self._recipe_by_slug.get(target_slug)
+        if target_recipe:
+            needed_ings = set(getattr(target_recipe, "raw_ingredients", []))
+            if needed_ings:
+                assembly_ing_names = set()
+                for ing in assembly.ingredients_cookers:
+                    name = ing[0] if isinstance(ing, tuple) else ing
+                    assembly_ing_names.add(name)
+                if needed_ings.issubset(assembly_ing_names):
+                    return None
+
         # 4) 计算当前订单的超时情况
         assembly_timeout_remaining = assembly_order.timeout_at - state.time
         assembly_ing_ready = all(

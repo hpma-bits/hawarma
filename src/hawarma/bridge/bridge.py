@@ -392,9 +392,10 @@ class RealGameBridge:
             return
 
         await self.ui.move_to_stockpile(action.cooker, action.slot)
+        ingredient = cooker.ingredient_name
         self.env.move_to_stockpile(action.cooker, action.slot)
         logger.info(
-            f"[t={self.env.time:.1f}s] Stored {cooker.ingredient_name} from {action.cooker} -> {action.slot}"
+            f"[t={self.env.time:.1f}s] Stored {ingredient} from {action.cooker} -> {action.slot}"
         )
 
     async def _exec_pull_from_stockpile(self, action) -> None:
