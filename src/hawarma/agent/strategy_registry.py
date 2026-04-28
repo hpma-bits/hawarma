@@ -28,6 +28,11 @@ _STRATEGY_REGISTRY: dict[str, str] = {
     "score_aware": "hawarma.agent.strategies.score_aware_cpm:ScoreAwareCPMStrategy",
     "score_preempt": "hawarma.agent.strategies.score_preempt:ScorePreemptStrategy",
     "visibility_aware": "hawarma.agent.strategies.visibility_aware:VisibilityAwareStrategy",
+    "preempt_score": "hawarma.agent.strategies.preempt_score:PreemptScoreStrategy",
+    "aged_cpm": "hawarma.agent.strategies.aged_cpm:AgedCPMStrategy",
+    "baseline": "hawarma.agent.strategies.baseline:BaselineStrategy",
+    "baseline_stockpile": "hawarma.agent.strategies.baseline_stockpile:BaselineWithStockpileStrategy",
+    "pipeline": "hawarma.agent.strategies.pipeline:PipelineBaselineStrategy",
 }
 
 

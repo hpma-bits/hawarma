@@ -573,10 +573,15 @@ class DefaultStrategy(Strategy):
 
         if target_slug:
             ics = self._recipe_ingredient_cooker.get(target_slug, [])
-            present_names = {ing[0] if isinstance(ing, tuple) else ing for ing in present}
+            present_pairs = set()
+            for ing in present:
+                if isinstance(ing, tuple):
+                    present_pairs.add((ing[0], ing[1] if len(ing) > 1 else None))
+                else:
+                    present_pairs.add((ing, None))
             result = []
             for ing_name, cooker, _ in ics:
-                if ing_name not in present_names:
+                if (ing_name, cooker) not in present_pairs:
                     result.append((ing_name, cooker))
             return result
 
