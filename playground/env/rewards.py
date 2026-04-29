@@ -97,7 +97,7 @@ class GameDataReward(RewardFunction):
     从 reward.csv 查表计算 serve 得分，替代 simulator 的近似 score。
     """
 
-    def __init__(self, csv_path: str = "playground/reward.csv"):
+    def __init__(self, csv_path: str = "data/reward.csv"):
         from hawarma.rewards import RecipeRewardLookup
         self._lookup = RecipeRewardLookup(csv_path)
 

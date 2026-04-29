@@ -222,7 +222,7 @@ t=52: 新订单 F 出现 → [C, D, E, F]  (48+4=52，假设随机到4秒)
 **关键规则**：
 - 订单的加成比例在**订单生成（刷新）的瞬间**即锁定，由当时的总 visibility 决定
 - 该订单自身的 visibility 在完成之后才累加到总 visibility 中，因此不影响本订单的得分，但会影响之后生成的新订单
-- 不同 recipe 的 visibility 值不同，可在 `playground/reward.csv` 中查看
+- 不同 recipe 的 visibility 值不同，可在 `data/reward.csv` 中查看
 - **最终总分** = 所有已完成订单的得分之和 + 游戏结束时的总 visibility
 
 ## 4. 烹饪

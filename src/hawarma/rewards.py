@@ -17,7 +17,7 @@ class RecipeRewardLookup:
                visibility with cond,visibility without cond
     """
 
-    def __init__(self, csv_path: str = "playground/reward.csv"):
+    def __init__(self, csv_path: str = "data/reward.csv"):
         self._data: dict[str, dict[str, int]] = {}
         self._load(csv_path)
 
@@ -117,7 +117,7 @@ class RecipeTimeoutLookup:
         recipe,normal_timeout,rush_timeout
     """
 
-    def __init__(self, csv_path: str = "playground/recipe_timeout.csv"):
+    def __init__(self, csv_path: str = "data/recipe_timeout.csv"):
         self._data: dict[str, dict[str, float]] = {}
         self._load(csv_path)
 
