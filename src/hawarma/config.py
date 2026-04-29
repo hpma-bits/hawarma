@@ -35,6 +35,7 @@ class MatchingConfig(BaseModel):
     ingredients_strategy: list[str]
     ingredients_threshold: float
     save_best_match_images: bool
+    assembly_threshold: float = 0.9
     default_strategy: list[str] = Field(default_factory=list)
 
 

@@ -47,8 +47,9 @@ class AssemblyVerifier:
         if not empty_path.exists():
             logger.warning(f"Empty assembly template not found: {empty_path}")
             return
-        self._empty_template = Template(str(empty_path), threshold=0.95)
-        logger.info(f"AssemblyVerifier loaded template from {empty_path}")
+        threshold = self.config.matching.assembly_threshold
+        self._empty_template = Template(str(empty_path), threshold=threshold)
+        logger.info(f"AssemblyVerifier loaded template from {empty_path} (threshold={threshold})")
 
     def is_assembly_empty(self) -> bool:
         """

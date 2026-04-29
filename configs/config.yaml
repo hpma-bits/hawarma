@@ -66,6 +66,7 @@ matching:
   ingredients_strategy: ["tpl"]
   ingredients_threshold: 0.7
   save_best_match_images: False
+  assembly_threshold: 0.9
 
 # Agent 策略配置
 strategy: "default"  # 可选: default, cpm, cpm_v2, score_aware, score_preempt, visibility_aware, cooking_first_v2, stockpile_first

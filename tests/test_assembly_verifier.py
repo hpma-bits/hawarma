@@ -30,6 +30,7 @@ class TestAssemblyVerifier(unittest.TestCase):
         config = MagicMock()
         config.image_directory = str(Path(__file__).parent.parent / "static" / "img")
         config.debug.save_assembly_verify_screenshots = False
+        config.matching.assembly_threshold = 0.9
         return config
 
     def _mock_device(self, screen):
