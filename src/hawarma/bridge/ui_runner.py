@@ -283,10 +283,9 @@ class UIRunner:
         """获取调料位置"""
         if condiment in self._condiment_positions:
             return self._condiment_positions[condiment]
-        # 默认使用配置中的位置
+        # fallback: deterministic index from codepoint sum
         positions = self.config.screen.condiments_positions
-        # 根据调料名称计算索引（简单hash）
-        idx = hash(condiment) % len(positions)
+        idx = sum(ord(c) for c in condiment) % len(positions)
         return tuple(positions[idx])
     
     def _get_stockpile_position(self, slot: str) -> tuple[int, int]:

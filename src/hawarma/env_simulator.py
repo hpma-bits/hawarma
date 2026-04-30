@@ -1323,15 +1323,9 @@ class GameSimulator:
         if self._debug:
             print(f"Slots advanced, animation until {self._animation_until}")
     
-    # 其余操作将在后续实现...
-    # start_cooking, move_to_assembly, serve_order, tick, etc.
-
-
-# ============================================================================
-# 辅助函数
-# ============================================================================
+    # ========================================================================
     # 时间管理和订单生成
-    # ============================================================================
+    # ========================================================================
     
     def tick(self, dt: float) -> list[Event]:
         """
@@ -1382,6 +1376,7 @@ class GameSimulator:
     def _check_order_timeouts(self, current_time: float) -> list[Event]:
         """检查并处理订单超时"""
         events = []
+        timed_out_indices: list[int] = []
         
         for i, order in enumerate(self._state.orders):
             if order is None or order.is_completed:
@@ -1397,10 +1392,13 @@ class GameSimulator:
                         'recipe': order.recipe.slug
                     }
                 ))
-                
-                # 清除订单并触发槽位前移
-                self._state.orders[i] = None
-                self._advance_slots(current_time)
+                timed_out_indices.append(i)
+        
+        # 处理超时：反向清除避免索引偏移，最后一次性前移槽位
+        for i in reversed(timed_out_indices):
+            self._state.orders[i] = None
+        if timed_out_indices:
+            self._advance_slots(current_time)
         
         return events
     
