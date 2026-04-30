@@ -10,8 +10,15 @@ from __future__ import annotations
 from hawarma.agent.strategy import Strategy
 from hawarma.agent.strategies import (
     DefaultStrategy,
-    CookingFirstV2Strategy,
-    StockpileFirstStrategy,
+    CPMStrategy,
+    VisibilityAwareStrategy,
+    PreemptScoreStrategy,
 )
 
-__all__ = ["Strategy", "DefaultStrategy", "CookingFirstV2Strategy", "StockpileFirstStrategy"]
+__all__ = [
+    "Strategy",
+    "DefaultStrategy",
+    "CPMStrategy",
+    "VisibilityAwareStrategy",
+    "PreemptScoreStrategy",
+]

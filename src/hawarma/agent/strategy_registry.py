@@ -9,6 +9,12 @@
 
 注册新策略：
     在 _STRATEGY_REGISTRY 中添加映射即可
+
+可用策略：
+- default: DefaultStrategy（安全默认）
+- cpm: CPMStrategy（关键路径法）
+- visibility_aware: VisibilityAwareStrategy（CPM + visibility 阈值，当前最佳）
+- preempt_score: PreemptScoreStrategy（分数权重抢占）
 """
 
 from __future__ import annotations
@@ -19,20 +25,11 @@ if TYPE_CHECKING:
     from hawarma.agent.strategy import Strategy
 
 
-# 策略类路径映射（延迟导入，避免循环依赖）
 _STRATEGY_REGISTRY: dict[str, str] = {
     "default": "hawarma.agent.strategies.default:DefaultStrategy",
-    "cooking_first_v2": "hawarma.agent.strategies.cooking_first_v2:CookingFirstV2Strategy",
-    "stockpile_first": "hawarma.agent.strategies.stockpile_first:StockpileFirstStrategy",
     "cpm": "hawarma.agent.strategies.cpm:CPMStrategy",
-    "score_aware": "hawarma.agent.strategies.score_aware_cpm:ScoreAwareCPMStrategy",
-    "score_preempt": "hawarma.agent.strategies.score_preempt:ScorePreemptStrategy",
     "visibility_aware": "hawarma.agent.strategies.visibility_aware:VisibilityAwareStrategy",
     "preempt_score": "hawarma.agent.strategies.preempt_score:PreemptScoreStrategy",
-    "aged_cpm": "hawarma.agent.strategies.aged_cpm:AgedCPMStrategy",
-    "baseline": "hawarma.agent.strategies.baseline:BaselineStrategy",
-    "baseline_stockpile": "hawarma.agent.strategies.baseline_stockpile:BaselineWithStockpileStrategy",
-    "pipeline": "hawarma.agent.strategies.pipeline:PipelineBaselineStrategy",
 }
 
 
