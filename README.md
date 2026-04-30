@@ -14,13 +14,16 @@ This project is a bot for a cooking game, designed to automate the process of co
 
 The application is structured into several key components:
 
-*   **`main.py`:** The entry point of the application. It handles the initial setup, user input for recipe selection, and the main application loop.
-*   **`src/hawarma/config.py`:** The configuration module. It loads settings from `configs/config.yaml` and defines the `AppConfig` model.
-*   **`src/hawarma/services/detection_service.py`:** This service is responsible for detecting customer orders from the screen. It uses image recognition to identify recipes, rush orders, and condiment preferences.
-*   **`src/hawarma/services/cooking_service.py`:** This service handles the physical actions of cooking, stockpiling, and serving in the game. It translates recipes into swipe actions and manages cooker contention.
-*   **`src/hawarma/models.py`:** Defines the data models for the application, such as `Recipe` and `Order`.
-*   **`configs/config.yaml`:** The main configuration file for the application. It contains settings for screen coordinates, matching parameters, and other application-level configurations.
-*   **`data/recipes.json`:** A JSON file containing the definitions of all the recipes that the bot can cook.
+*   **`main.py`:** The entry point of the application. Handles initial setup, user input for recipe selection, and the main application loop.
+*   **`src/hawarma/`:** Core application package.
+*   **`src/hawarma/config.py`:** Configuration module. Loads settings from `configs/config.yaml` via Pydantic models.
+*   **`src/hawarma/bridge/`:** Real-game bridge -- coordinates `OrderScanner` (image-based order detection), `GameEnvironment` (state tracking), `UIRunner` (swipe/touch execution), and the agent decision loop.
+*   **`src/hawarma/agent/`:** Agent shell + pluggable strategy pattern. `Strategy.decide(state)` returns actions; the shell handles diagnostics and statistics.
+*   **`src/hawarma/services/recipe_manager.py`:** Loads and queries recipe data from `data/recipes.json`.
+*   **`src/hawarma/env_simulator.py`:** Lightweight deterministic game simulator used as the ground-truth game rules engine (shared by playground).
+*   **`playground/`:** Simulation environment for benchmarking strategies without a real device.
+*   **`configs/config.yaml`:** Main configuration file -- screen coordinates, matching parameters, game settings.
+*   **`data/`:** Game data including `recipes.json`, `reward.csv`, and `recipe_timeout.csv`.
 
 # Building and Running
 
@@ -31,46 +34,40 @@ The application is structured into several key components:
 
 ## Installation
 
-1.  Install the project dependencies using `uv`:
-    ```bash
-    uv pip install -r requirements.txt
-    ```
+Requires [uv](https://docs.astral.sh/uv/).
+
+```bash
+uv sync
+```
+
+This installs all dependencies including dev extras (pytest, etc.).
 
 ## Running the Application
 
-1.  Run the `main.py` script:
-    ```bash
-    python main.py
-    ```
-2.  The application will prompt you to select the recipes to use for the current session.
-3.  After selecting the recipes, the bot will start running and will automatically detect and process orders.
+```bash
+python main.py
+```
 
-# Development Conventions
+The application will prompt you to select the recipes to use for the current session. After selection, the bot starts automatically and processes orders.
 
-## Code Style
+### Switching Strategies
 
-The project follows the PEP 8 style guide for Python code.
+```bash
+python main.py --strategy cpm
+```
 
-## Logging
+Available strategies: `default`, `cpm`, `preempt_score`, `visibility_aware`.
 
-The project uses the `loguru` library for logging. The log level can be configured in `main.py`.
+### Running Benchmarks (No Device Required)
 
-## Configuration
+```bash
+python -m playground bench --games 50
+python -m playground bench --games 100 --strategies default,cpm --csv results.csv
+```
 
-The application's configuration is managed through the `configs/config.yaml` file. This file contains all the screen coordinates and other parameters that the bot needs to function.
+### Running Tests
 
-## Adding New Recipes
-
-To add a new recipe, you need to:
-
-1.  Add the recipe's definition to the `data/recipes.json` file.
-2.  Add the corresponding ingredient and cooker images to the `static/img` directory.
-
-## Must Do
-
-1. 任何功能、写法、架构的更新必须在工作结束后更新相关目录的子文档
-2. 每个显式目录中都要有一个极简的架构说明md，内部包括每个文件的名字、地位、功能。文件开头声名：一旦我所属的目录有变化，请更新我
-3. 每个模块的开头要有注释，表明模块的输入输出和在系统中的地位，并声名：一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
-4. 保证开发过程中项目的分形结构
-
-
+```bash
+python -m unittest discover tests
+python -m unittest discover playground/tests
+```

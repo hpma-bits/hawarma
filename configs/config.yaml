@@ -69,7 +69,7 @@ matching:
   assembly_threshold: 0.9
 
 # Agent 策略配置
-strategy: "default"  # 可选: default, cpm, cpm_v2, score_aware, score_preempt, visibility_aware, cooking_first_v2, stockpile_first
+strategy: "default"  # 可选: default, cpm, preempt_score, visibility_aware
 
 # 游戏规则参数
 game:

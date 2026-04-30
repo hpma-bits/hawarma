@@ -146,7 +146,7 @@ def main():
         "--strategy",
         type=str,
         default=None,
-        help="Strategy name (default, cpm, cpm_v2, score_aware, score_preempt, visibility_aware, cooking_first_v2, stockpile_first)",
+        help="Strategy name (default, cpm, preempt_score, visibility_aware)",
     )
     args = parser.parse_args()
 

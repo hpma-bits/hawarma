@@ -9,11 +9,6 @@
 - VisibilityAwareStrategy: CPM + visibility 阈值感知（当前最佳）
 - PreemptScoreStrategy: 分数权重抢占（激进型变体）
 
-已存档策略（见 archive/）：
-- AgedCPMStrategy, ScoreAwareCPMStrategy, ScorePreemptStrategy
-- BaselineStrategy, BaselineWithStockpileStrategy, PipelineBaselineStrategy
-- CookingFirstV2Strategy, StockpileFirstStrategy
-
 基准测试排名（50局）：
   1. VisibilityAwareStrategy  3916  (baseline)
   2. CPMStrategy              3878  (Δ -38, n.s.)
