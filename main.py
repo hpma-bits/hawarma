@@ -11,60 +11,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import questionary
-from airtest.core.api import init_device
-from airtest.core.settings import Settings as ST
-from airtest.core.android.adb import ADB
 from loguru import logger
 
 from hawarma.config import load_config
 from hawarma.services.recipe_manager import RecipeManager
 from hawarma.monkey_patches import apply_patch
 from hawarma.logging_setup import setup_logging
-
-
-def setup_airtest():
-    """Initialize Airtest device and settings."""
-    ST.CVSTRATEGY = ["tpl"]
-    ST.OPDELAY = 0.05
-    ST.THRESHOLD = 0.7
-    try:
-        logger.info("Connecting to Airtest device...")
-        adb = ADB()
-        devices = adb.devices()
-        if not devices:
-            raise RuntimeError("At least one adb device required")
-        serialno = devices[0][0]
-        device = init_device(
-            platform="Android",
-            uuid="127.0.0.1:16384",
-            cap_method="MINICAP_APK",
-            touch_method="MAXTOUCH",
-        )
-
-        # 打印截图方法 (精确检测)
-        if hasattr(device, 'screen_proxy') and device.screen_proxy:
-            screen_impl = device.screen_proxy.screen_method
-            screen_class = type(screen_impl).__name__
-            logger.info(f"Screenshot method: {screen_class}")
-        else:
-            logger.warning("Screenshot method: not initialized")
-
-        # 打印触控方法 (精确检测)
-        if hasattr(device, 'touch_proxy') and device.touch_proxy:
-            touch_impl = device.touch_proxy.touch_method
-            if hasattr(touch_impl, 'base_touch') and touch_impl.base_touch:
-                touch_class = type(touch_impl.base_touch).__name__
-                logger.info(f"Touch method: {touch_class}")
-            else:
-                logger.warning("Touch base: not initialized")
-        else:
-            logger.warning("Touch method: not initialized")
-
-        logger.info("Airtest device connected.")
-        return device
-    except Exception as e:
-        logger.error(f"Failed to initialize Airtest device: {e}")
-        raise
+from hawarma.device_setup import setup_device
 
 
 def get_recipe_selection(all_recipes):
@@ -151,10 +104,10 @@ def main():
     args = parser.parse_args()
 
     setup_logging()
-    device = setup_airtest()
-    apply_patch()
 
     config = load_config()
+    setup_device(config.adb_address)
+    apply_patch()
 
     # 命令行参数可覆盖配置文件中的策略
     if args.strategy:

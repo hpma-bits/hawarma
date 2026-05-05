@@ -44,11 +44,25 @@ This installs all dependencies including dev extras (pytest, etc.).
 
 ## Running the Application
 
+### 命令行界面 (CLI)
+
 ```bash
 python main.py
 ```
 
 The application will prompt you to select the recipes to use for the current session. After selection, the bot starts automatically and processes orders.
+
+### 文本用户界面 (TUI)
+
+```bash
+python tui.py
+```
+
+TUI 提供完整的仪表板界面，包含：
+- 📋 配方选择界面
+- ⚙️ 配置面板（可编辑所有配置）
+- 🎮 游戏控制界面（开始、暂停、停止）
+- 📊 实时日志显示
 
 ### Switching Strategies
 

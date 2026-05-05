@@ -10,7 +10,11 @@ dependencies = [
     "pydantic>=2.11.5",
     "pyyaml>=6.0.2",
     "questionary>=2.1.0",
+    "textual>=0.40.0",
 ]
+
+[project.scripts]
+hawarma-tui = "tui:main"
 
 [build-system]
 requires = ["setuptools>=64"]

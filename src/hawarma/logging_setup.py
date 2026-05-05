@@ -15,12 +15,14 @@ from pathlib import Path
 from loguru import logger
 
 
-def setup_logging(log_level: str = "INFO") -> None:
+def setup_logging(log_level: str = "INFO", terminal: bool = True, log_name: str = "game") -> None:
     """
-    配置日志：终端 + 文件。
+    配置日志系统。
 
-    终端：带颜色，显示 INFO 及以上。
-    文件：logs/game_{时间戳}.log，纯文本，包含所有级别。
+    Args:
+        log_level: 终端日志级别（文件始终为 DEBUG）
+        terminal: 是否输出到终端 stderr。TUI 模式设为 False 避免终端刷屏
+        log_name: 日志文件名前缀，如 "game" → logs/game_{timestamp}.log
     """
     import logging
     logging.getLogger("airtest").setLevel(logging.WARNING)
@@ -28,27 +30,26 @@ def setup_logging(log_level: str = "INFO") -> None:
 
     logger.remove()
 
-    # 终端输出
-    logger.add(
-        sys.stderr,
-        level=log_level,
-        format="<green>{time:HH:mm:ss.SSS}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
-               "<level>{message}</level>",
-        colorize=True,
-    )
+    if terminal:
+        logger.add(
+            sys.stderr,
+            level=log_level,
+            format="<green>{time:HH:mm:ss.SSS}</green> | "
+                   "<level>{level: <8}</level> | "
+                   "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+                   "<level>{message}</level>",
+            colorize=True,
+        )
 
-    # 日志文件
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
 
     logger.add(
-        str(log_dir / "game_{time:YYYYMMDD_HHmmss}.log"),
+        str(log_dir / f"{log_name}_{{time:YYYYMMDD_HHmmss}}.log"),
         level="DEBUG",
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} | {message}",
         encoding="utf-8",
-        enqueue=True,  # 线程安全
+        enqueue=True,
     )
 
-    logger.info("Logging initialized.")
+    logger.info(f"Logging initialized (terminal={terminal}, log_name={log_name})")

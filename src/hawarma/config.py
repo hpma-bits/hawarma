@@ -61,6 +61,7 @@ class DebugConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
+    adb_address: str = "127.0.0.1:16384"
     image_directory: str
     log_directory: str
     recipes_data_path: str
@@ -79,6 +80,14 @@ def load_config(config_path: Path | str = "configs/config.yaml") -> AppConfig:
     with open(config_path, "r", encoding="utf-8") as f:
         config_data = yaml.safe_load(f)
     return AppConfig.model_validate(config_data)
+
+
+def save_config(config: AppConfig, config_path: Path | str = "configs/config.yaml") -> None:
+    """Saves the application configuration to a YAML file."""
+    # model_dump with mode='json' converts tuples to lists for clean YAML output
+    config_data = config.model_dump(mode="json")
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(config_data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
 # Example of how to use it (optional, for direct testing)

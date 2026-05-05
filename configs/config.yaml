@@ -1,4 +1,5 @@
 # config.yaml
+adb_address: "127.0.0.1:16384"
 image_directory: "static/img"
 recipes_data_path: "data/recipes.json"
 log_directory: "logs"
