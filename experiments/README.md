@@ -19,12 +19,12 @@ experiments/
 
 ### ✅ 正确方法
 ```python
-from playground.core.runner import run_episode
-from playground.env.game_env_impl import GameEnvImpl
+from playground.core.episode import run_episode
+from playground.env.sim import SimEnv
 from playground.strategies.default import DefaultStrategy
 from playground.agents.base import Agent
 
-env = GameEnvImpl()
+env = SimEnv()
 agent = Agent(DefaultStrategy())
 result = run_episode(env, agent, seed=42)
 ```
@@ -52,7 +52,7 @@ sim.move_to_assembly('pot')  # 失败：pot可能已空
 
 使用 `playground/` 下的模块：
 - `playground.core.runner`: `run_episode`, `run_benchmark`
-- `playground.env.game_env_impl`: `GameEnvImpl`
+- `playground.env.game_env_impl`: `SimEnv`
 - `playground.strategies.default`: `DefaultStrategy`
 - `playground.bench.compare`: `print_comparison`, `export_csv`
 

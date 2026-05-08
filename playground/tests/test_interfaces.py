@@ -13,22 +13,22 @@ Playground 接口验证测试
 import pytest
 from dataclasses import replace, FrozenInstanceError
 
-from hawarma.agent.unified_state import UnifiedState
+from hawarma.core.state import UnifiedState
 from hawarma.agent.strategy import Strategy
-from playground.env.rewards import SparseReward, StepResult
+from playground.env.reward import SparseReward, StepResult
 from playground.agents.base import Agent
 from playground.env.game_env import GameEnv
 
-from hawarma.agent.agent import (
+from hawarma.core.actions import (
     Action,
     CookAction,
     ServeOrderAction,
 )
-from hawarma.bridge.base_environment import (
-    CookerState,
+from hawarma.core.models import (
     AssemblyState,
-    StockpileSlot,
+    CookerState,
     OrderInfo,
+    StockpileSlot,
 )
 
 
@@ -324,7 +324,7 @@ class TestSparseReward:
         assert reward == 0.0
 
     def test_serve_event_gives_score(self):
-        from hawarma.env_simulator_types import Event, EventType
+        from playground.env_simulator_types import Event, EventType
         reward_fn = SparseReward()
         state = mock_unified_state()
         events = [

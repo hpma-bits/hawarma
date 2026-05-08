@@ -2,7 +2,7 @@
 
 ## 📁 目录概述
 
-此目录包含hawarma项目的真实游戏设计文档和使用说明。
+此目录包含 hawarma 项目的真实游戏设计文档和使用说明。
 
 ## ⚠️ 重要提示
 
@@ -17,31 +17,25 @@
   - 定义游戏的核心规则，作为模拟环境和验证的唯一依据
   - 订单系统、评分机制、操作约束
   - 坐标确定规则（灶台、食材区、调料区）
-- **输入**: 无
-- **输出**: 游戏规则文档
 
 ### `agent_strategy.md`
-- **地位**: Agent核心算法与策略文档
+- **地位**: Agent 策略设计与基准测试文档
 - **状态**: ✅ 当前有效
 - **功能**:
-  - Agent核心算法设计、策略分析和优化经验
-  - 数学模型和性能指标
-  - 实验结果对比（50局平均）
-  - 经验教训（状态完整性、测试严谨性等）
-- **输入**: 无
-- **输出**: Agent策略文档
+  - 策略架构说明（三层模型：core/agent/game）
+  - 各策略基准测试排名（100局平均）
+  - 策略切换方式
+  - 核心优化总结
 
-### `agent_architecture.md`
-- **地位**: Agent架构设计文档
+### `architecture_redesign.md`
+- **地位**: 架构重构设计方案
 - **状态**: ✅ 当前有效
 - **功能**:
-  - 定义Agent设计原则和架构概述
-  - BaseEnvironment抽象接口定义
-  - Action类型体系
-  - 库存槽位分配算法
-  - 并行最大化策略
-- **输入**: 无
-- **输出**: Agent架构设计规范
+  - 重构前的架构问题诊断
+  - 目标架构设计原则和层次图
+  - Phase 1-3 的分步实施计划
+  - 甜点平台扩展预留方案
+  - 命名规范和文件变更清单
 
 ### `real_game_implementation.md`
 - **地位**: 真实游戏交互实现文档
@@ -50,39 +44,38 @@
   - 梳理当前与真实游戏交互的技术栈、数据结构、算法
   - 列出与 game_rules.md 的对应实现关系
   - 总结已实施的性能优化策略
-- **输入**: bridge/ 源代码、config.yaml、game_rules.md
-- **输出**: 实现文档
 
-### `assembly_deadlock_analysis.md`
-- **地位**: 组装站死锁事件分析报告
-- **状态**: ✅ 已完成
+### `dessert_station.md`
+- **地位**: 甜点站点架构设计文档
+- **状态**: ✅ 当前有效
 - **功能**:
-  - 记录 2026-04-05 真实游戏中 35 秒 Agent 瘫痪事件的完整分析
-  - 根因：`target_recipe_slug` 状态缺失导致决策链断裂
-  - 修复方案：环境层预防 + Agent 层恢复的双层防御
-  - 优化方向：停滞检测、组装站超时清理、日志增强（均已实现）
-- **输入**: 真实游戏日志
-- **输出**: 事件分析报告和教训总结
+  - 甜点模式与 Gastronome 模式的区别
+  - 甜点流程和约束
+  - 数据结构设计（MixingBowlState、Action 类型）
+  - Env 接口扩展
+  - DessertStrategy 实现
+  - 配置结构和文件组织
+  - 实现步骤和测试策略
 
-### `playground_plan.md`
-- **地位**: Playground 环境建设计划
-- **状态**: 📝 草案
-- **功能**:
-  - Playground 已替代旧 `scripts/` 目录，提供 RL 环境、基准测试和策略验证
-  - 定义 Strategy Sandbox、Agent Validator、Replay、Benchmark Engine、Parameter Sweeper 的架构
-  - 分 Phase 1/2/3 的实施路线图
-- **输入**: 现有 playground/ 源码、用户反馈
-- **输出**: 实施计划文档
+## 📝 已归档文档
+
+以下文档已被清理，内容已整合到 `agent_strategy.md` 和 `architecture_redesign.md`：
+
+| 文档名 | 原因 |
+|--------|------|
+| `agent_architecture.md` | 旧架构设计（Runner 时代），已由 architecture_redesign.md 替代 |
+| `playground_plan.md` | Playground 已建成，计划已执行完毕 |
+| `assembly_deadlock_analysis.md` | 事件分析已收录到旧版 agent_strategy.md，修复方案已实施 |
 
 ## 🔗 文档关系
 
 ```
 game_rules.md (基础)
     ↑
-    ├── agent_strategy.md (策略，引用game_rules.md)
-    ├── agent_architecture.md (架构，引用game_rules.md)
-    └── real_game_implementation.md (实现，引用game_rules.md)
-            └── assembly_deadlock_analysis.md (事件分析，引用实现细节)
+    ├── agent_strategy.md (策略+基准)
+    ├── architecture_redesign.md (架构设计)
+    ├── real_game_implementation.md (实现)
+    └── dessert_station.md (甜点站点设计)
 ```
 
 ## 📝 文档维护规范
@@ -90,4 +83,3 @@ game_rules.md (基础)
 1. **新增文档**: 必须在本文件中添加条目
 2. **删除文档**: 必须从本文件中移除条目
 3. **重命名文档**: 必须更新本文件中的文件名
-4. **内容更新**: 根据需要更新"状态"字段

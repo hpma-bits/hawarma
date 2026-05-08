@@ -8,7 +8,7 @@ Playground CLI
     bench   运行基准测试
     replay  回放游戏记录
 
-策略通过 hawarma.agent.strategy_registry 注册表加载，
+策略通过 hawarma.agent.registry 注册表加载，
 与真实游戏共享同一套策略配置。
 """
 
@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from hawarma.agent.strategy_registry import list_strategies, get_strategy
+from hawarma.agent.registry import list_strategies, get_strategy
 
 
 def _parse_recipes(recipes_arg: str | None) -> list[str] | None:
@@ -41,14 +41,14 @@ def _load_strategy(name: str):
 
 def cmd_run(args):
     """运行单局游戏"""
-    from playground.env.game_env_impl import GameEnvImpl
+    from playground.env.sim import SimEnv
     from playground.agents.base import Agent
-    from playground.core.runner import run_episode
+    from playground.core.episode import run_episode
     from playground.replay.recorder import save_replay
 
     strategy = _load_strategy(args.strategy)
 
-    env = GameEnvImpl()
+    env = SimEnv()
     agent = Agent(strategy)
 
     result = run_episode(
@@ -73,8 +73,8 @@ def cmd_run(args):
 
 def cmd_bench(args):
     """运行基准测试"""
-    from playground.env.game_env_impl import GameEnvImpl
-    from playground.bench.runner import run_benchmark
+    from playground.env.sim import SimEnv
+    from playground.bench.bench import run_benchmark
     from playground.bench.compare import print_comparison, export_csv, export_json
 
     all_strategies = list_strategies()
@@ -94,7 +94,7 @@ def cmd_bench(args):
         strategies[name] = _load_strategy(name)
 
     def env_factory():
-        return GameEnvImpl()
+        return SimEnv()
 
     results = run_benchmark(
         env_factory,

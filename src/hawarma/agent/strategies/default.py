@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from loguru import logger
 
-from hawarma.agent.agent import (
+from hawarma.core.actions import (
     Action,
     CookAction,
     MoveToAssemblyAction,
@@ -41,7 +41,7 @@ from hawarma.agent.agent import (
     ClearCookerAction,
     ClearAssemblyAction,
 )
-from hawarma.agent.unified_state import UnifiedState
+from hawarma.core.state import UnifiedState
 from hawarma.agent.strategy import Strategy
 
 

@@ -6,7 +6,7 @@
 
 ## 实验方法
 
-- **环境**: Playground 模拟器（`GameEnvImpl`）
+- **环境**: Playground 模拟器（`SimEnv`）
 - **种子**: 0-199（200局配对测试）
 - **策略对比**: DefaultStrategy vs OptimizedStrategy vs StockpileFirstStrategy
 - **评估指标**: 完成订单数、平均得分、超时率、动作数

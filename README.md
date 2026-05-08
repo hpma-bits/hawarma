@@ -17,7 +17,7 @@ The application is structured into several key components:
 *   **`main.py`:** The entry point of the application. Handles initial setup, user input for recipe selection, and the main application loop.
 *   **`src/hawarma/`:** Core application package.
 *   **`src/hawarma/config.py`:** Configuration module. Loads settings from `configs/config.yaml` via Pydantic models.
-*   **`src/hawarma/bridge/`:** Real-game bridge -- coordinates `OrderScanner` (image-based order detection), `GameEnvironment` (state tracking), `UIRunner` (swipe/touch execution), and the agent decision loop.
+*   **`src/hawarma/bridge/`:** Real-game bridge -- coordinates `Scanner` (image-based order detection), `GameEnv` (state tracking), `Operator` (swipe/touch execution), and the agent decision loop.
 *   **`src/hawarma/agent/`:** Agent shell + pluggable strategy pattern. `Strategy.decide(state)` returns actions; the shell handles diagnostics and statistics.
 *   **`src/hawarma/services/recipe_manager.py`:** Loads and queries recipe data from `data/recipes.json`.
 *   **`src/hawarma/env_simulator.py`:** Lightweight deterministic game simulator used as the ground-truth game rules engine (shared by playground).

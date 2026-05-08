@@ -1,13 +1,13 @@
 """
 Agent 模块
 
-地位：包含统一的烹饪 Agent，支持与真实游戏环境和模拟器交互
+地位：包含注入式 Strategy 定义、策略集合和统一状态接口。
+      纯决策逻辑，不包含环境依赖。
 
 ⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
 """
 
-from .agent import (
-    CookingAgent,
+from hawarma.core.actions import (
     Action,
     CookAction,
     MoveToAssemblyAction,
@@ -16,10 +16,10 @@ from .agent import (
     AddCondimentAction,
     ServeOrderAction,
     ClearCookerAction,
+    ClearAssemblyAction,
 )
 
 __all__ = [
-    "CookingAgent",
     "Action",
     "CookAction",
     "MoveToAssemblyAction",
@@ -28,4 +28,5 @@ __all__ = [
     "AddCondimentAction",
     "ServeOrderAction",
     "ClearCookerAction",
+    "ClearAssemblyAction",
 ]

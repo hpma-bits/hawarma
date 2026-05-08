@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 # 导入待测试的模块
-from hawarma.env_simulator_types import (
+from playground.env_simulator_types import (
     Event,
     EventType,
     Order,
@@ -24,7 +24,7 @@ from hawarma.env_simulator_types import (
     Recipe,
     IngredientRequirement,
 )
-from hawarma.env_simulator import (
+from playground.env_simulator import (
     GameSimulator,
     ActionResult,
 )

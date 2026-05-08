@@ -13,7 +13,7 @@ VisibilityAwareStrategy: visibility 区间跨越感知策略
 
 from __future__ import annotations
 
-from hawarma.agent.agent import (
+from hawarma.core.actions import (
     Action,
     CookAction,
     MoveToAssemblyAction,
@@ -24,7 +24,7 @@ from hawarma.agent.agent import (
     ClearCookerAction,
     ClearAssemblyAction,
 )
-from hawarma.agent.unified_state import UnifiedState
+from hawarma.core.state import UnifiedState
 from hawarma.agent.strategies.cpm import CPMStrategy
 
 
@@ -42,7 +42,7 @@ class VisibilityAwareStrategy(CPMStrategy):
 
     def on_game_start(self, recipes: dict[str, object]) -> None:
         super().on_game_start(recipes)
-        from hawarma.rewards import RecipeRewardLookup
+        from hawarma.core.reward import RecipeRewardLookup
         self._reward_lookup = RecipeRewardLookup()
 
     def _get_order_visibility(self, order) -> int:

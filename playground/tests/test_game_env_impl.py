@@ -1,7 +1,7 @@
 """
-GameEnvImpl 集成测试
+SimEnv 集成测试
 
-验证 GameEnvImpl 与 GameSimulator 的行为一致性。
+验证 SimEnv 与 GameSimulator 的行为一致性。
 需要启动真实 Simulator。
 
 测试覆盖：
@@ -13,25 +13,25 @@ GameEnvImpl 集成测试
 
 import pytest
 
-from playground.env.game_env_impl import GameEnvImpl
-from hawarma.agent.unified_state import UnifiedState
-from hawarma.agent.agent import (
+from playground.env.sim import SimEnv
+from hawarma.core.state import UnifiedState
+from hawarma.core.actions import (
     CookAction,
     ServeOrderAction,
 )
-from hawarma.bridge.base_environment import OrderInfo
+from hawarma.core.models import OrderInfo
 
 
 @pytest.fixture
-def env() -> GameEnvImpl:
-    """创建测试用的 GameEnvImpl"""
-    return GameEnvImpl()
+def env() -> SimEnv:
+    """创建测试用的 SimEnv"""
+    return SimEnv()
 
 
 class TestReset:
     """测试 reset()"""
 
-    def test_reset_returns_obs_and_info(self, env: GameEnvImpl):
+    def test_reset_returns_obs_and_info(self, env: SimEnv):
         obs, info = env.reset(seed=42)
 
         assert isinstance(obs, UnifiedState)
@@ -42,12 +42,12 @@ class TestReset:
         assert len(info["recipes"]) == 4
         assert len(info["recipe_slugs"]) == 4
 
-    def test_reset_creates_different_recipes_with_different_seeds(self, env: GameEnvImpl):
+    def test_reset_creates_different_recipes_with_different_seeds(self, env: SimEnv):
         _, info1 = env.reset(seed=1)
         _, info2 = env.reset(seed=2)
         assert info1["recipe_slugs"] != info2["recipe_slugs"]
 
-    def test_reset_with_specific_recipes(self, env: GameEnvImpl):
+    def test_reset_with_specific_recipes(self, env: SimEnv):
         # 先 reset 一次加载 recipes
         env.reset(seed=42)
         # 然后用已知的 slugs
@@ -59,7 +59,7 @@ class TestReset:
 class TestGetUnifiedState:
     """测试 get_unified_state() 状态转换"""
 
-    def test_initial_state(self, env: GameEnvImpl):
+    def test_initial_state(self, env: SimEnv):
         env.reset(seed=42)
         state = env.get_unified_state()
 
@@ -69,13 +69,13 @@ class TestGetUnifiedState:
         assert len(state.stockpile) == 3
         assert state.assembly.target_recipe_slug is None
 
-    def test_orders_are_tuple(self, env: GameEnvImpl):
+    def test_orders_are_tuple(self, env: SimEnv):
         env.reset(seed=42)
         state = env.get_unified_state()
         assert isinstance(state.orders, tuple)
         assert len(state.orders) == 4
 
-    def test_recipe_adapters(self, env: GameEnvImpl):
+    def test_recipe_adapters(self, env: SimEnv):
         env.reset(seed=42)
         state = env.get_unified_state()
         assert len(state.recipes) == 4
@@ -88,7 +88,7 @@ class TestGetUnifiedState:
 class TestStep:
     """测试 step()"""
 
-    def test_step_none_advances_time(self, env: GameEnvImpl):
+    def test_step_none_advances_time(self, env: SimEnv):
         env.reset(seed=42)
         result = env.step(None)
 
@@ -98,7 +98,7 @@ class TestStep:
         assert result.truncated is False
         assert "events" in result.info
 
-    def test_step_cook_action(self, env: GameEnvImpl):
+    def test_step_cook_action(self, env: SimEnv):
         env.reset(seed=42)
         state = env.get_unified_state()
 
@@ -115,7 +115,7 @@ class TestStep:
         assert next_state.cookers[cooker].busy is True
         assert next_state.cookers[cooker].ingredient_name == ingredient
 
-    def test_step_invalid_action_fails_gracefully(self, env: GameEnvImpl):
+    def test_step_invalid_action_fails_gracefully(self, env: SimEnv):
         env.reset(seed=42)
         # 用一个不存在的食材
         action = CookAction(ingredient="nonexistent", cooker="grill", duration=3.0)
@@ -126,7 +126,7 @@ class TestStep:
         # 时间仍然推进
         assert result.observation.time == pytest.approx(0.1, abs=0.01)
 
-    def test_multiple_steps(self, env: GameEnvImpl):
+    def test_multiple_steps(self, env: SimEnv):
         env.reset(seed=42)
         for _ in range(10):
             result = env.step(None)
@@ -136,7 +136,7 @@ class TestStep:
 class TestCookingFlow:
     """测试完整的烹饪流程"""
 
-    def test_cook_and_move_to_assembly(self, env: GameEnvImpl):
+    def test_cook_and_move_to_assembly(self, env: SimEnv):
         env.reset(seed=42)
         state = env.get_unified_state()
 
@@ -157,7 +157,7 @@ class TestCookingFlow:
                     break
 
         # 3. 移动到 assembly
-        from hawarma.agent.agent import MoveToAssemblyAction
+        from hawarma.core.actions import MoveToAssemblyAction
         env.step(MoveToAssemblyAction(cooker=cooker))
 
         final_state = env.get_unified_state()
@@ -168,7 +168,7 @@ class TestCookingFlow:
 class TestGameCompletion:
     """测试游戏结束"""
 
-    def test_game_terminates(self, env: GameEnvImpl):
+    def test_game_terminates(self, env: SimEnv):
         # GameSimulator 要求 game_duration >= 90，使用 90 秒
         env.reset(seed=42, game_duration=90.0)
 
@@ -185,7 +185,7 @@ class TestGameCompletion:
         assert terminated is True
         assert env.is_game_over()
 
-    def test_game_over_no_more_steps(self, env: GameEnvImpl):
+    def test_game_over_no_more_steps(self, env: SimEnv):
         env.reset(seed=42, game_duration=90.0)
 
         # 推进到结束
@@ -200,7 +200,7 @@ class TestGameCompletion:
 class TestReward:
     """测试奖励计算"""
 
-    def test_no_reward_without_serve(self, env: GameEnvImpl):
+    def test_no_reward_without_serve(self, env: SimEnv):
         env.reset(seed=42)
         for _ in range(5):
             result = env.step(None)
@@ -208,9 +208,9 @@ class TestReward:
 
 
 class TestConsistencyWithSimulator:
-    """验证 GameEnvImpl 与底层 GameSimulator 状态一致"""
+    """验证 SimEnv 与底层 GameSimulator 状态一致"""
 
-    def test_time_consistency(self, env: GameEnvImpl):
+    def test_time_consistency(self, env: SimEnv):
         env.reset(seed=42)
         sim = env._sim
         assert sim is not None
@@ -219,7 +219,7 @@ class TestConsistencyWithSimulator:
             env.step(None)
             assert env.get_unified_state().time == sim.time
 
-    def test_order_consistency(self, env: GameEnvImpl):
+    def test_order_consistency(self, env: SimEnv):
         env.reset(seed=42)
         sim = env._sim
         assert sim is not None

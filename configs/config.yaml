@@ -1,95 +1,157 @@
-# config.yaml
-adb_address: "127.0.0.1:16384"
-image_directory: "static/img"
-recipes_data_path: "data/recipes.json"
-log_directory: "logs"
-episode_duration: 103
-
-cookers: ["grill", "oven", "skillet", "pot"]
-
+adb_address: 127.0.0.1:16384
+image_directory: static/img
+log_directory: logs
+recipes_data_path: data/recipes.json
+episode_duration: 93
+cookers:
+- grill
+- oven
+- skillet
+- pot
 screen:
-  resolution: [1920, 1080]
-  save_screenshots: False
-  assembly_station_position: [1375, 865]
-  trash_position: [25, 590]
-  timer_region: [0, 0, 400, 140]
-
+  resolution:
+  - 1920
+  - 1080
+  save_screenshots: false
+  assembly_station_position:
+  - 1375
+  - 865
+  trash_position:
+  - 25
+  - 590
+  timer_region:
+  - 0
+  - 0
+  - 400
+  - 140
   raw_ingredients_positions:
-    - [115, 930]
-    - [265, 930]
-    - [150, 780]
-    - [300, 780]
-    - [200, 670]
-    - [350, 670]
-    - [255, 570]
-    - [390, 570]
-
+  - - 115
+    - 930
+  - - 265
+    - 930
+  - - 150
+    - 780
+  - - 300
+    - 780
+  - - 200
+    - 670
+  - - 350
+    - 670
+  - - 255
+    - 570
+  - - 390
+    - 570
   cookers_positions:
-    - [595, 585]
-    - [850, 585]
-    - [1120, 585]
-    - [1370, 585]
-
-  condiments_positions:
-    - [1675, 915]
-    - [1825, 925]
-    - [1640, 800]
-    - [1800, 800]
-    - [1615, 685]
-    - [1775, 685]
-    - [1600, 550]
-    - [1725, 555]
-
-  orders_regions:
-    - [500, 80, 720, 210]
-    - [875, 80, 1095, 210]
-    - [1250, 80, 1470, 210]
-    - [1620, 80, 1840, 210]
-
-  ingredients_regions:
-    - [440, 250, 780, 385]
-    - [815, 250, 1155, 385]
-    - [1190, 250, 1530, 385]
-    - [1565, 250, 1905, 385]
-
-  pickup_stations_positions:
-    - [610, 135]
-    - [990, 135]
-    - [1360, 135]
-    - [1740, 135]
-
+  - - 595
+    - 585
+  - - 850
+    - 585
+  - - 1120
+    - 585
+  - - 1370
+    - 585
   stockpile_positions:
-    - [800, 900]
-    - [950, 900]
-    - [1100, 900]
-
+  - - 800
+    - 900
+  - - 950
+    - 900
+  - - 1100
+    - 900
+  condiments_positions:
+  - - 1675
+    - 915
+  - - 1825
+    - 925
+  - - 1640
+    - 800
+  - - 1800
+    - 800
+  - - 1615
+    - 685
+  - - 1775
+    - 685
+  - - 1600
+    - 550
+  - - 1725
+    - 555
+  orders_regions:
+  - - 500
+    - 80
+    - 720
+    - 210
+  - - 875
+    - 80
+    - 1095
+    - 210
+  - - 1250
+    - 80
+    - 1470
+    - 210
+  - - 1620
+    - 80
+    - 1840
+    - 210
+  ingredients_regions:
+  - - 440
+    - 250
+    - 780
+    - 385
+  - - 815
+    - 250
+    - 1155
+    - 385
+  - - 1190
+    - 250
+    - 1530
+    - 385
+  - - 1565
+    - 250
+    - 1905
+    - 385
+  pickup_stations_positions:
+  - - 610
+    - 135
+  - - 990
+    - 135
+  - - 1360
+    - 135
+  - - 1740
+    - 135
 matching:
-  ingredients_strategy: ["tpl"]
+  ingredients_strategy:
+  - tpl
   ingredients_threshold: 0.7
-  save_best_match_images: False
+  save_best_match_images: false
   assembly_threshold: 0.9
-
-# Agent 策略配置
-strategy: "default"  # 可选: default, cpm, preempt_score, visibility_aware
-
-# 游戏规则参数
+  default_strategy: []
 game:
-  cooker_retention: 4.7  # 灶台食材保留时间（秒），保守设置防止食材过期后仍被移动
-  rush_red_threshold: 180  # Rush 订单检测红色阈值
-  rush_detection_positions:  # Rush 订单检测像素坐标
-    - [480, 195]
-    - [860, 195]
-    - [1230, 195]
-    - [1600, 195]
-  serve_verify_wait: 0.4  # 送餐后验证等待时间（秒）
-  swipe_params:  # {distance_threshold: [duration, steps]}
-    400: [0.15, 6]
-    600: [0.18, 8]
-    800: [0.2, 10]
-    1000: [0.25, 12]
-
-# 调试选项
+  cooker_retention: 4.7
+  rush_red_threshold: 180
+  rush_detection_positions:
+  - - 480
+    - 195
+  - - 860
+    - 195
+  - - 1230
+    - 195
+  - - 1600
+    - 195
+  serve_verify_wait: 0.4
+  swipe_params:
+    '400':
+    - 0.15
+    - 6
+    '600':
+    - 0.18
+    - 8
+    '800':
+    - 0.2
+    - 10
+    '1000':
+    - 0.25
+    - 12
 debug:
-  save_order_screenshots: False  # 检测到新订单时保存截图
-  save_assembly_verify_screenshots: True  # 送餐验证时保存assembly截图
-  screenshot_directory: "logs/order_screenshots"
+  save_order_screenshots: false
+  save_assembly_verify_screenshots: true
+  screenshot_directory: logs/order_screenshots
+strategy: visibility_aware

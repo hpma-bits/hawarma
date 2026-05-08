@@ -20,13 +20,13 @@
 - **功能**:
   - **Agent Shell**：封装环境状态、调用 Strategy、返回 Action
   - **Strategy 注入**：默认加载 `playground.strategies.default.DefaultStrategy`，支持外部策略替换
-  - **状态封装**：`_build_unified_state()` 将 `GameEnvironment` 状态转换为 `UnifiedState`
+  - **状态封装**：`_build_unified_state()` 将 `GameEnv` 状态转换为 `UnifiedState`
   - **停滞检测**：`step_with_diagnostics()` 追踪连续无行动时间，5秒后输出诊断日志
   - **统计维护**：`orders_served`, `total_score`, `orders_timeout`, `actions_taken`
   - **动作类型定义**：`CookAction`, `ServeOrderAction`, `ClearAssemblyAction` 等
-- **输入**: GameEnvironment 实例、配方列表、可选 Strategy
+- **输入**: GameEnv 实例、配方列表、可选 Strategy
 - **输出**: 动作对象供执行器执行
-- **关键类**: `CookingAgent`, 各种 `Action` 子类
+- **关键类**: `Runner`, 各种 `Action` 子类
 - **注意**: 所有决策逻辑已迁移到 `src/hawarma/agent/strategies/`，默认使用 `DefaultStrategy`，可通过 `strategy_registry` 切换
 
 ---
@@ -35,12 +35,12 @@
 
 ### 重构后架构
 
-CookingAgent 不再包含决策逻辑，而是作为 **Agent Shell** 运行：
+Runner 不再包含决策逻辑，而是作为 **Agent Shell** 运行：
 
 ```
-RealGameBridge
+Runner
     │
-    ├─→ CookingAgent (Agent Shell)
+    ├─→ Runner (Agent Shell)
     │       │
     │       ├── _build_unified_state()  ──→ UnifiedState
     │       │
@@ -55,7 +55,7 @@ RealGameBridge
 
 | 职责 | 方法 | 说明 |
 |------|------|------|
-| 状态封装 | `_build_unified_state()` | 将 GameEnvironment 转换为 UnifiedState |
+| 状态封装 | `_build_unified_state()` | 将 GameEnv 转换为 UnifiedState |
 | 决策委托 | `step()` → `strategy.decide(state)` | 纯透传，不干预决策 |
 | 停滞检测 | `step_with_diagnostics()` | 5秒无动作输出诊断日志 |
 | 统计维护 | `stats` / `on_order_served()` | 追踪订单完成、超时、得分 |
@@ -177,7 +177,7 @@ def decide(self, state: UnifiedState) -> Action | None:
 
 ## 📊 状态查询接口
 
-Agent Shell 通过 `self.env` 访问 GameEnvironment 提供的状态接口，并封装为 `UnifiedState` 供 Strategy 使用：
+Agent Shell 通过 `self.env` 访问 GameEnv 提供的状态接口，并封装为 `UnifiedState` 供 Strategy 使用：
 
 ### 环境状态（内部使用）
 - `self.env.time` - 当前游戏时间（秒）
@@ -243,7 +243,7 @@ def _infer_recipe_from_assembly(self) -> Optional[str]:
 
 ### 与环境层推断的关系
 
-环境层（`GameEnvironment`）在 `pull_from_stockpile()` 和 `add_to_assembly()` 中也做推断，这是**预防层**。Agent 层的推断是**恢复层**。两层配合确保即使环境层推断失败，Agent 仍能正常工作。
+环境层（`GameEnv`）在 `pull_from_stockpile()` 和 `add_to_assembly()` 中也做推断，这是**预防层**。Agent 层的推断是**恢复层**。两层配合确保即使环境层推断失败，Agent 仍能正常工作。
 
 ---
 
@@ -311,15 +311,15 @@ def get_stats(self) -> dict:
 ## 🔗 与其他模块的关系
 
 ```
-RealGameBridge (bridge/bridge.py)
+Runner (game/bridge.py)
     │
-    ├─→ CookingAgent (agent/agent.py) ← 本模块
+    ├─→ Runner (agent/agent.py) ← 本模块
     │       │
-    │       ├─→ GameEnvironment (bridge/environment.py) - 读取状态
+    │       ├─→ GameEnv (game/environment.py) - 读取状态
     │       └─→ 返回 Action 对象
     │
     └─→ _execute_action() - 执行 Agent 返回的动作
             │
-            ├─→ UIRunner - 执行 UI 操作
-            └─→ GameEnvironment - 更新状态
+            ├─→ Operator - 执行 UI 操作
+            └─→ GameEnv - 更新状态
 ```

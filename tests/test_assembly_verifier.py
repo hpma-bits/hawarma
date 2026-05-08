@@ -1,7 +1,7 @@
 """
 测试组装站验证器
 
-地位：验证 AssemblyVerifier 在 testset/assembly/ 图片上能否正确识别空组装站
+地位：验证 Verifier 在 testset/assembly/ 图片上能否正确识别空组装站
       使用 patch 绕过 airtest 设备依赖，保留真实 Template 匹配
       文件名含 "empty" 的图片预期为空（True），否则预期为非空（False）
 
@@ -14,10 +14,10 @@ from unittest.mock import MagicMock, patch
 
 import cv2
 
-import hawarma.bridge.assembly_verifier as av_module
+import hawarma.game.verifier as av_module
 
 
-class TestAssemblyVerifier(unittest.TestCase):
+class TestVerifier(unittest.TestCase):
     def setUp(self):
         self.assembly_dir = Path(__file__).parent / "testset" / "assembly"
         self.images = sorted(self.assembly_dir.glob("*.jpg"))
@@ -39,7 +39,7 @@ class TestAssemblyVerifier(unittest.TestCase):
         return mock_g
 
     def _evaluate(self, threshold):
-        verifier = av_module.AssemblyVerifier(self._create_mock_config())
+        verifier = av_module.Verifier(self._create_mock_config())
         verifier._empty_template.threshold = threshold
 
         failures = []
@@ -86,7 +86,7 @@ class TestAssemblyVerifier(unittest.TestCase):
             expected = "empty" in img_path.stem
             mock_g = self._mock_device(self._screens[img_path.name])
             with patch.object(av_module, "G", mock_g):
-                verifier = av_module.AssemblyVerifier(self._create_mock_config())
+                verifier = av_module.Verifier(self._create_mock_config())
                 verifier._empty_template.threshold = best
                 is_empty = verifier.is_assembly_empty()
             status = "OK" if is_empty == expected else "MISMATCH"

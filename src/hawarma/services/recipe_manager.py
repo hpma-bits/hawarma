@@ -15,7 +15,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from hawarma.models import Recipe
+from hawarma.recipe import Recipe
 
 
 class RecipeManager:

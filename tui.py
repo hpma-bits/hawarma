@@ -39,11 +39,11 @@ from loguru import logger
 from textual.worker import Worker, WorkerState
 
 from hawarma.config import load_config, save_config
-from hawarma.models import Recipe
+from hawarma.recipe import Recipe
 from hawarma.services.recipe_manager import RecipeManager
-from hawarma.device_setup import setup_device
-from hawarma.monkey_patches import apply_patch
-from hawarma.logging_setup import setup_logging
+from hawarma.device import setup_device
+from hawarma.patches import apply_patch
+from hawarma.log import setup_logging
 
 
 class MainMenuScreen(Screen):
@@ -282,9 +282,8 @@ class GameControlScreen(Screen):
     @work(exclusive=True, exit_on_error=False)
     async def run_game(self) -> None:
         """运行游戏逻辑"""
-        from hawarma.bridge import RealGameBridge
-        from hawarma.agent import CookingAgent
-        from hawarma.agent.strategy_registry import get_strategy
+        from hawarma.game import Runner
+        from hawarma.agent.registry import get_strategy
         
         log = self.query_one("#game-log", Log)
         
@@ -298,12 +297,8 @@ class GameControlScreen(Screen):
             strategy = get_strategy(self.config.strategy)
             log.write_line(f"使用策略: {self.config.strategy}\n")
             
-            # 创建桥接器
-            bridge = RealGameBridge(self.config, self.app.selected_recipes)
-            
-            # 创建代理
-            agent = CookingAgent(bridge.env, self.app.selected_recipes, strategy=strategy)
-            bridge.set_agent(agent)
+            # 创建桥接器（直接注入 strategy）
+            bridge = Runner(self.config, self.app.selected_recipes, strategy)
             
             log.write_line("=" * 40 + "\n")
             log.write_line("游戏运行中... 设备扫描已启动\n")

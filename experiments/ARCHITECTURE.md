@@ -42,7 +42,7 @@ experiments/
 ### `playground/` 模块
 提供实验脚本可复用的功能：
 - `playground.core.runner`: `run_episode`, `run_benchmark`
-- `playground.env.game_env_impl`: `GameEnvImpl`
+- `playground.env.game_env_impl`: `SimEnv`
 - `playground.strategies`: 策略基类和实现
 - `playground.bench.compare`: 结果对比和导出
 

@@ -15,7 +15,7 @@ CPMStrategy: 关键路径法策略（Critical Path Method）
 
 from __future__ import annotations
 
-from hawarma.agent.agent import (
+from hawarma.core.actions import (
     Action,
     CookAction,
     MoveToAssemblyAction,
@@ -26,7 +26,7 @@ from hawarma.agent.agent import (
     ClearCookerAction,
     ClearAssemblyAction,
 )
-from hawarma.agent.unified_state import UnifiedState
+from hawarma.core.state import UnifiedState
 from hawarma.agent.strategies.default import DefaultStrategy
 
 

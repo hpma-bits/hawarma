@@ -24,7 +24,7 @@
 ## 🔗 模块间关系
 
 ```
-RealGameBridge
+Runner
     ↓
 RecipeManager → data/recipes.json
 ```

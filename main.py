@@ -15,9 +15,9 @@ from loguru import logger
 
 from hawarma.config import load_config
 from hawarma.services.recipe_manager import RecipeManager
-from hawarma.monkey_patches import apply_patch
-from hawarma.logging_setup import setup_logging
-from hawarma.device_setup import setup_device
+from hawarma.patches import apply_patch
+from hawarma.log import setup_logging
+from hawarma.device import setup_device
 
 
 def get_recipe_selection(all_recipes):
@@ -57,18 +57,14 @@ async def run_game(config, ordered_recipes, strategy=None):
         ordered_recipes: List of selected Recipe objects
         strategy: Optional strategy instance to use. Defaults to config.strategy.
     """
-    from hawarma.bridge import RealGameBridge
-    from hawarma.agent import CookingAgent
-    from hawarma.agent.strategy_registry import get_strategy
-
-    bridge = RealGameBridge(config, ordered_recipes)
+    from hawarma.game import Runner
+    from hawarma.agent.registry import get_strategy
 
     # 使用配置中的策略，可通过参数覆盖
     if strategy is None:
         strategy = get_strategy(config.strategy)
 
-    agent = CookingAgent(bridge.env, ordered_recipes, strategy=strategy)
-    bridge.set_agent(agent)
+    bridge = Runner(config, ordered_recipes, strategy)
 
     logger.info("=" * 60)
     logger.info("Starting game...")
@@ -111,7 +107,7 @@ def main():
 
     # 命令行参数可覆盖配置文件中的策略
     if args.strategy:
-        from hawarma.agent.strategy_registry import get_strategy
+        from hawarma.agent.registry import get_strategy
         strategy = get_strategy(args.strategy)
         logger.info(f"Using strategy from CLI: {args.strategy}")
     else:

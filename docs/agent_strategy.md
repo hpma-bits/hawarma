@@ -2,7 +2,7 @@
 
 ## 1. 概述
 
-本文档描述 Hawarma 烹饪游戏 Agent 的核心算法设计、策略分析和优化经验。
+本文档描述 Hawarma 烹饪游戏 Agent 的核心算法设计、策略分析和基准测试结果。
 
 ### 1.1 问题定义
 
@@ -13,320 +13,219 @@
   - 订单有超时时间（普通订单 55-75 秒，Rush 订单 30-45 秒，基于配方总烹饪时长动态计算）
   - 调料必须在食材齐全后才能添加
 
-### 1.2 关键时间点
+## 2. 架构
 
-| 时间 | 事件 |
-|------|------|
-| t=0 | 游戏开始，无订单 |
-| t=4 | 第一个订单出现（有1秒动画） |
-| t=8 | 第二个订单出现 |
-| 每4秒 | 新订单出现（如果有空槽位） |
-| t=90 | 游戏结束 |
-
-## 2. 数学模型
-
-### 2.1 订单容量分析
+### 2.1 三层架构
 
 ```
-订单到达率: 0.25个/秒 (1个/4秒)
-理论最大订单数: 18个（基于平均处理时间5秒）
-实际完成订单数: 13.4个（20局平均）
-效率: 74%
+core/       Strategy 的唯一输入，数据契约
+agent/      Strategy 纯决策单元
+game/       Env 状态管理 + Runner 编排 + Operator 执行
 ```
 
-### 2.2 单订单处理时间
+- **Strategy**：`decide(state) -> Action`，纯决策函数，不接触环境
+- **Env**：状态管理 + `get_unified_state()` + 统计追踪
+- **Runner**：编排扫描循环、超时循环、决策循环，执行 Action
 
-| 类型 | 食材数 | 并行处理时间 | 串行处理时间 |
-|------|--------|-------------|-------------|
-| 简单订单 | 1 | 3-4秒 | 3-4秒 |
-| 复杂订单 | 2 | 3-5秒 | 5-9秒 |
-
-### 2.3 最新基准测试结果（50局平均）
-
-| 指标 | 值 |
-|------|-----|
-| 完成订单 | 14.7个 |
-| 超时订单 | 0.0个 |
-| 超时率 | 0.0% |
-| 平均得分 | 2620分 |
-| 效率 | 82% |
-
-## 3. 策略设计
-
-### 3.1 阶段驱动决策模型
+### 2.2 数据流
 
 ```
-Assembly 阶段          允许的操作
-─────────────────────────────────────────
-NOT_READY           →  移动食材/取用库存/烹饪/清理/存储
-NEEDS_SEASONING     →  添加调料
-READY               →  送餐
+Scanner/Timeout → Env.get_unified_state() → Strategy.decide(state) → Action → Runner.execute(action) → Operator.swipe() + Env.update()
 ```
 
-### 3.2 优先级顺序
+### 2.3 动作类型
 
-```
-1. 检查assembly是否属于已超时订单，如果是则清空
-2. 送餐（最高优先级 - 释放assembly，动画窗口期间跳过）
-3. 移动完成食材到组装站（释放灶台，防止食材过期）
-4. 开始烹饪（让灶台尽早开始工作！动画窗口期间允许）
-5. 添加调料（可以在烹饪期间进行）
-6. 存入stockpile（非当前订单需要的食材）
-7. 从库存取用
-8. 清理过期食材
-```
+Actions 定义在 `src/hawarma/core/actions.py`，按 station 分组：
 
-### 3.3 关键设计原则
+| 类别 | Action | 说明 |
+|------|--------|------|
+| 基础 | AddCondimentAction | 调味 |
+| 基础 | ClearCookerAction | 清理灶台 |
+| Gastronome | CookAction | 食材区→灶台 |
+| Gastronome | MoveToAssemblyAction | 灶台→组装站 |
+| Gastronome | ServeOrderAction | 组装站→取餐台 |
+| Gastronome | MoveToStockpileAction | 灶台→库存 |
+| Gastronome | PullFromStockpileAction | 库存→组装站 |
+| Dessert | *(预留)* | 待开发 |
 
-1. **按需响应**：只烹饪当前订单需要的食材
-2. **移动优先**：已完成的食材必须先移到assembly，否则会在灶台上过期
-3. **动画窗口不阻塞烹饪**：动画窗口仅影响送餐和扫描，烹饪可以在此期间启动
-4. **避免预烹饪**：预烹饪的食材可能与订单不匹配
+## 3. 策略对比（100局基准测试）
 
-## 4. 实验结果
+| Rank | Strategy | Avg Reward | vs #1 | 完成订单 | 超时率 |
+|------|----------|-----------|-------|---------|--------|
+| 1 | **CPMEnhancedStrategy** | **3934** | — | 18.9 | 0% |
+| 2 | VisibilityAwareStrategy | 3923 | Δ -11 (n.s.) | 18.8 | 0% |
+| 3 | CPMStrategy | 3878 | Δ -56 | 18.5 | 0% |
+| 4 | PreemptScoreStrategy | 3793 | Δ -141 (p=0.01) | 18.1 | 0% |
+| 5 | DefaultStrategy | 3736 | Δ -198 (p=0.01) | 17.9 | 0% |
 
-### 4.1 策略对比（50局平均）
+### 3.1 可用策略
 
-| 策略 | 核心思想 | 完成订单 | 超时率 | 效率 |
-|------|----------|----------|--------|------|
-| naive | 调味优先 | 12.7个 | 4% | 71% |
-| **cooking_first** | **烹饪优先** | **14.1个** | **2.3%** | **78%** |
-| **cooking_first_v2** | **动画期间烹饪** | **14.7个** | **0.0%** | **82%** |
+| 注册名 | 类名 | 特点 |
+|--------|------|------|
+| `cpm_enhanced` | CPMEnhancedStrategy | **当前最佳**：CPM + 单食材优先 + visibility 阈值 |
+| `visibility_aware` | VisibilityAwareStrategy | CPM + visibility 阈值跨越加成 |
+| `cpm` | CPMStrategy | 关键路径法（SPT） + assembly 抢占 |
+| `preempt_score` | PreemptScoreStrategy | 分数/CP 效率排序 + 进度感知抢占 |
+| `default` | DefaultStrategy | 主动预烹饪 + 决策优先级优化，稳定保守 |
 
-### 4.2 验证结果
+### 3.2 策略切换
 
-**有效优化**：
-- ✓ 烹饪优先于调味（+10.8%）
-- ✓ 优先烹饪时间长的食材（+2%）
-- ✓ 动画窗口期间允许烹饪（+11.2% vs 阻塞版本）
-- ✓ 动态swipe参数（根据距离调整，提升送餐成功率）
-- ✓ 前瞻性烹饪（基于订单紧迫度提前烹饪）
-- ✓ Serve失败重试（首次失败后重新扫描匹配订单）
+```bash
+# CLI
+python -m playground run --strategy cpm_enhanced
+python -m playground bench --strategies default,cpm,cpm_enhanced
 
-**无效优化**：
-- ✗ 预烹饪到assembly（与订单不匹配，-30%）
-- ✗ 预烹饪到stockpile（额外开销，-2%）
-
-### 4.3 烹饪优先的原理
-
-**真实游戏的并行性**：
-- swipe操作是串行的（每个0.1秒）
-- 但灶台烹饪是异步的（开始后自动工作）
-
-**烹饪优先的优势**：
-```
-swipe 1: 开始烹饪 → 灶台开始后台工作
-swipe 2: 调味1 → 灶台在工作
-swipe 3: 调味2 → 灶台在工作
-swipe 4: 送餐 → 灶台在工作
+# 代码
+from hawarma.agent.registry import get_strategy
+strategy = get_strategy("cpm_enhanced")
 ```
 
-**调味优先的劣势**：
-```
-swipe 1: 调味1 → 灶台空闲
-swipe 2: 调味2 → 灶台空闲
-swipe 3: 送餐 → 灶台空闲
-swipe 4: 开始烹饪 → 灶台开始工作
-```
+## 4. 核心优化总结
 
-**结论**：烹饪优先让灶台更早开始工作（早0.3秒），直接影响订单处理速度。
+| 优化 | 说明 | 效果 |
+|------|------|------|
+| SPT 排序 | 最短处理时间优先（关键路径法） | 提升吞吐 4-5% |
+| visibility 阈值 | 跨越阈值订单获得优先级加成 | Δ +38 (n.s.) |
+| 单食材优先 | 1-ingredient 订单 CP 减 0.3s | Δ +11 (n.s.) |
+| 调料优先 | 食材齐全时先加调料再烹饪 | 更快释放组装站 |
+| 最长烹饪优先 | 同订单内先煮最慢的食材 | 最大化并行重叠 |
+| 主动预烹饪 | 灶台空闲时预烹饪 | 减少空闲时间 |
+| 快速存储 | 不需要的食材 2s 后存储 | 更快释放灶台 |
+| 动画期间烹饪 | 送餐动画不阻塞烹饪 | +11.2%（旧基准） |
 
-### 4.4 动画窗口期间允许烹饪
+## 5. 效率指标说明
 
-**问题**：送餐后设置1.5秒动画窗口，期间agent loop完全跳过，导致灶台空闲4.4秒。
+Playground 基准测试输出以下效率指标：
 
-```
-旧行为:
-t=13.1s  Served order 1 → 1.5s 动画窗口
-t=14.6s  动画窗口结束
-t=15.5s  移动 clearwater_fish 到组装站
-t=16.5s  移动 creamfield_rice 到组装站
-t=17.5s  才开始下一轮烹饪  ← 灶台空闲了 4.4s
-```
+| 指标 | VisibilityAware | 说明 |
+|------|----------------|------|
+| Idle% | 60.1% | 灶台空闲时间比例 |
+| Expired | 1.2 | 每局食材过期数 |
+| ClrAsm | 1.4 | 清空组装站次数（抢占） |
+| SrvGap | 4.5s | 两次 serve 平均间隔 |
+| None% | 84.8% | 策略返回 None 的步数比 |
+| StkIn/Out | 11/10 | 库存进出次数 |
+| StkMax | 3.0 | 库存峰值 |
 
-**优化**：
-1. 移除 agent_loop 的动画窗口检查（`bridge.py`）
-2. 调整优先级：烹饪 > 移动食材（`agent.py`）
-3. 送餐操作保留动画窗口检查
+## 6. 运行基准测试
 
-```
-新行为:
-t=13.1s  Served order 1 → 1.5s 动画窗口
-t=13.2s  开始下一轮烹饪  ← 动画期间启动灶台
-t=14.6s  动画窗口结束
-t=15.5s  移动 clearwater_fish 到组装站
-         灶台已在工作中
-```
+```bash
+# 完整基准测试
+python -m playground bench --games 100 --strategies default,cpm,cpm_enhanced
 
-**结果**（50局模拟器测试）：
-- 完成订单：13.3 → 14.7个（+11.2%）
-- 平均得分：2352 → 2620分（+11.4%）
-- 空闲时间：19.2s → 17.7s（-7.6%）
+# 导出 CSV
+python -m playground bench --games 100 --csv results.csv
 
-## 5. 经验教训
-
-### 5.1 简单策略往往更优
-
-按需响应策略已经能达到78%的效率。复杂的优化反而可能引入问题。
-
-### 5.2 预烹饪的价值有限
-
-**原因**：
-- 无法预测订单，预烹饪的食材可能不匹配
-- 预烹饪占用灶台，影响后续烹饪
-- 存取stockpile有额外开销
-
-**教训**：在不确定的环境中，按需响应比预测更可靠。
-
-### 5.3 优先级顺序很重要
-
-**正确的优先级**：
-```
-送餐 → 开始烹饪 → 移动食材 → 添加调料
+# 单局
+python -m playground run --seed 42 --strategy cpm_enhanced
 ```
 
-**烹饪优先的原理**：
-- 灶台是异步的（开始后自动工作）
-- 调味是同步的（需要占用swipe时间）
-- 尽早开始烹饪可以让灶台更早工作
-- 动画窗口期间允许烹饪，减少灶台空闲时间
+## 7. 甜点策略
 
-### 5.4 理解真实游戏的并行性
+### 7.1 概述
 
-- swipe操作是串行的（每个0.1秒）
-- 但灶台烹饪是异步的（开始后自动工作）
-- 模拟器不能完全反映真实游戏的并行性
+甜点策略（DessertStrategy）是甜点模式的专用策略，采用流水线决策逻辑。与 Gastronome 策略不同，甜点策略专注于搅拌盆和灶台的协同工作。
 
-### 5.5 测试要严谨
+### 7.2 甜点流程
 
-- 单局测试不可靠，需要多局平均（建议30局以上）
-- 不同recipes组合表现差异大
-- 要考虑厨具是否被使用（只统计需要该厨具的游戏）
+```
+食材区 → 搅拌盆 → 调味 → 搅拌 → 灶台烹饪 → 取餐台
+```
 
-### 5.6 不要过度依赖模拟器
+### 7.3 决策优先级
 
-- 模拟器可能不能完全反映真实游戏的行为
-- 重要结论需要在真实环境中验证
-- 从文档出发思考问题，而不是从代码出发
+甜点策略的决策优先级如下：
 
-### 5.7 状态完整性比逻辑正确性更重要（2026-04-05 新增）
+| 优先级 | 操作 | 条件 |
+|--------|------|------|
+| 1 | 送餐（灶台→取餐台） | 灶台完成 + 有匹配订单 |
+| 2 | 清理过期灶台 | 灶台过期 |
+| 3 | 移动搅拌盆到灶台 | 搅拌完成 + 灶台空闲 |
+| 4 | 搅拌 | 食材齐全 + 调料齐全 + 未搅拌 |
+| 5 | 添加调料 | 食材齐全 + 调料未齐全 |
+| 6 | 添加食材到搅拌盆 | 搅拌盆未满 |
+| 7 | 清理搅拌盆 | 无匹配订单 |
 
-**事件**：真实游戏日志显示 Agent 在 t=43.8s 到 t=78.9s 之间完全停止行动（35秒静默），37个订单只完成6个。
+### 7.4 流水线决策
 
-**根因**：`assembly.target_recipe_slug` 在特定操作序列下（先 pull_from_stockpile 再 add_to_assembly）未被正确设置，导致：
-- `_try_serve()` → 调料不完整，无法送餐
-- `_try_add_condiment()` → `target_slug` 为 None，直接返回 None
-- `_try_parallel_cooking()` → 无食材可烹饪
-- Agent 循环 700+ 次全部返回 None，完全瘫痪
+甜点策略采用流水线决策逻辑：
 
-**教训**：
-1. **关键状态字段必须在所有写入路径上保持一致**，不能只覆盖"主要路径"
-2. **瀑布式优先级决策需要安全网**：当所有检查都返回 None 且持续一定时间时，应触发诊断或恢复
-3. **防御性编程需要多层**：环境层预防 + Agent 层恢复
-4. **日志需要覆盖"为什么没做"**，而不仅仅是"做了什么"
+- 当当前订单在烹饪时，开始下一个订单的食材收集和搅拌
+- 一般同时处理 2 个订单
+- rush 订单优先处理，然后先进先出
 
-**修复方案**：
-- 环境层：`pull_from_stockpile()` 和 `add_to_assembly()` 自动推断 `target_recipe_slug`
-- Agent 层：`_try_add_condiment()` 在 `target_slug` 为空时通过 `_infer_recipe_from_assembly()` 推断
+### 7.5 资源管理
 
-详见 `docs/assembly_deadlock_analysis.md`。
+| 资源 | 约束 | 说明 |
+|------|------|------|
+| 搅拌盆 | 一次只能处理一个订单 | 搅拌盆是共享资源 |
+| cooker | 一次只能烹饪一个甜点 | cooker 是共享资源 |
+| 库存 | 一次只能存储一个半成品 | 库存是共享资源 |
 
-## 6. 策略配置与切换
+### 7.6 订单优先级
 
-策略通过统一注册表管理，支持配置文件和命令行两种方式切换，无需修改代码。
+甜点订单的优先级排序：
 
-### 6.1 可用策略
+1. **rush 订单优先**：rush 订单始终最高优先级
+2. **先进先出**：相同优先级的订单按到达顺序处理
+3. **超时时间**：即将超时的订单优先处理
 
-| 策略 | 名称 | 特点 | Playground 50局均分 |
-|------|------|------|-------------------|
-| **DefaultStrategy** | `default` | rush+age 排序 + 预烹饪，稳定保守 | 3517 |
-| **CPMStrategy** | `cpm` | 关键路径法（SPT）+ assembly 抢占 | **3596** |
-| **CPMStrategyV2** | `cpm_v2` | CPM 无抢占变体 | 3588 |
-| **ScoreAwareCPMStrategy** | `score_aware` | 分数/时间效率排序 | 3600 |
-| **ScorePreemptStrategy** | `score_preempt` | 纯分数优先 + 抢占，激进 | 3483 |
-| **VisibilityAwareStrategy** | `visibility_aware` | visibility 阈值跨越加成 | 3572 |
-| **CookingFirstV2Strategy** | `cooking_first_v2` | 旧版策略 | - |
-| **StockpileFirstStrategy** | `stockpile_first` | 库存优先策略 | - |
+### 7.7 状态追踪
 
-### 6.2 配置方式
+甜点策略使用隐式状态追踪：
 
-**1. 配置文件（configs/config.yaml）**
+- **MixingBowlState**：追踪搅拌盆状态（食材、调味品、是否搅拌完成）
+- **CookerState**：追踪 cooker 状态（复用现有）
+- **StockpileSlot**：追踪库存状态（复用现有）
+
+### 7.8 错误处理
+
+甜点策略的错误处理策略：
+
+- 操作失败时记录日志
+- 不实现重试机制
+- 假设所有操作都成功
+- 关注游戏逻辑的正确性
+
+### 7.9 配置
+
+甜点策略的配置在 `configs/config.yaml` 的 `stations.dessert` 节：
 
 ```yaml
-strategy: "cpm"  # 可选值见上表
+stations:
+  dessert:
+    enabled: true
+    stir:
+      swipes: 3           # 搅拌往复次数
+      duration: 0.3        # 每次 swipe 持续时间
+      distance: 200        # swipe 距离（像素）
+    mixing_bowl_position:  # 搅拌盆屏幕坐标
+      - 1245
+      - 870
+    stockpile_position:    # 半成品库存屏幕坐标
+      - 675
+      - 860
+    cooker_retention: 5.0  # 甜点灶台食材停留时间
 ```
 
-**2. 命令行参数（覆盖配置文件）**
+### 7.10 使用方法
 
 ```bash
-# 真实游戏
-python main.py --strategy cpm
+# CLI
+python main.py --strategy dessert
 
-# Playground
-python -m playground run --strategy cpm --seed 42
-python -m playground bench --games 50 --strategies default,cpm
+# TUI
+python tui.py  # 在策略选择中选择 dessert
+
+# 代码
+from hawarma.agent.registry import get_strategy
+strategy = get_strategy("dessert")
 ```
 
-**3. 代码中使用注册表**
+### 7.11 未来扩展
 
-```python
-from hawarma.agent.strategy_registry import get_strategy, list_strategies
+甜点策略支持未来扩展：
 
-strategy = get_strategy("cpm")  # 返回策略实例
-```
-
-### 6.3 策略实验结论
-
-- **CPM 是 playground 上表现最好的策略**（avg 3596），但仍有 22% 的局低于 3200
-- 显式按分数排序（ScorePreempt）反而降低了吞吐量，过度追求高分订单导致简单订单被耽搁
-- visibility 跨越加成（VisibilityAware）效果有限，因为 SPT 已隐式利用了快速积累 visibility 的机制
-- 重要结论需在真实环境中验证，模拟器可能无法完全反映真实游戏的并行性
-
-## 7. 结论
-
-### 7.1 当前最优策略
-
-**DefaultStrategy**（真实游戏默认）和 **CPMStrategy**（Playground 推荐）：
-
-| 指标 | DefaultStrategy | CPMStrategy | 说明 |
-|------|----------------|-------------|------|
-| Playground 均分 | 3517 | **3596** | 50 seeds, 4-recipe combo |
-| < 3200 比例 | 28% | **22%** | 稳定性指标 |
-| 最高分 | 4411 | 4416 | - |
-
-### 7.2 核心优化经验
-
-| 优化 | 说明 | 效果 |
-|------|------|------|
-| 调料优先 | 组装站食材齐全时立即添加调料 | 更快释放组装站 |
-| 最长烹饪优先 | 按烹饪时长降序排列食材 | 最大化并行重叠 |
-| 主动预烹饪 | 灶台空闲时预烹饪活跃订单食材 | 减少灶台空闲时间 |
-| 动画期间允许烹饪 | 送餐动画不阻塞烹饪决策 | +11.2% 订单数 |
-| 快速存储 | 非必要食材2秒后存储 | 更快释放灶台 |
-
-### 7.3 已验证无效的优化
-
-| 优化 | 说明 | 效果 |
-|------|------|------|
-| 预烹饪到assembly | 与订单不匹配 | -30% |
-| 预烹饪到stockpile（旧版） | 额外开销且不可控 | -2% |
-| 纯分数优先抢占 | 过度追求高分，吞吐量下降 | -113 均分 |
-
-### 7.4 进一步优化空间
-
-- 调优 CPM 的 `PREEMPT_THRESHOLD`（当前 3.0s）
-- 混合策略：前期 SPT 积累 visibility，后期按分数排序
-- 真实游戏测试验证 playground 结论
-
-### 7.5 运行基准测试
-
-```bash
-# 模拟器基准测试
-python -m playground bench --games 50 --strategies default,cpm
-
-# 单局游戏
-python -m playground run --seed 42 --strategy cpm
-
-# 真实游戏
-python main.py --strategy cpm
-```
+- 支持更多甜点类型：只需在 `recipes.json` 中添加新的甜点菜谱
+- 可配置参数：搅拌参数、位置参数、超时参数都可配置
+- 架构易于扩展：策略设计支持未来添加新的决策逻辑

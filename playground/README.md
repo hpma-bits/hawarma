@@ -21,12 +21,12 @@ python -m playground replay replay.json
 ## 核心架构
 
 ```
-GameEnvImpl  →  UnifiedState  →  Strategy.decide()  →  Action  →  GameEnvImpl.step()
+SimEnv  →  UnifiedState  →  Strategy.decide()  →  Action  →  SimEnv.step()
      ↑                                                                            ↓
      └──────────────────── Reward + Next State ───────────────────────────────────┘
 ```
 
-- **GameEnvImpl**: RL 风格环境（reset/step/get_unified_state）
+- **SimEnv**: RL 风格环境（reset/step/get_unified_state）
 - **UnifiedState**: 不可变状态快照，Strategy 的唯一输入
 - **Strategy**: 纯决策函数 `decide(state) -> Action | None`
 - **Agent**: 持有 Strategy 的交互壳（默认透传）

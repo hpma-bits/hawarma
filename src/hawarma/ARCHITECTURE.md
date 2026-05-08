@@ -41,22 +41,40 @@
 - **地位**: Agent Shell + Action 类型定义
 - **功能**: 封装环境状态、注入 Strategy、输出 Action
 - **文件**:
-  - `agent.py`: CookingAgent Shell（默认注入 `DefaultStrategy`），Action 类型定义
+  - `agent.py`: Runner Shell（默认注入 `DefaultStrategy`），Action 类型定义
 - **注意**: 决策逻辑已迁移到 `playground/strategies/default.py`
 
-### `bridge/` 子目录
+### `game/` 子目录
 - **地位**: Agent 与真实游戏的桥接层
 - **功能**: 扫描、状态追踪、UI 执行、生命周期管理
 - **文件**:
-  - `bridge.py`: RealGameBridge，三循环并行架构
-  - `environment.py`: GameEnvironment，程序逻辑追踪状态
-  - `scanner.py`: OrderScanner，图像检测订单
-  - `ui_runner.py`: UIRunner，swipe 坐标执行
+  - `bridge.py`: Runner，三循环并行架构
+  - `environment.py`: GameEnv，程序逻辑追踪状态
+  - `scanner.py`: Scanner，图像检测订单
+  - `ui_runner.py`: Operator，swipe 坐标执行
 
 ### `services/` 子目录
 - **地位**: 服务层
 - **文件**:
   - `recipe_manager.py`: 从 JSON 加载配方数据
+
+### `agent/strategies/` 子目录
+- **地位**: 策略实现
+- **文件**:
+  - `default.py`: DefaultStrategy，主动预烹饪 + 决策优先级优化
+  - `cpm.py`: CPMStrategy，关键路径法（SPT） + assembly 抢占
+  - `cpm_enhanced.py`: CPMEnhancedStrategy，CPM + 单食材优先 + visibility 阈值
+  - `visibility_aware.py`: VisibilityAwareStrategy，CPM + visibility 阈值跨越加成
+  - `preempt_score.py`: PreemptScoreStrategy，分数/CP 效率排序 + 进度感知抢占
+  - `dessert.py`: DessertStrategy，甜点策略，流水线决策逻辑（待实现）
+
+### `core/` 子目录
+- **地位**: 数据层，定义 Recipe、Action、UnifiedState
+- **文件**:
+  - `actions.py`: 所有 Action 定义（按 station 分组）
+  - `models.py`: CookerState、AssemblyState、MixingBowlState、StockpileSlot、OrderInfo
+  - `state.py`: UnifiedState，env → strategy 的数据契约
+  - `__init__.py`: 导出所有类型
 
 ### `utils/` 子目录
 - **功能**: 图像处理工具
@@ -70,27 +88,32 @@
 ```
 main.py
   ↓
-RealGameBridge (bridge/bridge.py)
+Runner (game/bridge.py)
   │
   ├─ 三个并行循环:
-  │   ├─ scan_loop (0.5s)    → OrderScanner → GameEnvironment.add_order()
-  │   ├─ timeout_loop (0.3s) → GameEnvironment.check_and_remove_timed_out_orders()
-  │   └─ agent_loop (0.1s)   → CookingAgent.step() → _execute_action()
+  │   ├─ scan_loop (0.5s)    → Scanner → GameEnv.add_order()
+  │   ├─ timeout_loop (0.3s) → GameEnv.check_and_remove_timed_out_orders()
+  │   └─ agent_loop (0.1s)   → Runner.step() → _execute_action()
   │
-  ├─ GameEnvironment (bridge/environment.py)
-  │     └─ 程序逻辑追踪: 灶台、组装站、库存、订单、调料
+  ├─ GameEnv (game/environment.py)
+  │     └─ 程序逻辑追踪: 灶台、组装站、搅拌盆、库存、订单、调料
   │
-  ├─ OrderScanner (bridge/scanner.py)
+  ├─ Scanner (game/scanner.py)
   │     └─ Airtest 图像检测: 只检测订单
   │
-  ├─ UIRunner (bridge/ui_runner.py)
+  ├─ Operator (game/ui_runner.py)
   │     └─ swipe 坐标映射和执行
   │
-  └─ CookingAgent (agent/agent.py)
-        └─ 7 级优先级贪心策略
+  └─ Strategy (agent/strategies/)
+        ├─ DefaultStrategy (Gastronome)
+        ├─ CPMStrategy (Gastronome)
+        ├─ CPMEnhancedStrategy (Gastronome)
+        ├─ VisibilityAwareStrategy (Gastronome)
+        ├─ PreemptScoreStrategy (Gastronome)
+        └─ DessertStrategy (Dessert) ← 待实现
 ```
 
-### Agent 决策优先级
+### Agent 决策优先级（Gastronome）
 
 ```
 1. 送餐 (ServeOrderAction)        ← 组装完成立即送
@@ -102,22 +125,34 @@ RealGameBridge (bridge/bridge.py)
 7. 存入库存 (MoveToStockpileAction) ← 多余食材缓冲
 ```
 
+### Agent 决策优先级（Dessert）
+
+```
+1. 送餐 (ServeFromCookerAction)    ← 灶台完成立即送
+2. 清理过期 (ClearCookerAction)    ← 灶台过期清理
+3. 移动搅拌盆到灶台 (MoveMixingBowlToCookerAction) ← 搅拌完成 + 灶台空闲
+4. 搅拌 (StirAction)              ← 食材齐全 + 调料齐全 + 未搅拌
+5. 添加调料 (AddCondimentAction)   ← 食材齐全 + 调料未齐全
+6. 添加食材到搅拌盆 (MoveToMixingBowlAction) ← 搅拌盆未满
+7. 清理搅拌盆 (ClearMixingBowlAction) ← 无匹配订单
+```
+
 ### 数据流
 
 ```
 屏幕截图
   ↓
-OrderScanner.scan_new_orders()
+Scanner.scan_new_orders()
   ↓
-GameEnvironment.add_order()
+GameEnv.add_order()
   ↓
-CookingAgent.step()  ← 按优先级选最优动作
+Runner.step()  ← 按优先级选最优动作
   ↓
 Action
   ↓
-RealGameBridge._execute_action()
-  ├─→ UIRunner.swipe()        ← 执行 UI 操作
-  └─→ GameEnvironment.*()      ← 更新内部状态
+Runner._execute_action()
+  ├─→ Operator.swipe()        ← 执行 UI 操作
+  └─→ GameEnv.*()      ← 更新内部状态
 ```
 
 ---

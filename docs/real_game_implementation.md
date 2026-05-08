@@ -75,7 +75,7 @@ AppConfig
 ### 2.2 环境状态层 (environment.py)
 
 ```python
-GameEnvironment(BaseEnvironment)
+GameEnv(Env)
 ├── orders: list[OrderInfo | None]      # 4个订单槽位
 ├── cookers: dict[str, CookerState]      # 灶台状态
 ├── assembly: AssemblyState              # 组装站状态
@@ -256,11 +256,11 @@ def add_to_assembly(self, cooker_name: str) -> bool:
 | **Rush 订单时限 40s** | Order.is_rush + 过期检测 | 程序逻辑判断 |
 | **普通订单时限 70s** | 同上 | 同上 |
 | **烹饪完成后 5s 过期** | CookerState.expired_at | 拒绝过期食材操作 |
-| **灶台并行烹饪** | GameEnvironment 维护多个 CookerState | 完全并行，无冲突 |
+| **灶台并行烹饪** | GameEnv 维护多个 CookerState | 完全并行，无冲突 |
 | **组装站单一配方** | AssemblyState.target_recipe_slug 校验 | 校验失败则拒绝添加 |
 | **订单位移动画 1.5s** | set_animation_window() | 两个循环都检查动画窗口 |
 | **游戏时长 90s** | env.is_game_over() | 动态可配置 |
-| **食材区/调料区动态位置** | UIRunner 动态坐标映射 | 与游戏界面一致 |
+| **食材区/调料区动态位置** | Operator 动态坐标映射 | 与游戏界面一致 |
 | **最多 4 个订单** | 扫描检测 + 环境维护 | 检测到则添加 |
 
 ---
@@ -288,7 +288,7 @@ def add_to_assembly(self, cooker_name: str) -> bool:
    - 实际性能：~30-50ms/slot，已满足需求
 
 2. **状态缓存** ✅（已实现）
-   - 环境状态由 GameEnvironment 维护，无需重复计算
+   - 环境状态由 GameEnv 维护，无需重复计算
    - Agent 通过属性访问状态，高效且一致
 
 3. **预测性烹饪** ❌（无效优化）
@@ -311,7 +311,7 @@ def add_to_assembly(self, cooker_name: str) -> bool:
                            │ snapshot (async)
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  OrderScanner (scan_orders)                                     │
+│  Scanner (scan_orders)                                     │
 │  ├── ROI 模板匹配 (食材图标)                                    │
 │  ├── Rush 检测 (像素红色值)                                      │
 │  └── 返回: list[DetectedOrder]                                  │
@@ -319,7 +319,7 @@ def add_to_assembly(self, cooker_name: str) -> bool:
                            │ add_order()
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  GameEnvironment                                                │
+│  GameEnv                                                │
 │  ├── 订单状态维护 (orders: list[OrderInfo])                      │
 │  ├── 灶台状态 (cookers: dict[str, CookerState])              │
 │  ├── 组装站状态 (assembly: AssemblyState)                        │
@@ -338,15 +338,15 @@ def add_to_assembly(self, cooker_name: str) -> bool:
                            │ _execute_action()
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  RealGameBridge                                                 │
+│  Runner                                                 │
 │  ├── 校验 (过期食材、动画窗口、游戏结束)                         │
-│  ├── UIRunner.swipe() → maxtouch                              │
+│  ├── Operator.swipe() → maxtouch                              │
 │  └── 状态更新 (env.add_to_assembly, env.serve_order)           │
 └──────────────────────────┬──────────────────────────────────────┘
                            │ is_assembly_empty()
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  AssemblyVerifier                                               │
+│  Verifier                                               │
 │  ├── 截图 (assembly ROI)                                        │
 │  └── 模板匹配 (empty_assembly.jpg)                              │
 └─────────────────────────────────────────────────────────────────┘

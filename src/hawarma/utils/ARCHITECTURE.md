@@ -19,7 +19,7 @@
 
 ## 🔗 模块间关系
 ```
-OrderScanner (bridge/scanner.py)
+Scanner (game/scanner.py)
     ↓
 local_match (image_utils.py)
 ```
