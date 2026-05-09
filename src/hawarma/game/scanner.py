@@ -193,9 +193,15 @@ class Scanner:
             candidates = self._recipes_by_first_ingredient.get(first_ing, [])
 
             if len(candidates) > 1:
-                resolved = self._resolve_cooker_conflict(best_match, slot, screen)
+                # 优先通过第二个食材区分（适用于甜点等双食材菜谱）
+                resolved = self._resolve_by_second_ingredient(candidates, slot, screen)
                 if resolved:
                     best_match = resolved
+                else:
+                    # 回退到 cooker 图标区分（gastronome 模式）
+                    resolved = self._resolve_cooker_conflict(best_match, slot, screen)
+                    if resolved:
+                        best_match = resolved
 
             is_rush = self._detect_rush(slot, screen)
 
@@ -229,6 +235,57 @@ class Scanner:
         candidates = self._recipes_by_first_ingredient.get(first_ing, [])
         if len(candidates) <= 1:
             return matched_recipe
+
+    def _resolve_by_second_ingredient(
+        self, candidates: list[Recipe], slot: int, screen
+    ) -> Optional[Recipe]:
+        """
+        当首个食材匹配多个菜谱时，通过检测第二个食材来区分。
+
+        第二个食材的 ROI 是订单 ingredients region 的第二个 quarter，
+        即第一个 quarter 向右平移同宽度的区域。
+
+        Args:
+            candidates: 首个食材相同的候选菜谱列表
+            slot: 槽位索引
+            screen: 屏幕截图
+
+        Returns:
+            区分后的正确菜谱，如果无法区分则返回 None
+        """
+        x1, y1, x2, y2 = self.config.screen.ingredients_regions[slot]
+        quarter_w = (x2 - x1) // 4
+        ing2_roi = (x1 + quarter_w, y1, x1 + 2 * quarter_w, y2)
+
+        best_match = None
+        best_confidence = 0.0
+
+        for recipe in candidates:
+            if len(recipe.raw_ingredients) < 2:
+                continue
+
+            ing2_name = recipe.raw_ingredients[1]
+            ing2_path = self.image_dir / f"ingredient-{ing2_name}.jpg"
+            if not ing2_path.exists():
+                ing2_path = self.image_dir / f"icon-{ing2_name}.jpg"
+                if not ing2_path.exists():
+                    continue
+
+            match = local_match(Template(str(ing2_path)), ing2_roi, screen)
+            if match:
+                confidence = float(match.get("confidence", 0))
+                if confidence > best_confidence:
+                    best_confidence = confidence
+                    best_match = recipe
+
+        if best_match and best_confidence > 0.6:
+            logger.debug(
+                f"Resolved conflict for {candidates[0].raw_ingredients[0]}: "
+                f"{best_match.slug} (second ingredient confidence: {best_confidence:.2f})"
+            )
+            return best_match
+
+        return None
 
         best_match = None
         best_confidence = 0.0

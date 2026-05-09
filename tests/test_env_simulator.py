@@ -99,7 +99,7 @@ class TestBasicStructure:
         """测试灶台状态初始化"""
         cooker = CookerState()
         assert cooker.busy == False
-        assert cooker.ingredient_name is None
+        assert cooker.item_name is None
         assert cooker.done_at is None
     
     def test_simulator_initialization(self):
@@ -436,9 +436,9 @@ class TestParallelCooking:
         state2 = sim.get_cooker_state(cooker2)
         
         assert state1.busy
-        assert state1.ingredient_name == ing1_name
+        assert state1.item_name == ing1_name
         assert state2.busy
-        assert state2.ingredient_name == ing2_name
+        assert state2.item_name == ing2_name
     
     def test_cookers_complete_at_different_times(self):
         """测试不同灶台在不同时间完成烹饪"""

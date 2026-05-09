@@ -57,6 +57,14 @@
   - 配置结构和文件组织
   - 实现步骤和测试策略
 
+### `glossary.md`
+- **地位**: 术语表
+- **状态**: ✅ 当前有效
+- **功能**:
+  - 定义项目中常用的术语
+  - 统一概念理解
+  - 包含游戏领域、架构、策略、操作、配置等术语
+
 ## 📝 已归档文档
 
 以下文档已被清理，内容已整合到 `agent_strategy.md` 和 `architecture_redesign.md`：
@@ -75,7 +83,8 @@ game_rules.md (基础)
     ├── agent_strategy.md (策略+基准)
     ├── architecture_redesign.md (架构设计)
     ├── real_game_implementation.md (实现)
-    └── dessert_station.md (甜点站点设计)
+    ├── dessert_station.md (甜点站点设计)
+    └── glossary.md (术语表)
 ```
 
 ## 📝 文档维护规范

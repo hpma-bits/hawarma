@@ -3,11 +3,6 @@ image_directory: static/img
 log_directory: logs
 recipes_data_path: data/recipes.json
 episode_duration: 93
-cookers:
-- grill
-- oven
-- skillet
-- pot
 screen:
   resolution:
   - 1920
@@ -152,6 +147,28 @@ game:
     - 12
 debug:
   save_order_screenshots: false
-  save_assembly_verify_screenshots: true
+  save_assembly_verify_screenshots: false
   screenshot_directory: logs/order_screenshots
 strategy: visibility_aware
+stations:
+  gastronome:
+    enabled: true
+    cooker_retention: 4.7
+    serve_verify_wait: 0.4
+  dessert:
+    enabled: true
+    stir:
+      distance: 400
+      duration: 1.5
+      steps: 10
+    mixing_bowl_position:
+    - 1245
+    - 870
+    cookers_positions:
+      dessert_oven:
+      - 715
+      - 615
+      cooling_plate:
+      - 1260
+      - 590
+    cooker_retention: 5.0

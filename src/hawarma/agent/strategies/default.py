@@ -254,10 +254,10 @@ class DefaultStrategy(Strategy):
                 continue
             if cooker.is_expired(state.time):
                 continue
-            ing_key = (cooker.ingredient_name, cooker.cooker_type)
+            ing_key = (cooker.item_name, cooker.cooker_type)
             if ing_key not in effective_needed:
                 continue
-            if not self._can_add_to_assembly(state, cooker.ingredient_name, cooker.cooker_type):
+            if not self._can_add_to_assembly(state, cooker.item_name, cooker.cooker_type):
                 continue
             time_since_done = state.time - cooker.done_at
             done_items.append((-time_since_done, cooker_name, cooker))
@@ -266,7 +266,7 @@ class DefaultStrategy(Strategy):
             done_items.sort()
             _, best_cooker_name, best_cooker = done_items[0]
             order_id = self._get_order_id_for_ingredient_with_cooker(
-                state, best_cooker.ingredient_name, best_cooker.cooker_type)
+                state, best_cooker.item_name, best_cooker.cooker_type)
             return MoveToAssemblyAction(cooker=best_cooker_name, order_id=order_id)
 
         return None
@@ -393,7 +393,7 @@ class DefaultStrategy(Strategy):
         cooking_combos: set[tuple[str, str]] = set()
         for cooker in state.cookers.values():
             if cooker.busy:
-                cooking_combos.add((cooker.ingredient_name, cooker.cooker_type))
+                cooking_combos.add((cooker.item_name, cooker.cooker_type))
 
         assembly = state.assembly
         # 如果 assembly 已被某个活跃订单占用，只预烹饪该订单的食材
@@ -482,7 +482,7 @@ class DefaultStrategy(Strategy):
                 continue
             if state.time < cooker.done_at:
                 continue
-            ing_name = cooker.ingredient_name
+            ing_name = cooker.item_name
             cooker_type = cooker.cooker_type
             time_since_done = state.time - cooker.done_at
 
@@ -514,12 +514,12 @@ class DefaultStrategy(Strategy):
                     continue
                 if state.time < cooker.done_at:
                     continue
-                if cooker.ingredient_name not in needed:
+                if cooker.item_name not in needed:
                     time_since_done = state.time - cooker.done_at
                     if time_since_done > self.PRECOOK_STORE_THRESHOLD:
-                        slot = self._try_increment_stockpile(state, cooker.ingredient_name, cooker.cooker_type)
+                        slot = self._try_increment_stockpile(state, cooker.item_name, cooker.cooker_type)
                         if slot is None:
-                            slot = self._find_available_slot(state, cooker.ingredient_name, cooker.cooker_type)
+                            slot = self._find_available_slot(state, cooker.item_name, cooker.cooker_type)
                         if slot:
                             return MoveToStockpileAction(cooker=cooker_name, slot=slot)
 
@@ -528,13 +528,13 @@ class DefaultStrategy(Strategy):
                 continue
             if state.time < cooker.done_at:
                 continue
-            if cooker.ingredient_name in needed:
+            if cooker.item_name in needed:
                 continue
             time_since_done = state.time - cooker.done_at
             if time_since_done > self.PRECOOK_STORE_THRESHOLD:
-                slot = self._try_increment_stockpile(state, cooker.ingredient_name, cooker.cooker_type)
+                slot = self._try_increment_stockpile(state, cooker.item_name, cooker.cooker_type)
                 if slot is None:
-                    slot = self._find_available_slot(state, cooker.ingredient_name, cooker.cooker_type)
+                    slot = self._find_available_slot(state, cooker.item_name, cooker.cooker_type)
                 if slot:
                     return MoveToStockpileAction(cooker=cooker_name, slot=slot)
 
@@ -673,7 +673,7 @@ class DefaultStrategy(Strategy):
 
     def _is_cooking(self, state: UnifiedState, ingredient: str, cooker_type: str | None = None) -> bool:
         for cooker in state.cookers.values():
-            if cooker.busy and cooker.ingredient_name == ingredient:
+            if cooker.busy and cooker.item_name == ingredient:
                 if cooker_type is None or cooker.cooker_type == cooker_type:
                     return True
         return False
@@ -761,7 +761,7 @@ class DefaultStrategy(Strategy):
         if hasattr(recipe, "ingredients") and attr_name == "raw_ingredients":
             return [ing.name for ing in recipe.ingredients]
         if hasattr(recipe, "ingredients") and attr_name == "cookers":
-            return [ing.cooker_type for ing in recipe.ingredients]
+            return [ing.cooker for ing in recipe.ingredients]
         if hasattr(recipe, "ingredients") and attr_name == "cook_durations":
             return [ing.duration for ing in recipe.ingredients]
         if hasattr(recipe, attr_name):

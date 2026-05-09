@@ -32,6 +32,7 @@ _STRATEGY_REGISTRY: dict[str, str] = {
     "visibility_aware": "hawarma.agent.strategies.visibility_aware:VisibilityAwareStrategy",
     "preempt_score": "hawarma.agent.strategies.preempt_score:PreemptScoreStrategy",
     "cpm_enhanced": "hawarma.agent.strategies.cpm_enhanced:CPMEnhancedStrategy",
+    "dessert": "hawarma.agent.strategies.dessert:DessertStrategy",
 }
 
 

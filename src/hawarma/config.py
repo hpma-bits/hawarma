@@ -60,19 +60,53 @@ class DebugConfig(BaseModel):
     screenshot_directory: str = "logs/order_screenshots"
 
 
+class StirConfig(BaseModel):
+    """搅拌操作配置（单次左滑）"""
+    distance: int = 400
+    duration: float = 1.5
+    steps: int = 10
+
+
+class DessertStationConfig(BaseModel):
+    """甜点站点配置"""
+    enabled: bool = True
+    stir: StirConfig = Field(default_factory=StirConfig)
+    mixing_bowl_position: tuple[int, int] = (1245, 870)
+    cookers_positions: dict[str, tuple[int, int]] = Field(
+        default_factory=lambda: {
+            "dessert_oven": (715, 615),
+            "cooling_plate": (1260, 590),
+        }
+    )
+    cooker_retention: float = 5.0
+
+
+class GastronomeStationConfig(BaseModel):
+    """美食站点配置"""
+    enabled: bool = True
+    cooker_retention: float = 4.7
+    serve_verify_wait: float = 0.4
+
+
+class StationsConfig(BaseModel):
+    """站点配置"""
+    gastronome: GastronomeStationConfig = Field(default_factory=GastronomeStationConfig)
+    dessert: DessertStationConfig = Field(default_factory=DessertStationConfig)
+
+
 class AppConfig(BaseModel):
     adb_address: str = "127.0.0.1:16384"
     image_directory: str
     log_directory: str
     recipes_data_path: str
     episode_duration: int
-    cookers: tuple[str, ...]
     screen: ScreenConfig
     matching: MatchingConfig
     game: GameConfig = Field(default_factory=GameConfig)
     debug: DebugConfig = Field(default_factory=DebugConfig)
     strategy: str = "default"
-    """策略名称，可选: default, cpm, preempt_score, visibility_aware"""
+    """策略名称，可选: default, cpm, preempt_score, visibility_aware, cpm_enhanced, dessert"""
+    stations: StationsConfig = Field(default_factory=StationsConfig)
 
 
 def load_config(config_path: Path | str = "configs/config.yaml") -> AppConfig:

@@ -154,7 +154,7 @@ class CookerState:
     跟踪单个灶台的当前状态
     """
     busy: bool = False                  # 是否正在使用
-    ingredient_name: str | None = None   # 当前食材名称
+    item_name: str | None = None          # 当前食材名称 / 甜点 recipe slug
     cooker_type: str | None = None       # 厨具类型（grill, oven等）
     started_at: float | None = None      # 烹饪开始时间
     done_at: float | None = None         # 烹饪完成时间
@@ -171,7 +171,7 @@ class CookerState:
     def clear(self) -> None:
         """清空灶台状态"""
         self.busy = False
-        self.ingredient_name = None
+        self.item_name = None
         self.cooker_type = None
         self.started_at = None
         self.done_at = None
@@ -180,7 +180,7 @@ class CookerState:
     def __repr__(self) -> str:
         if not self.busy:
             return "CookerState(IDLE)"
-        return f"CookerState({self.ingredient_name}, busy)"
+        return f"CookerState({self.item_name}, busy)"
 
 
 @dataclass

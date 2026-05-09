@@ -6,15 +6,18 @@ Game 模块
 ⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
 """
 
-from .env import Env
-from hawarma.core.models import CookerState, AssemblyState, StockpileSlot, OrderInfo
+from .env import Env, GastronomeEnv, DessertEnv
+from hawarma.core.models import CookerState, AssemblyState, StockpileSlot, OrderInfo, MixingBowlState
 from .game_env import GameEnv
 
 __all__ = [
     "Env",
+    "GastronomeEnv",
+    "DessertEnv",
     "GameEnv",
     "CookerState",
     "AssemblyState",
+    "MixingBowlState",
     "StockpileSlot",
     "OrderInfo",
     "Scanner",

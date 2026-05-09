@@ -19,7 +19,7 @@ from typing import Optional
 from loguru import logger
 
 from hawarma.config import AppConfig
-from hawarma.recipe import Recipe
+from hawarma.recipe import Recipe, Station
 
 from hawarma.game.patch_maxtouch import apply_patch
 
@@ -32,18 +32,20 @@ class Operator:
     
     将符号化操作转换为屏幕坐标，并执行 swipe 操作。
     """
-    
-    def __init__(self, config: AppConfig, recipes: list[Recipe]):
+
+    def __init__(self, config: AppConfig, recipes: list[Recipe], station: Station = Station.GASTRONOME):
         """
         初始化 Operator
         
         Args:
             config: 应用配置
             recipes: 选中的配方列表（用于确定食材位置）
+            station: 站点类型，默认 GASTRONOME
         """
         self.config = config
         self.recipes = recipes
-        
+        self._station = station
+
         # 坐标映射
         self._ingredient_positions: dict[str, tuple[int, int]] = {}
         self._cooker_positions: dict[str, tuple[int, int]] = {}
@@ -54,6 +56,7 @@ class Operator:
         self._pickup_positions: list[tuple[int, int]] = [
             tuple(pos) for pos in config.screen.pickup_stations_positions
         ]
+        self._mixing_bowl_position: tuple[int, int] = (1245, 870)
         
         # 异步锁
         self._lock = asyncio.Lock()
@@ -63,6 +66,11 @@ class Operator:
         
         logger.info(f"Operator initialized with {len(self._ingredient_positions)} ingredients")
     
+    @property
+    def cooker_positions(self) -> dict[str, tuple[int, int]]:
+        """灶台名称 → 坐标映射（公共接口）"""
+        return self._cooker_positions
+
     def _build_mappings(self) -> None:
         """
         构建坐标映射
@@ -93,25 +101,32 @@ class Operator:
                 if cooker not in all_cookers:
                     all_cookers.append(cooker)
         
-        # 灶台位置：根据种类数量选择槽位
-        # 1种→[1]，2种→[1,2]，3种→[0,1,2]，4种→[0,1,2,3]
-        cooker_positions = self.config.screen.cookers_positions
-        num_cookers = len(all_cookers)
-        
-        if num_cookers == 1:
-            slot_indices = [1]
-        elif num_cookers == 2:
-            slot_indices = [1, 2]
-        elif num_cookers == 3:
-            slot_indices = [0, 1, 2]
-        else:  # 4 or more
-            slot_indices = [0, 1, 2, 3]
-        
-        for i, cooker in enumerate(all_cookers):
-            if i < len(slot_indices):
-                slot_idx = slot_indices[i]
-                if slot_idx < len(cooker_positions):
-                    self._cooker_positions[cooker] = tuple(cooker_positions[slot_idx])
+        if self._station == Station.DESSERT:
+            # ── Dessert：固定坐标 ──
+            cooker_positions_config = self.config.stations.dessert.cookers_positions
+            for cooker_name, pos in cooker_positions_config.items():
+                self._cooker_positions[cooker_name] = tuple(pos)
+        else:
+            # ── Gastronome：槽位分配 ──
+            # 灶台位置：根据种类数量选择槽位
+            # 1种→[1]，2种→[1,2]，3种→[0,1,2]，4种→[0,1,2,3]
+            cooker_positions = self.config.screen.cookers_positions
+            num_cookers = len(all_cookers)
+
+            if num_cookers == 1:
+                slot_indices = [1]
+            elif num_cookers == 2:
+                slot_indices = [1, 2]
+            elif num_cookers == 3:
+                slot_indices = [0, 1, 2]
+            else:  # 4 or more
+                slot_indices = [0, 1, 2, 3]
+
+            for i, cooker in enumerate(all_cookers):
+                if i < len(slot_indices):
+                    slot_idx = slot_indices[i]
+                    if slot_idx < len(cooker_positions):
+                        self._cooker_positions[cooker] = tuple(cooker_positions[slot_idx])
         
         # 收集所有condiment（按选中配方的顺序）
         all_condiments = []
@@ -262,7 +277,50 @@ class Operator:
         """
         await self.swipe(self._assembly_position, self._trash_position, duration=0.4, steps=16)
         logger.debug(f"Cleared assembly station")
-    
+
+    # ========================================================================
+    # Dessert 操作
+    # ========================================================================
+
+    async def move_to_mixing_bowl(self, ingredient: str) -> None:
+        """食材 → 搅拌盆"""
+        ing_pos = self._get_ingredient_position(ingredient)
+        await self.swipe(ing_pos, self._mixing_bowl_position, duration=0.1)
+        logger.debug(f"Moved {ingredient} to mixing bowl")
+
+    async def add_condiment_to_mixing_bowl(self, condiment: str) -> None:
+        """调料 → 搅拌盆"""
+        cond_pos = self._get_condiment_position(condiment)
+        await self.swipe(cond_pos, self._mixing_bowl_position, duration=0.1)
+        logger.debug(f"Added condiment {condiment} to mixing bowl")
+
+    async def stir(self, distance: float = 400.0, duration: float = 1.5, steps: int = 10) -> None:
+        """搅拌：从搅拌盆坐标向左水平滑动"""
+        x, y = self._mixing_bowl_position
+        end_x = x - int(distance)
+        await self.swipe((x, y), (end_x, y), duration=duration, steps=steps)
+        logger.debug(f"Stirred mixing bowl ({distance}px, {duration}s, {steps} steps)")
+
+    async def move_mixing_bowl_to_cooker(self, cooker: str) -> None:
+        """搅拌盆 → 灶台"""
+        cooker_pos = self._get_cooker_position(cooker)
+        await self.swipe(self._mixing_bowl_position, cooker_pos, duration=0.1)
+        logger.debug(f"Moved mixing bowl to {cooker}")
+
+    async def serve_from_cooker(self, cooker: str, slot_idx: int) -> None:
+        """灶台 → 取餐台"""
+        cooker_pos = self._get_cooker_position(cooker)
+        pickup_pos = self._pickup_positions[slot_idx]
+        distance = self._calculate_distance(cooker_pos, pickup_pos)
+        duration, steps = self._calculate_swipe_params(distance)
+        await self.swipe(cooker_pos, pickup_pos, duration=duration, steps=steps)
+        logger.debug(f"Served from {cooker} to slot {slot_idx}")
+
+    async def clear_mixing_bowl(self) -> None:
+        """清空搅拌盆"""
+        await self.swipe(self._mixing_bowl_position, self._trash_position, duration=0.4, steps=16)
+        logger.debug(f"Cleared mixing bowl")
+
     # ========================================================================
     # 坐标查询
     # ========================================================================

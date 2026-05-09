@@ -7,14 +7,16 @@ Strategy 的唯一输入，由 Env 的 get_unified_state() 构造。
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .models import (
     AssemblyState,
     CookerState,
+    MixingBowlState,
     OrderInfo,
     StockpileSlot,
 )
+from hawarma.recipe import Station
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,12 @@ class UnifiedState:
 
     total_visibility: float = 0.0
     """已完成订单的总 visibility（用于得分加成）"""
+
+    mixing_bowl: MixingBowlState = field(default_factory=MixingBowlState)
+    """搅拌盆状态（dessert 专用）"""
+
+    station: Station = Station.GASTRONOME
+    """当前局站点类型"""
 
     @property
     def remaining_time(self) -> float:

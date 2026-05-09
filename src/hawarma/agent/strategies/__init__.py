@@ -25,6 +25,7 @@ from .cpm import CPMStrategy
 from .visibility_aware import VisibilityAwareStrategy
 from .preempt_score import PreemptScoreStrategy
 from .cpm_enhanced import CPMEnhancedStrategy
+from .dessert import DessertStrategy
 
 __all__ = [
     "DefaultStrategy",
@@ -32,4 +33,5 @@ __all__ = [
     "VisibilityAwareStrategy",
     "PreemptScoreStrategy",
     "CPMEnhancedStrategy",
+    "DessertStrategy",
 ]

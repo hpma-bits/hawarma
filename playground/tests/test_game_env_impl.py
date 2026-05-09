@@ -113,7 +113,7 @@ class TestStep:
         # 检查灶台是否忙碌
         next_state = result.observation
         assert next_state.cookers[cooker].busy is True
-        assert next_state.cookers[cooker].ingredient_name == ingredient
+        assert next_state.cookers[cooker].item_name == ingredient
 
     def test_step_invalid_action_fails_gracefully(self, env: SimEnv):
         env.reset(seed=42)

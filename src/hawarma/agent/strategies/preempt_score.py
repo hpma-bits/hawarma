@@ -199,10 +199,10 @@ class PreemptScoreStrategy(CPMStrategy):
 
         cooking_done: dict[str, bool] = {}
         for c in state.cookers.values():
-            if c.busy and c.ingredient_name:
+            if c.busy and c.item_name:
                 done_at = c.done_at
                 if done_at is not None and state.time >= done_at:
-                    cooking_done[c.ingredient_name] = True
+                    cooking_done[c.item_name] = True
 
         for ing_name, cooker_type, duration in ics:
             if ing_name in assembly_ing_names:

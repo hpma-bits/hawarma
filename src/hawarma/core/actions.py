@@ -77,4 +77,42 @@ class ServeOrderAction(Action):
     slot_idx: int
 
 
-# ── Dessert 专用（预留） ──
+# ── Dessert 专用 ──
+
+@dataclass
+class MoveToMixingBowlAction(Action):
+    """食材区 → 搅拌盆"""
+    ingredient: str
+
+
+@dataclass
+class AddCondimentToMixingBowlAction(Action):
+    """调料区 → 搅拌盆"""
+    condiment: str
+
+
+@dataclass
+class StirAction(Action):
+    """搅拌（从搅拌盆坐标向左水平滑动）"""
+    distance: float = 400.0
+    duration: float = 1.5
+    steps: int = 10
+
+
+@dataclass
+class MoveMixingBowlToCookerAction(Action):
+    """搅拌盆 → 灶台"""
+    cooker: str
+
+
+@dataclass
+class ServeFromCookerAction(Action):
+    """灶台 → 取餐台"""
+    cooker: str
+    slot_idx: int
+
+
+@dataclass
+class ClearMixingBowlAction(Action):
+    """清空搅拌盆"""
+    pass

@@ -638,7 +638,7 @@ class GameSimulator:
         
         # 设置灶台状态
         cooker_state.busy = True
-        cooker_state.ingredient_name = ingredient
+        cooker_state.item_name = ingredient
         cooker_state.cooker_type = cooker
         cooker_state.started_at = self._state.time
         cooker_state.done_at = self._state.time + duration
@@ -680,7 +680,7 @@ class GameSimulator:
         cooker_state = self._state.cookers[cooker]
         
         # 检查灶台是否有食材
-        if not cooker_state.busy or cooker_state.ingredient_name is None:
+        if not cooker_state.busy or cooker_state.item_name is None:
             return ActionResult.failure_result(f"Cooker '{cooker}' has no ingredient")
         
         # 检查烹饪是否完成
@@ -696,7 +696,7 @@ class GameSimulator:
             )
         
         # 获取食材信息
-        ingredient_name = cooker_state.ingredient_name
+        ingredient_name = cooker_state.item_name
         cooker_type = cooker_state.cooker_type
         
         # 检查组装站兼容性
@@ -865,7 +865,7 @@ class GameSimulator:
         cooker_state = self._state.cookers[cooker]
         
         # 检查灶台是否有食材
-        if not cooker_state.busy or cooker_state.ingredient_name is None:
+        if not cooker_state.busy or cooker_state.item_name is None:
             return ActionResult.failure_result(f"Cooker '{cooker}' has no ingredient")
         
         # 检查烹饪是否完成
@@ -885,7 +885,7 @@ class GameSimulator:
             return ActionResult.failure_result(f"Stockpile slot '{slot_name}' does not exist")
         
         stockpile_slot = self._state.stockpile[slot_name]
-        ingredient_name = cooker_state.ingredient_name
+        ingredient_name = cooker_state.item_name
         cooker_type = cooker_state.cooker_type
         
         # 检查库存槽位兼容性
@@ -1040,12 +1040,12 @@ class GameSimulator:
         if from_location in self._state.cookers:
             cooker_state = self._state.cookers[from_location]
             
-            if not cooker_state.busy or cooker_state.ingredient_name is None:
+            if not cooker_state.busy or cooker_state.item_name is None:
                 return ActionResult.failure_result(
                     f"Cooker '{from_location}' has no ingredient to trash"
                 )
             
-            ingredient_name = cooker_state.ingredient_name
+            ingredient_name = cooker_state.item_name
             
             # 清空灶台
             cooker_state.clear()
@@ -1120,7 +1120,7 @@ class GameSimulator:
         cooker_state = self._state.cookers[cooker]
         
         # 检查灶台是否有食材
-        if not cooker_state.busy or cooker_state.ingredient_name is None:
+        if not cooker_state.busy or cooker_state.item_name is None:
             return ActionResult.failure_result(f"Cooker '{cooker}' has no ingredient")
         
         # 检查食材是否已过期
@@ -1130,7 +1130,7 @@ class GameSimulator:
                 f"(expires at {cooker_state.expired_at:.1f}s, now {self._state.time:.1f}s)"
             )
         
-        ingredient_name = cooker_state.ingredient_name
+        ingredient_name = cooker_state.item_name
         
         # 清空灶台
         cooker_state.clear()
@@ -1421,7 +1421,7 @@ class GameSimulator:
                         event_type=EventType.COOKING_COMPLETED,
                         details={
                             'cooker': cooker_name,
-                            'ingredient': cooker.ingredient_name
+                            'ingredient': cooker.item_name
                         }
                     ))
             
@@ -1432,7 +1432,7 @@ class GameSimulator:
                     event_type=EventType.INGREDIENT_EXPIRED,
                     details={
                         'cooker': cooker_name,
-                        'ingredient': cooker.ingredient_name
+                        'ingredient': cooker.item_name
                     }
                 ))
                 

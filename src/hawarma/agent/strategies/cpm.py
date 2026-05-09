@@ -77,8 +77,8 @@ class CPMStrategy(DefaultStrategy):
 
         cooking: dict[str, float] = {}
         for c in state.cookers.values():
-            if c.busy and c.ingredient_name:
-                cooking[c.ingredient_name] = min(cooking.get(c.ingredient_name, float('inf')), c.done_at or 0)
+            if c.busy and c.item_name:
+                cooking[c.item_name] = min(cooking.get(c.item_name, float('inf')), c.done_at or 0)
 
         max_ing_time = 0.0
         for ing_name, cooker_type, duration in ics:
@@ -141,8 +141,8 @@ class CPMStrategy(DefaultStrategy):
         
         cooking_done: dict[str, bool] = {}
         for c in state.cookers.values():
-            if c.busy and c.ingredient_name and c.done_at and state.time >= c.done_at:
-                cooking_done[c.ingredient_name] = True
+            if c.busy and c.item_name and c.done_at and state.time >= c.done_at:
+                cooking_done[c.item_name] = True
         
         for ing_name, cooker_type, duration in ics:
             if ing_name in assembly_ing_names:

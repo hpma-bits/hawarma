@@ -160,7 +160,6 @@ python -m playground run --seed 42 --strategy cpm_enhanced
 |------|------|------|
 | 搅拌盆 | 一次只能处理一个订单 | 搅拌盆是共享资源 |
 | cooker | 一次只能烹饪一个甜点 | cooker 是共享资源 |
-| 库存 | 一次只能存储一个半成品 | 库存是共享资源 |
 
 ### 7.6 订单优先级
 
@@ -176,7 +175,6 @@ python -m playground run --seed 42 --strategy cpm_enhanced
 
 - **MixingBowlState**：追踪搅拌盆状态（食材、调味品、是否搅拌完成）
 - **CookerState**：追踪 cooker 状态（复用现有）
-- **StockpileSlot**：追踪库存状态（复用现有）
 
 ### 7.8 错误处理
 
@@ -196,26 +194,30 @@ stations:
   dessert:
     enabled: true
     stir:
-      swipes: 3           # 搅拌往复次数
-      duration: 0.3        # 每次 swipe 持续时间
-      distance: 200        # swipe 距离（像素）
+      distance: 400        # 滑动距离（像素）
+      duration: 1.5        # 滑动持续时间（秒）
+      steps: 10            # Airtest 插值步数
     mixing_bowl_position:  # 搅拌盆屏幕坐标
       - 1245
       - 870
-    stockpile_position:    # 半成品库存屏幕坐标
-      - 675
-      - 860
+    cookers_positions:     # 甜点灶台固定坐标
+      dessert_oven:
+        - 715
+        - 615
+      cooling_plate:
+        - 1260
+        - 590
     cooker_retention: 5.0  # 甜点灶台食材停留时间
 ```
 
 ### 7.10 使用方法
 
 ```bash
-# CLI
-python main.py --strategy dessert
+# CLI（station 模式默认为 gastronome）
+python main.py --station dessert --strategy dessert
 
 # TUI
-python tui.py  # 在策略选择中选择 dessert
+python tui.py  # 在配置面板中选择 station 和 strategy
 
 # 代码
 from hawarma.agent.registry import get_strategy

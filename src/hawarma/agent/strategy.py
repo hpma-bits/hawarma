@@ -14,8 +14,8 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .unified_state import UnifiedState
-    from .agent import Action
+    from hawarma.core.state import UnifiedState
+    from hawarma.core.actions import Action
 
 
 class Strategy(ABC):

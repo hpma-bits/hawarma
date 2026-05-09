@@ -10,7 +10,7 @@ class CookerState:
     """灶台状态"""
 
     busy: bool = False
-    ingredient_name: str | None = None
+    item_name: str | None = None
     cooker_type: str | None = None
     started_at: float | None = None
     done_at: float | None = None
@@ -19,7 +19,7 @@ class CookerState:
     def reset(self) -> None:
         """重置灶台状态"""
         self.busy = False
-        self.ingredient_name = None
+        self.item_name = None
         self.started_at = None
         self.done_at = None
         self.expired_at = None
@@ -88,6 +88,37 @@ class StockpileSlot:
             self.ingredient_name = None
             self.cooker_type = None
         return True
+
+
+@dataclass
+class MixingBowlState:
+    """搅拌盆状态（甜点专用）"""
+
+    ingredients: list[str] = field(default_factory=list)
+    condiments: dict[str, int] = field(default_factory=dict)
+    target_recipe_slug: str | None = None
+    is_stirred: bool = False
+
+    @property
+    def is_empty(self) -> bool:
+        return len(self.ingredients) == 0
+
+    @property
+    def is_free(self) -> bool:
+        """搅拌盆是否空闲"""
+        return self.is_empty and self.target_recipe_slug is None
+
+    @property
+    def is_ready_to_cook(self) -> bool:
+        """食材齐全 + 已搅拌"""
+        return len(self.ingredients) >= 2 and self.is_stirred
+
+    def reset(self) -> None:
+        """重置搅拌盆状态"""
+        self.ingredients.clear()
+        self.condiments.clear()
+        self.target_recipe_slug = None
+        self.is_stirred = False
 
 
 @dataclass

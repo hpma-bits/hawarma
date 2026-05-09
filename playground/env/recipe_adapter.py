@@ -28,7 +28,7 @@ class RecipeAdapter:
 
     @property
     def cookers(self) -> list[str]:
-        return [ing.cooker_type for ing in self._recipe.ingredients]
+        return [ing.cooker for ing in self._recipe.ingredients]
 
     @property
     def cook_durations(self) -> list[float] | None:

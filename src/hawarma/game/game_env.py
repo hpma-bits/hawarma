@@ -16,15 +16,22 @@ import time
 
 from loguru import logger
 
-from .env import Env
-from hawarma.core.models import AssemblyState, CookerState, OrderInfo, StockpileSlot
+from .env import Env, GastronomeEnv, DessertEnv
+from hawarma.core.models import (
+    AssemblyState,
+    CookerState,
+    MixingBowlState,
+    OrderInfo,
+    StockpileSlot,
+)
 
 
-class GameEnv(Env):
+class GameEnv(GastronomeEnv, DessertEnv):
     """
     真实游戏环境
 
-    继承 Env，通过程序逻辑追踪游戏状态，不依赖图像检测。
+    同时实现 GastronomeEnv 和 DessertEnv。
+    根据当前 station 模式，只有对应接口的方法会被调用。
     """
 
     def __init__(
@@ -41,6 +48,7 @@ class GameEnv(Env):
         }
 
         self._assembly = AssemblyState()
+        self._mixing_bowl = MixingBowlState()
 
         self._stockpile: dict[str, StockpileSlot] = {
             f"slot{i}": StockpileSlot() for i in range(stockpile_slots)
@@ -97,6 +105,11 @@ class GameEnv(Env):
         """库存状态"""
         return self._stockpile
 
+    @property
+    def mixing_bowl(self) -> MixingBowlState:
+        """搅拌盆状态（甜点专用）"""
+        return self._mixing_bowl
+
     def is_in_animation_window(self) -> bool:
         """是否在动画窗口期间"""
         return time.time() < self._animation_until
@@ -113,7 +126,7 @@ class GameEnv(Env):
             return False
 
         cooker_state.busy = True
-        cooker_state.ingredient_name = ingredient
+        cooker_state.item_name = ingredient
         cooker_state.started_at = self.time
         cooker_state.done_at = self.time + duration
         cooker_state.expired_at = self.time + duration + self._cooker_retention
@@ -128,7 +141,7 @@ class GameEnv(Env):
         if not cooker_state.busy or cooker_state.done_at is None:
             return False
 
-        ingredient = cooker_state.ingredient_name
+        ingredient = cooker_state.item_name
         cooker_type = cooker_state.cooker_type
 
         # 食材已过期，拒绝移动
@@ -160,7 +173,7 @@ class GameEnv(Env):
         # 食材已过期，拒绝存入
         if cooker_state.is_expired(self.time):
             logger.warning(
-                f"[t={self.time:.1f}s] Ingredient {cooker_state.ingredient_name} on {cooker} expired, cannot move to stockpile"
+                f"[t={self.time:.1f}s] Ingredient {cooker_state.item_name} on {cooker} expired, cannot move to stockpile"
             )
             return False
 
@@ -169,7 +182,7 @@ class GameEnv(Env):
 
         stockpile_slot = self._stockpile[slot]
         if not stockpile_slot.add(
-            cooker_state.ingredient_name, cooker_state.cooker_type
+            cooker_state.item_name, cooker_state.cooker_type
         ):
             return False
 
@@ -266,10 +279,186 @@ class GameEnv(Env):
         return True
 
     # ========================================================================
+    # Dessert 方法
+    # ========================================================================
+
+    def add_to_mixing_bowl(self, ingredient: str, recipe_slug: str | None = None) -> bool:
+        """食材 → 搅拌盆"""
+        if len(self._mixing_bowl.ingredients) >= 2:
+            logger.warning(f"[t={self.time:.1f}s] Mixing bowl full, cannot add {ingredient}")
+            return False
+
+        if self._mixing_bowl.is_empty:
+            if recipe_slug:
+                self._mixing_bowl.target_recipe_slug = recipe_slug
+            else:
+                inferred = self._infer_dessert_recipe(ingredient)
+                if inferred:
+                    self._mixing_bowl.target_recipe_slug = inferred
+
+        if self._mixing_bowl.target_recipe_slug:
+            recipe = self._recipes.get(self._mixing_bowl.target_recipe_slug)
+            if recipe:
+                raw_ings = getattr(recipe, "raw_ingredients", [])
+                if ingredient not in raw_ings:
+                    logger.warning(
+                        f"[t={self.time:.1f}s] Ingredient {ingredient} not in dessert recipe {self._mixing_bowl.target_recipe_slug}"
+                    )
+                    return False
+
+        if ingredient in self._mixing_bowl.ingredients:
+            logger.warning(f"[t={self.time:.1f}s] Ingredient {ingredient} already in mixing bowl")
+            return False
+
+        self._mixing_bowl.ingredients.append(ingredient)
+        logger.info(f"[t={self.time:.1f}s] Added {ingredient} to mixing bowl")
+        return True
+
+    def add_condiment_to_mixing_bowl(self, condiment: str) -> bool:
+        """调料 → 搅拌盆"""
+        if self._mixing_bowl.is_empty:
+            logger.warning(f"[t={self.time:.1f}s] Mixing bowl is empty, cannot add condiment")
+            return False
+
+        if self._mixing_bowl.target_recipe_slug:
+            recipe = self._recipes.get(self._mixing_bowl.target_recipe_slug)
+            if recipe is not None:
+                recipe_condiments = getattr(recipe, "condiments", [])
+                if isinstance(recipe_condiments, dict):
+                    max_count = recipe_condiments.get(condiment, 0)
+                    valid = max_count > 0
+                else:
+                    valid = condiment in recipe_condiments
+                    max_count = 1
+
+                if not valid:
+                    logger.warning(
+                        f"[t={self.time:.1f}s] Condiment {condiment} not in recipe {self._mixing_bowl.target_recipe_slug}"
+                    )
+                    return False
+                current = self._mixing_bowl.condiments.get(condiment, 0)
+                if current >= max_count:
+                    logger.warning(
+                        f"[t={self.time:.1f}s] Condiment {condiment} already at max ({max_count})"
+                    )
+                    return False
+
+        self._mixing_bowl.condiments[condiment] = self._mixing_bowl.condiments.get(condiment, 0) + 1
+        logger.info(f"[t={self.time:.1f}s] Added condiment {condiment} to mixing bowl")
+        return True
+
+    def stir_mixing_bowl(self) -> bool:
+        """搅拌操作"""
+        if self._mixing_bowl.is_empty:
+            logger.warning(f"[t={self.time:.1f}s] Mixing bowl is empty, cannot stir")
+            return False
+        if self._mixing_bowl.is_stirred:
+            logger.warning(f"[t={self.time:.1f}s] Mixing bowl already stirred")
+            return False
+        self._mixing_bowl.is_stirred = True
+        logger.info(f"[t={self.time:.1f}s] Stirred mixing bowl")
+        return True
+
+    def move_mixing_bowl_to_cooker(self, cooker: str) -> bool:
+        """搅拌盆 → 灶台"""
+        if not self._mixing_bowl.is_stirred:
+            logger.warning(f"[t={self.time:.1f}s] Mixing bowl not stirred")
+            return False
+        if cooker not in self._cookers:
+            logger.error(f"Unknown cooker: {cooker}")
+            return False
+        cooker_state = self._cookers[cooker]
+        if cooker_state.busy:
+            logger.warning(f"Cooker {cooker} is busy")
+            return False
+
+        recipe = self._recipes.get(self._mixing_bowl.target_recipe_slug)
+        if not recipe:
+            logger.error(f"Recipe not found: {self._mixing_bowl.target_recipe_slug}")
+            return False
+
+        cookers_list = getattr(recipe, "cookers", [])
+        durations = getattr(recipe, "cook_durations", [])
+        if not cookers_list or not durations:
+            logger.error(f"Recipe {self._mixing_bowl.target_recipe_slug} has no cookers/durations")
+            return False
+        if cookers_list[0] != cooker:
+            logger.warning(f"Recipe requires {cookers_list[0]}, not {cooker}")
+            return False
+
+        duration = durations[0]
+        cooker_state.busy = True
+        cooker_state.item_name = self._mixing_bowl.target_recipe_slug
+        cooker_state.cooker_type = cooker
+        cooker_state.started_at = self.time
+        cooker_state.done_at = self.time + duration
+        cooker_state.expired_at = self.time + duration + self._cooker_retention
+
+        self._mixing_bowl.reset()
+        logger.info(f"[t={self.time:.1f}s] Moved mixing bowl to {cooker} ({duration}s)")
+        return True
+
+    def serve_from_cooker(self, cooker: str, slot_idx: int) -> bool:
+        """灶台 → 取餐台"""
+        if cooker not in self._cookers:
+            return False
+        cooker_state = self._cookers[cooker]
+        if not cooker_state.busy or cooker_state.done_at is None:
+            return False
+        if self.time < cooker_state.done_at:
+            logger.warning(f"[t={self.time:.1f}s] Cooker {cooker} not done yet")
+            return False
+        if cooker_state.is_expired(self.time):
+            logger.warning(f"[t={self.time:.1f}s] Cooker {cooker} expired")
+            return False
+        if slot_idx < 0 or slot_idx >= len(self._orders):
+            return False
+        order = self._orders[slot_idx]
+        if order is None:
+            return False
+        recipe_slug = cooker_state.item_name
+        if order.recipe_slug != recipe_slug:
+            logger.warning(
+                f"[t={self.time:.1f}s] Order {order.order_id} expects {order.recipe_slug}, not {recipe_slug}"
+            )
+            return False
+
+        order.done = True
+        cooker_state.reset()
+        self.set_animation_window(1.5)
+        self._orders[slot_idx] = None
+        self._shift_orders_left()
+        logger.info(f"[t={self.time:.1f}s] Served dessert {recipe_slug} from {cooker} slot {slot_idx}")
+        return True
+
+    def clear_mixing_bowl(self) -> bool:
+        """清空搅拌盆"""
+        if self._mixing_bowl.is_empty:
+            return False
+        discarded = self._mixing_bowl.ingredients.copy()
+        self._mixing_bowl.reset()
+        logger.info(f"[t={self.time:.1f}s] Cleared mixing bowl (discarded: {discarded})")
+        return True
+
+    def _infer_dessert_recipe(self, ingredient: str) -> str | None:
+        """根据单个食材推断甜点配方"""
+        from hawarma.recipe import Station
+        for order in self._orders:
+            if order and not order.done:
+                recipe = self._recipes.get(order.recipe_slug)
+                if recipe:
+                    station = getattr(recipe, "station", Station.GASTRONOME)
+                    if station == Station.DESSERT:
+                        raw_ings = getattr(recipe, "raw_ingredients", [])
+                        if ingredient in raw_ings:
+                            return order.recipe_slug
+        return None
+
+    # ========================================================================
     # 统一状态接口
     # ========================================================================
 
-    def get_unified_state(self):
+    def get_unified_state(self) -> "UnifiedState":
         """构建 UnifiedState 快照"""
         from hawarma.core.state import UnifiedState
 
@@ -290,10 +479,12 @@ class GameEnv(Env):
             recipes=dict(self._recipes),
             game_duration=self._game_duration,
             is_in_animation_window=self.is_in_animation_window(),
+            mixing_bowl=self._mixing_bowl,
         )
 
     def get_stats(self) -> dict:
         return {
+            "time": self.time,
             "orders_served": self._orders_served,
             "total_score": self._total_score,
             "orders_timeout": self._orders_timeout,

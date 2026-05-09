@@ -1,10 +1,11 @@
 """
-真实游戏桥接器
+真实游戏编排器
 
 地位：协调 Agent、环境、扫描器和 UI 执行器
       管理游戏生命周期，运行扫描和决策循环
+      通过 DI 注入所有组件
 
-输入：配置对象、配方列表
+输入：Env, Operator, Scanner, Verifier, Strategy
 输出：游戏统计结果
 
 ⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
@@ -18,45 +19,38 @@ import time
 from airtest.core.api import G
 from loguru import logger
 
-from hawarma.config import AppConfig
-from hawarma.recipe import Recipe
+from hawarma.core.models import OrderInfo
 from hawarma.agent.strategy import Strategy
 
-from .verifier import Verifier
-from hawarma.core.models import OrderInfo
-from .game_env import GameEnv
+from .env import Env, DessertEnv
 from .scanner import Scanner
 from .operator import Operator
+from .verifier import Verifier
 
 
 class Runner:
     """
-    真实游戏桥接器
+    游戏编排器
 
-    管理游戏生命周期，协调各个组件：
-    - Scanner: 检测订单
-    - GameEnv: 追踪状态
-    - Operator: 执行 UI 操作
-    - Strategy: 决策逻辑
+    通过 DI 注入所有组件。
     """
 
-    def __init__(self, config: AppConfig, recipes: list[Recipe], strategy: Strategy):
-        self.config = config
-        self.recipes = recipes
-        self._recipe_by_slug = {r.slug: r for r in recipes}
-
-        self.env = GameEnv(
-            cooker_names=list(config.cookers),
-            stockpile_slots=len(config.screen.stockpile_positions),
-            game_duration=config.episode_duration,
-            recipes={r.slug: r for r in recipes},
-            cooker_retention=config.game.cooker_retention,
-        )
-
-        self.scanner = Scanner(config, recipes)
-        self.ui = Operator(config, recipes)
-        self.verifier = Verifier(config)
+    def __init__(
+        self,
+        env: Env,
+        operator: Operator,
+        scanner: Scanner,
+        verifier: Verifier,
+        strategy: Strategy,
+        recipes: dict[str, object],
+    ):
+        self.env = env
+        self.ui = operator
+        self.scanner = scanner
+        self.verifier = verifier
         self.strategy = strategy
+        self._recipe_by_slug = recipes
+
         self.strategy.on_game_start(self._recipe_by_slug)
 
         self._running = False
@@ -64,6 +58,8 @@ class Runner:
         self._executing_action = False
         self._agent_wakeup = asyncio.Event()
         self._last_served: dict[tuple[str, bool], float] = {}
+
+        self._build_action_handlers()
 
     async def run(self) -> dict:
         """
@@ -293,7 +289,7 @@ class Runner:
                 action = self.strategy.decide(self.env.get_unified_state())
                 if action:
                     action_type = type(action).__name__
-                    if in_animation and action_type == "ServeOrderAction":
+                    if in_animation and action_type in ("ServeOrderAction", "ServeFromCookerAction"):
                         # serve 在动画窗口期间被跳过，等待动画结束
                         continue
 
@@ -314,7 +310,9 @@ class Runner:
     # ========================================================================
 
     async def _execute_action(self, action) -> None:
-        """执行 Agent 动作"""
+        """执行 Agent 动作（dispatch table 分发）"""
+        if not hasattr(self, '_is_game_over'):
+            self._is_game_over = self.env.is_game_over
         if self.env.is_game_over():
             logger.info(
                 f"[t={self.env.time:.1f}s] Game over, skipping action: {type(action).__name__}"
@@ -323,28 +321,33 @@ class Runner:
             return
 
         action_type = type(action).__name__
-        try:
-            match action_type:
-                case "CookAction":
-                    await self._exec_cook(action)
-                case "MoveToAssemblyAction":
-                    await self._exec_move_to_assembly(action)
-                case "MoveToStockpileAction":
-                    await self._exec_move_to_stockpile(action)
-                case "PullFromStockpileAction":
-                    await self._exec_pull_from_stockpile(action)
-                case "AddCondimentAction":
-                    await self._exec_add_condiment(action)
-                case "ServeOrderAction":
-                    await self._exec_serve_order(action)
-                case "ClearCookerAction":
-                    await self._exec_clear_cooker(action)
-                case "ClearAssemblyAction":
-                    await self._exec_clear_assembly(action)
-                case _:
-                    logger.warning(f"Unknown action: {action_type}")
-        except Exception as e:
-            logger.error(f"Failed to execute {action_type}: {e}")
+        handler_name = self._action_handlers.get(action_type)
+        if handler_name:
+            try:
+                await getattr(self, handler_name)(action)
+            except Exception as e:
+                logger.error(f"Failed to execute {action_type}: {e}")
+        else:
+            logger.warning(f"Unknown action: {action_type}")
+
+    def _build_action_handlers(self) -> None:
+        """构建 action type → exec 方法的映射表"""
+        self._action_handlers = {
+            "CookAction": "_exec_cook",
+            "MoveToAssemblyAction": "_exec_move_to_assembly",
+            "MoveToStockpileAction": "_exec_move_to_stockpile",
+            "PullFromStockpileAction": "_exec_pull_from_stockpile",
+            "AddCondimentAction": "_exec_add_condiment",
+            "ServeOrderAction": "_exec_serve_order",
+            "ClearCookerAction": "_exec_clear_cooker",
+            "ClearAssemblyAction": "_exec_clear_assembly",
+            "MoveToMixingBowlAction": "_exec_move_to_mixing_bowl",
+            "AddCondimentToMixingBowlAction": "_exec_add_condiment_to_mixing_bowl",
+            "StirAction": "_exec_stir",
+            "MoveMixingBowlToCookerAction": "_exec_move_mixing_bowl_to_cooker",
+            "ServeFromCookerAction": "_exec_serve_from_cooker",
+            "ClearMixingBowlAction": "_exec_clear_mixing_bowl",
+        }
 
     async def _exec_cook(self, action) -> None:
         """烹饪"""
@@ -359,7 +362,7 @@ class Runner:
         await self.ui.move_to_assembly(action.cooker)
         cooker_state = self.env.cookers.get(action.cooker)
         if cooker_state:
-            ingredient = cooker_state.ingredient_name
+            ingredient = cooker_state.item_name
             order_id = getattr(action, "order_id", None)
             recipe_slug = None
             if order_id:
@@ -382,12 +385,12 @@ class Runner:
             return
         if cooker.is_expired(self.env.time):
             logger.warning(
-                f"[t={self.env.time:.1f}s] {cooker.ingredient_name} on {action.cooker} expired, skipping stockpile move"
+                f"[t={self.env.time:.1f}s] {cooker.item_name} on {action.cooker} expired, skipping stockpile move"
             )
             return
 
         await self.ui.move_to_stockpile(action.cooker, action.slot)
-        ingredient = cooker.ingredient_name
+        ingredient = cooker.item_name
         self.env.move_to_stockpile(action.cooker, action.slot)
         logger.info(
             f"[t={self.env.time:.1f}s] Stored {ingredient} from {action.cooker} -> {action.slot}"
@@ -497,6 +500,50 @@ class Runner:
         logger.info(
             f"[t={self.env.time:.1f}s] Cleared assembly (discarded: {discarded})"
         )
+
+    # ========================================================================
+    # Dessert 动作执行
+    # ========================================================================
+
+    async def _exec_move_to_mixing_bowl(self, action) -> None:
+        """食材 → 搅拌盆"""
+        await self.ui.move_to_mixing_bowl(action.ingredient)
+        self.env.add_to_mixing_bowl(action.ingredient)
+        logger.info(f"[t={self.env.time:.1f}s] Moved {action.ingredient} to mixing bowl")
+
+    async def _exec_add_condiment_to_mixing_bowl(self, action) -> None:
+        """调料 → 搅拌盆"""
+        await self.ui.add_condiment_to_mixing_bowl(action.condiment)
+        self.env.add_condiment_to_mixing_bowl(action.condiment)
+        logger.info(f"[t={self.env.time:.1f}s] Added condiment {action.condiment} to mixing bowl")
+
+    async def _exec_stir(self, action) -> None:
+        """搅拌"""
+        await self.ui.stir(action.distance, action.duration, action.steps)
+        self.env.stir_mixing_bowl()
+        logger.info(f"[t={self.env.time:.1f}s] Stirred mixing bowl")
+
+    async def _exec_move_mixing_bowl_to_cooker(self, action) -> None:
+        """搅拌盆 → 灶台"""
+        await self.ui.move_mixing_bowl_to_cooker(action.cooker)
+        self.env.move_mixing_bowl_to_cooker(action.cooker)
+        logger.info(f"[t={self.env.time:.1f}s] Moved mixing bowl to {action.cooker}")
+
+    async def _exec_serve_from_cooker(self, action) -> None:
+        """灶台 → 取餐台"""
+        order = self.env.orders[action.slot_idx] if action.slot_idx < len(self.env.orders) else None
+        await self.ui.serve_from_cooker(action.cooker, action.slot_idx)
+        if self.env.serve_from_cooker(action.cooker, action.slot_idx):
+            self.env.on_order_served()
+            if order:
+                self._last_served[(order.recipe_slug, order.is_rush)] = time.time()
+        logger.info(f"[t={self.env.time:.1f}s] Served from {action.cooker} to slot {action.slot_idx}")
+
+    async def _exec_clear_mixing_bowl(self, action) -> None:
+        """清空搅拌盆"""
+        await self.ui.clear_mixing_bowl()
+        self.env.clear_mixing_bowl()
+        logger.info(f"[t={self.env.time:.1f}s] Cleared mixing bowl")
 
     def stop(self) -> None:
         """停止游戏"""

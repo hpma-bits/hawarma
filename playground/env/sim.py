@@ -302,7 +302,7 @@ class SimEnv(GameEnv):
             cooker_type = sim_cooker.cooker_type if sim_cooker.cooker_type else name
             result[name] = BaseCookerState(
                 busy=sim_cooker.busy,
-                ingredient_name=sim_cooker.ingredient_name,
+                ingredient_name=sim_cooker.item_name,
                 cooker_type=cooker_type,
                 started_at=sim_cooker.started_at,
                 done_at=sim_cooker.done_at,
