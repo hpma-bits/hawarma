@@ -1,15 +1,19 @@
 ﻿"""
-SimEnv: RL 椋庢牸鐨勬父鎴忕幆澧冨疄鐜?
+SimEnv: RL 风格的游戏环境实现
 
-鍩轰簬 GameSimulator 閲嶆瀯锛屽疄鐜版爣鍑?RL 鎺ュ彛锛?
+基于 GameSimulator 重构，实现标准 RL 接口：
 - reset() -> (obs, info)
 - step(action) -> StepResult
 - get_unified_state() -> UnifiedState
 
-杈撳叆: Action (from Agent)
-杈撳嚭: UnifiedState, reward, done, info
+输入: Action (from Agent)
+输出: UnifiedState, reward, done, info
 
-鈿狅笍 涓€鏃︽枃浠跺唴瀹规湁鏇存柊锛屽姟蹇呭寮€澶存敞閲婅繘琛岀浉搴旂殑蹇呰鏇存柊锛屽悓鏃舵洿鏂版墍灞炵洰褰曠殑md
+延迟模拟（DDD 领域建模）：
+- action_delay: 每次操作消耗的游戏时间（对应真实 swipe 物理耗时，默认 300ms）
+- detection_delay: 新订单被扫描感知的滞后时间（对应真实模板匹配耗时，默认 400ms）
+
+⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
 """
 
 from __future__ import annotations
@@ -45,12 +49,18 @@ from hawarma.core.state import UnifiedState
 
 class SimEnv(GameEnv):
     """
-    RL 椋庢牸鐨勬父鎴忕幆澧冨疄鐜般€?
+    RL 风格的游戏环境实现。
 
-    鍖呰 GameSimulator锛屾彁渚涙爣鍑?RL 鎺ュ彛銆?
+    包装 GameSimulator，提供标准 RL 接口。
+
+    延迟模拟（gastronome 模式）：
+    - action_delay: 每次操作消耗的游戏时间（模拟 swipe 耗时，默认 300ms）
+    - detection_delay: 新订单被扫描感知的滞后时间（模拟模板匹配耗时，默认 400ms）
     """
 
-    TICK_INTERVAL = 0.1  # 姣忔 step 鎺ㄨ繘鐨勬椂闂达紙绉掞級
+    TICK_INTERVAL = 0.1  # 每次 step 推进的时间（秒）
+    DEFAULT_ACTION_DELAY = 0.3  # 默认操作延迟（秒）
+    DEFAULT_DETECTION_DELAY = 0.4  # 默认检测延迟（秒）
     RECIPES_FILE = "data/recipes.json"
 
     def __init__(
@@ -58,21 +68,25 @@ class SimEnv(GameEnv):
         reward_fn: RewardFunction | None = None,
         recipes_file: str = RECIPES_FILE,
         tick_interval: float = TICK_INTERVAL,
+        action_delay: float = DEFAULT_ACTION_DELAY,
+        detection_delay: float = DEFAULT_DETECTION_DELAY,
     ):
         super().__init__(reward_fn=reward_fn or GameDataReward())
         self._recipes_file = recipes_file
         self._tick_interval = tick_interval
+        self._action_delay = action_delay
+        self._detection_delay = detection_delay
         self._sim: GameSimulator | None = None
         self._recipe_adapters: dict[str, RecipeAdapter] = {}
 
-        # 缁熻
+        # 统计
         self._orders_served = 0
         self._total_score = 0
         self._orders_timeout = 0
         self._actions_taken = 0
 
     # ------------------------------------------------------------------
-    # RL 鎺ュ彛
+    # RL 接口
     # ------------------------------------------------------------------
 
     def reset(
@@ -82,40 +96,40 @@ class SimEnv(GameEnv):
         game_duration: float | None = None,
     ) -> tuple[UnifiedState, dict]:
         """
-        閲嶇疆鐜锛屽紑濮嬫柊涓€灞€娓告垙銆?
+        重置环境，开始新一局游戏。
 
         Args:
-            seed: 闅忔満绉嶅瓙
-            recipe_slugs: 鎸囧畾浣跨敤鐨勯厤鏂瑰垪琛紝None 鍒欓殢鏈洪€夋嫨
-            game_duration: 娓告垙鏃堕暱锛堢锛夛紝None 浣跨敤榛樿鍊?
+            seed: 随机种子
+            recipe_slugs: 指定使用的配方列表，None 则随机选择
+            game_duration: 游戏时长（秒），None 使用默认值
         """
         import random
 
-        # 璁剧疆闅忔満绉嶅瓙锛堝湪鍒涘缓 simulator 涔嬪墠锛岀‘淇?__init__ 涓殑闅忔満璋冪敤涔熸槸纭畾鎬х殑锛?
+        # 设置随机种子（在创建 simulator 之前，确保 __init__ 中的随机调用也是确定性的）
         if seed is not None:
             random.seed(seed)
 
-        # 鍒涘缓鏂扮殑 simulator
+        # 创建新的 simulator
         self._sim = GameSimulator(game_duration=game_duration)
         self._sim.load_recipes(self._recipes_file)
 
-        # 閫夋嫨閰嶆柟
+        # 选择配方
         if recipe_slugs is None:
             recipe_slugs = self._sim.select_recipes(count=4, random_seed=seed)
 
-        # 閰嶇疆娓告垙
+        # 配置游戏
         self._sim.setup_from_recipes(recipe_slugs)
 
-        # 棰勫垱寤?recipe adapters
+        # 预创建 recipe adapters
         self._recipe_adapters = {}
         for slug in recipe_slugs:
             recipe = self._sim._recipes.get(slug)
             if recipe:
                 self._recipe_adapters[slug] = RecipeAdapter(recipe)
 
-        # 鍒濆 tick锛堟帹杩?0 绉掞紝鐢熸垚鍒濆浜嬩欢濡傜涓€涓鍗曪級
-        # 瀹為檯涓?setup_from_recipes 鍚庨渶瑕佽嚦灏戜竴娆?tick 鎵嶈兘鐪嬪埌绗竴涓鍗?
-        # 浣嗕负浜嗕繚鎸?reset() 杩斿洖鐨勬槸 t=0 鐨勫垵濮嬬姸鎬侊紝鎴戜滑涓?tick
+        # 初始 tick（推进 0 秒，生成初始事件如第一个订单）
+        # 实际上 setup_from_recipes 后需要至少一次 tick 才能看到第一个订单
+        # 但为了保持 reset() 返回的是 t=0 的初始状态，我们不 tick
 
         obs = self.get_unified_state()
         info = {
@@ -128,10 +142,10 @@ class SimEnv(GameEnv):
 
     def step(self, action: Action | None) -> StepResult:
         """
-        鎵ц涓€涓姩浣滐紝鎺ㄨ繘鐜涓€涓?tick銆?
+        执行一个动作，推进环境一个 tick。
 
         Args:
-            action: 瑕佹墽琛岀殑鍔ㄤ綔锛孨one 琛ㄧず绛夊緟
+            action: 要执行的动作，None 表示等待
 
         Returns:
             StepResult: (observation, reward, terminated, truncated, info)
@@ -141,34 +155,36 @@ class SimEnv(GameEnv):
 
         prev_state = self.get_unified_state()
 
-        # 1. 鎵ц鍔ㄤ綔锛堝鏋滄彁渚涗簡锛?
+        # 1. 执行动作（如果提供了）
         action_events: list[Event] = []
         action_success = True
         error_message: str | None = None
 
         if action is not None:
+            # 模拟操作延迟：swipe 物理执行消耗游戏时间
+            self._sim.tick(self._action_delay)
             result = self._execute_action(action)
             action_events = list(result.events)
             action_success = result.success
             error_message = result.error_message
 
-        # 2. 鎺ㄨ繘鏃堕棿
+        # 2. 推进时间
         tick_events = self._sim.tick(self._tick_interval)
 
-        # 3. 鍚堝苟浜嬩欢
+        # 3. 合并事件
         all_events = action_events + tick_events
 
-        # 4. 鏋勯€犳柊鐘舵€?
+        # 4. 构造新状态
         next_state = self.get_unified_state()
 
-        # 5. 璁＄畻濂栧姳
+        # 5. 计算奖励
         reward = self.reward_fn.compute(prev_state, action, next_state, all_events)
 
-        # 6. 鍒ゆ柇缁撴潫
+        # 6. 判断结束
         terminated = self._sim.is_game_over()
-        truncated = False  # 褰撳墠涓嶅疄鐜版鏁伴檺鍒舵埅鏂?
+        truncated = False  # 当前不实现步数限制截断
 
-        # 7. 鏋勯€?info
+        # 7. 构造 info
         info = {
             "events": all_events,
             "action_success": action_success,
@@ -185,15 +201,20 @@ class SimEnv(GameEnv):
         )
 
     def get_unified_state(self) -> UnifiedState:
-        """浠?simulator 鍐呴儴鐘舵€佹瀯閫?UnifiedState"""
+        """从 simulator 内部状态构造 UnifiedState"""
         if self._sim is None:
             raise RuntimeError("Environment not initialized. Call reset() first.")
 
         sim_state = self._sim._state
 
+        orders = self._convert_orders(sim_state.orders)
+        # 检测延迟：新订单在 detection_delay 内对 agent 不可见
+        if self._detection_delay > 0:
+            orders = self._apply_detection_delay(orders, sim_state.time)
+
         return UnifiedState(
             time=sim_state.time,
-            orders=self._convert_orders(sim_state.orders),
+            orders=orders,
             cookers=self._convert_cookers(sim_state.cookers),
             assembly=self._convert_assembly(sim_state.assembly),
             stockpile=self._convert_stockpile(sim_state.stockpile),
@@ -204,13 +225,13 @@ class SimEnv(GameEnv):
         )
 
     def is_game_over(self) -> bool:
-        """娓告垙鏄惁缁撴潫"""
+        """游戏是否结束"""
         if self._sim is None:
             return True
         return self._sim.is_game_over()
 
     # ====================================================================
-    # 缁熻鎺ュ彛
+    # 统计接口
     # ====================================================================
 
     def get_stats(self) -> dict:
@@ -233,11 +254,11 @@ class SimEnv(GameEnv):
         self._actions_taken += 1
 
     # ------------------------------------------------------------------
-    # 鍔ㄤ綔鎵ц
+    # 动作执行
     # ------------------------------------------------------------------
 
     def _execute_action(self, action: Action):
-        """灏?Action 鏄犲皠鍒?simulator 鏂规硶"""
+        """将 Action 映射到 simulator 方法"""
         sim = self._sim
         assert sim is not None
 
@@ -269,13 +290,27 @@ class SimEnv(GameEnv):
         return ActionResult.failure_result(f"Unknown action type: {type(action).__name__}")
 
     # ------------------------------------------------------------------
-    # 鐘舵€佽浆鎹?
+    # 状态转换
     # ------------------------------------------------------------------
+
+    def _apply_detection_delay(
+        self, orders: tuple[OrderInfo | None, ...], current_time: float
+    ) -> tuple[OrderInfo | None, ...]:
+        """过滤 detection_delay 内出现的新订单（模拟扫描滞后）"""
+        result: list[OrderInfo | None] = []
+        for order in orders:
+            if order is None:
+                result.append(None)
+            elif current_time < order.created_at + self._detection_delay:
+                result.append(None)
+            else:
+                result.append(order)
+        return tuple(result)
 
     def _convert_orders(
         self, orders: list[Any]
     ) -> tuple[OrderInfo | None, ...]:
-        """灏?simulator Order 杞崲涓?OrderInfo"""
+        """将 simulator Order 转换为 OrderInfo"""
         result = []
         for order in orders:
             if order is None:
@@ -296,13 +331,13 @@ class SimEnv(GameEnv):
     def _convert_cookers(
         self, cookers: dict[str, Any]
     ) -> dict[str, BaseCookerState]:
-        """灏?simulator CookerState 杞崲涓?base_environment CookerState"""
+        """将 simulator CookerState 转换为 base_environment CookerState"""
         result = {}
         for name, sim_cooker in cookers.items():
             cooker_type = sim_cooker.cooker_type if sim_cooker.cooker_type else name
             result[name] = BaseCookerState(
                 busy=sim_cooker.busy,
-                ingredient_name=sim_cooker.item_name,
+                item_name=sim_cooker.item_name,
                 cooker_type=cooker_type,
                 started_at=sim_cooker.started_at,
                 done_at=sim_cooker.done_at,
@@ -313,7 +348,7 @@ class SimEnv(GameEnv):
     def _convert_assembly(
         self, sim_assembly: Any
     ) -> BaseAssemblyState:
-        """灏?simulator AssemblyState 杞崲涓?base_environment AssemblyState"""
+        """将 simulator AssemblyState 转换为 base_environment AssemblyState"""
         ingredients = [(ing[0], ing[1]) for ing in sim_assembly.ingredients]
 
         return BaseAssemblyState(
@@ -328,7 +363,7 @@ class SimEnv(GameEnv):
     def _convert_stockpile(
         self, stockpile: dict[str, Any]
     ) -> dict[str, BaseStockpileSlot]:
-        """灏?simulator StockpileSlot 杞崲涓?base_environment StockpileSlot"""
+        """将 simulator StockpileSlot 转换为 base_environment StockpileSlot"""
         result = {}
         for name, sim_slot in stockpile.items():
             result[name] = BaseStockpileSlot(
@@ -337,4 +372,3 @@ class SimEnv(GameEnv):
                 count=sim_slot.count,
             )
         return result
-
