@@ -82,8 +82,8 @@ def cmd_bench(args):
     if args.strategies:
         names = [s.strip() for s in args.strategies.split(",")]
     else:
-        # 默认只比较表现最好的几个策略
-        names = ["default", "cpm"]
+        # 默认只比较 Tier 1 推荐策略
+        names = ["cpm", "delay_aware", "cpm_enhanced"]
 
     strategies = {}
     for name in names:

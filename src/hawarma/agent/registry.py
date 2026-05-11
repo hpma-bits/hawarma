@@ -10,12 +10,15 @@
 注册新策略：
     在 _STRATEGY_REGISTRY 中添加映射即可
 
-可用策略：
+推荐策略（Tier 1，任选皆可）：
+- cpm: CPMStrategy（关键路径法，稳健首选）
+- delay_aware: DelayAwareCPMStrategy（真实设备有延迟时最优）
+- cpm_enhanced: CPMEnhancedStrategy（CPM 增强，经典最优）
+
+其他策略（Tier 2-3，保留兼容）：
 - default: DefaultStrategy（安全默认）
-- cpm: CPMStrategy（关键路径法）
-- visibility_aware: VisibilityAwareStrategy（CPM + visibility 阈值）
+- visibility_aware: VisibilityAwareStrategy（CPM + visibility）
 - preempt_score: PreemptScoreStrategy（分数权重抢占）
-- cpm_enhanced: CPMEnhancedStrategy（CPM 增强，当前最佳）
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ _STRATEGY_REGISTRY: dict[str, str] = {
     "visibility_aware": "hawarma.agent.strategies.visibility_aware:VisibilityAwareStrategy",
     "preempt_score": "hawarma.agent.strategies.preempt_score:PreemptScoreStrategy",
     "cpm_enhanced": "hawarma.agent.strategies.cpm_enhanced:CPMEnhancedStrategy",
+    "delay_aware": "hawarma.agent.strategies.delay_aware:DelayAwareCPMStrategy",
     "dessert": "hawarma.agent.strategies.dessert:DessertStrategy",
 }
 

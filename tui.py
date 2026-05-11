@@ -144,10 +144,9 @@ class RecipeSelectionScreen(Screen):
         """根据 station 返回可用的策略选项列表"""
         if station == Station.GASTRONOME:
             options = [
-                ("default", "default"), ("cpm", "cpm"),
-                ("preempt_score", "preempt_score"),
-                ("visibility_aware", "visibility_aware"),
-                ("cpm_enhanced", "cpm_enhanced"),
+                ("cpm (稳健首选)", "cpm"),
+                ("delay_aware (有延迟优化)", "delay_aware"),
+                ("cpm_enhanced (经典最优)", "cpm_enhanced"),
             ]
         else:
             options = [("dessert", "dessert")]
