@@ -170,13 +170,6 @@ class GameEnv(GastronomeEnv, DessertEnv):
         if not cooker_state.busy:
             return False
 
-        # 食材已过期，拒绝存入
-        if cooker_state.is_expired(self.time):
-            logger.warning(
-                f"[t={self.time:.1f}s] Ingredient {cooker_state.item_name} on {cooker} expired, cannot move to stockpile"
-            )
-            return False
-
         if slot not in self._stockpile:
             return False
 

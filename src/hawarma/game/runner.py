@@ -383,18 +383,16 @@ class Runner:
                 f"[t={self.env.time:.1f}s] Cooker {action.cooker} not busy, skipping stockpile move"
             )
             return
-        if cooker.is_expired(self.env.time):
-            logger.warning(
-                f"[t={self.env.time:.1f}s] {cooker.item_name} on {action.cooker} expired, skipping stockpile move"
-            )
-            return
-
         await self.ui.move_to_stockpile(action.cooker, action.slot)
         ingredient = cooker.item_name
-        self.env.move_to_stockpile(action.cooker, action.slot)
-        logger.info(
-            f"[t={self.env.time:.1f}s] Stored {ingredient} from {action.cooker} -> {action.slot}"
-        )
+        if self.env.move_to_stockpile(action.cooker, action.slot):
+            logger.info(
+                f"[t={self.env.time:.1f}s] Stored {ingredient} from {action.cooker} -> {action.slot}"
+            )
+        else:
+            logger.warning(
+                f"[t={self.env.time:.1f}s] Failed to update stockpile state for {ingredient} on {action.cooker} -> {action.slot} (slot may be full or incompatible)"
+            )
 
     async def _exec_pull_from_stockpile(self, action) -> None:
         """从库存取用"""
