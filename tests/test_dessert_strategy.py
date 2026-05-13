@@ -140,6 +140,116 @@ class TestDessertStrategy(unittest.TestCase):
         action = self.strategy.decide(state)
         self.assertNotIsInstance(action, MoveToMixingBowlAction)
 
+    # ── Duplicate batch prevention: cooker in-progress dedup ──
+
+    def test_no_add_when_cooker_has_same_recipe_single_order(self):
+        """单订单 recipe 已在灶台 → 不应重复启动新批次."""
+        cookers = {
+            "dessert_oven": CookerState(
+                busy=True, cooker_type="dessert_oven",
+                item_name="domeFigueMiel", started_at=5.0, done_at=8.0, expired_at=15.0,
+            ),
+            "cooling_plate": CookerState(cooker_type="cooling_plate"),
+        }
+        state = self._make_state(
+            mixing_bowl=MixingBowlState(),
+            cookers=cookers,
+            time=7.0,
+        )
+        action = self.strategy.decide(state)
+        # 烹饪进行中，无额外同名 order，不启动新批次
+        self.assertNotIsInstance(action, MoveToMixingBowlAction)
+
+    def test_add_when_cooker_has_same_recipe_two_orders(self):
+        """双同名 order，灶台已有 1 份 → 跳过第一 order，为第二 order 生产."""
+        orders = (
+            OrderInfo(order_id=1, recipe_slug="domeFigueMiel", is_rush=False,
+                      created_at=0.0, timeout_at=80.0, done=False),
+            OrderInfo(order_id=2, recipe_slug="domeFigueMiel", is_rush=False,
+                      created_at=1.0, timeout_at=80.0, done=False),
+            None, None,
+        )
+        cookers = {
+            "dessert_oven": CookerState(
+                busy=True, cooker_type="dessert_oven",
+                item_name="domeFigueMiel", started_at=5.0, done_at=8.0, expired_at=15.0,
+            ),
+            "cooling_plate": CookerState(cooker_type="cooling_plate"),
+        }
+        state = self._make_state(
+            orders=orders,
+            mixing_bowl=MixingBowlState(),
+            cookers=cookers,
+            time=7.0,
+        )
+        action = self.strategy.decide(state)
+        self.assertIsInstance(action, MoveToMixingBowlAction)
+        self.assertEqual(action.ingredient, "flour")
+
+    def test_add_when_cooker_has_different_recipe(self):
+        """灶台忙 A recipe，但是 B recipe 的 order → 正常启动 B 批次."""
+        orders = (
+            OrderInfo(order_id=2, recipe_slug="velvetTiramisu", is_rush=False,
+                      created_at=1.0, timeout_at=80.0, done=False),
+            None, None, None,
+        )
+        cookers = {
+            "dessert_oven": CookerState(
+                busy=True, cooker_type="dessert_oven",
+                item_name="domeFigueMiel", started_at=5.0, done_at=8.0, expired_at=15.0,
+            ),
+            "cooling_plate": CookerState(cooker_type="cooling_plate"),
+        }
+        state = self._make_state(
+            orders=orders,
+            mixing_bowl=MixingBowlState(),
+            cookers=cookers,
+            time=7.0,
+        )
+        action = self.strategy.decide(state)
+        self.assertIsInstance(action, MoveToMixingBowlAction)
+        self.assertEqual(action.ingredient, "cream")
+
+    def test_three_orders_two_batches_third_starts(self):
+        """三同名 order，灶台 1 份 + 搅拌盆 1 份 → 第三 order 仍启动."""
+
+        # 1. 灶台忙，搅拌盆空闲
+        bowl0 = MixingBowlState()
+        cookers0 = {
+            "dessert_oven": CookerState(
+                busy=True, cooker_type="dessert_oven",
+                item_name="domeFigueMiel", started_at=5.0, done_at=8.0, expired_at=15.0,
+            ),
+            "cooling_plate": CookerState(cooker_type="cooling_plate"),
+        }
+        orders = (
+            OrderInfo(order_id=1, recipe_slug="domeFigueMiel", is_rush=False,
+                      created_at=0.0, timeout_at=80.0, done=False),
+            OrderInfo(order_id=2, recipe_slug="domeFigueMiel", is_rush=False,
+                      created_at=1.0, timeout_at=80.0, done=False),
+            OrderInfo(order_id=3, recipe_slug="domeFigueMiel", is_rush=False,
+                      created_at=2.0, timeout_at=80.0, done=False),
+            None,
+        )
+        state0 = self._make_state(
+            orders=orders, mixing_bowl=bowl0, cookers=cookers0, time=7.0,
+        )
+        action0 = self.strategy.decide(state0)
+        self.assertIsInstance(action0, MoveToMixingBowlAction)
+        self.assertEqual(action0.ingredient, "flour")
+
+        # 2. 模拟：flour 已入搅拌盆, target_recipe_slug=domeFigueMiel
+        bowl1 = MixingBowlState(
+            ingredients=["flour"],
+            target_recipe_slug="domeFigueMiel",
+        )
+        state1 = self._make_state(
+            orders=orders, mixing_bowl=bowl1, cookers=cookers0, time=7.0,
+        )
+        action1 = self.strategy.decide(state1)
+        self.assertIsInstance(action1, MoveToMixingBowlAction)
+        self.assertEqual(action1.ingredient, "honey")
+
     # ================================================================
     # Priority 5: AddCondimentToMixingBowl
     # ================================================================

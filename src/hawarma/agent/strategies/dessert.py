@@ -237,13 +237,23 @@ class DessertStrategy(Strategy):
             return None
 
         # 搅拌盆空闲：按优先级取第一个甜点订单的第一个食材
+        # 收集已在途的 recipe slug（灶台上正在烹饪的），每个在途批次可"覆盖"一个同名订单
+        in_progress_slugs: list[str] = []
+        for c in state.cookers.values():
+            if c.busy and c.item_name:
+                in_progress_slugs.append(c.item_name)
+
         for _, order in self._prioritized_dessert_orders(state):
             recipe = state.recipes.get(order.recipe_slug)
             if not recipe:
                 continue
             raw_ings = getattr(recipe, "raw_ingredients", [])
-            if raw_ings:
-                return MoveToMixingBowlAction(ingredient=raw_ings[0])
+            if not raw_ings:
+                continue
+            if order.recipe_slug in in_progress_slugs:
+                in_progress_slugs.remove(order.recipe_slug)
+                continue
+            return MoveToMixingBowlAction(ingredient=raw_ings[0])
 
         return None
 
