@@ -157,7 +157,7 @@ class GameEnv(GastronomeEnv, DessertEnv):
             if inferred_slug:
                 self._assembly.target_recipe_slug = inferred_slug
 
-        self._assembly.ingredients_cookers.append((ingredient, cooker_type))
+        self._assembly.ingredients.append((ingredient, cooker_type, 0.0))
         cooker_state.reset()
         return True
 
@@ -200,7 +200,7 @@ class GameEnv(GastronomeEnv, DessertEnv):
             if inferred_slug:
                 self._assembly.target_recipe_slug = inferred_slug
 
-        self._assembly.ingredients_cookers.append((ingredient, cooker_type))
+        self._assembly.ingredients.append((ingredient, cooker_type, 0.0))
         stockpile_slot.remove()
         return True
 
@@ -266,7 +266,7 @@ class GameEnv(GastronomeEnv, DessertEnv):
 
     def clear_assembly(self) -> bool:
         """清空组装站"""
-        if not self._assembly.ingredients_cookers:
+        if not self._assembly.ingredients:
             return False
         self._assembly.reset()
         return True
@@ -539,8 +539,8 @@ class GameEnv(GastronomeEnv, DessertEnv):
                 )
 
         # 如果组装站有食材但没有目标配方，尝试推断
-        if not self._assembly.target_recipe_slug and self._assembly.ingredients_cookers:
-            all_ings = [t[0] for t in self._assembly.ingredients_cookers] + [ingredient]
+        if not self._assembly.target_recipe_slug and self._assembly.ingredients:
+            all_ings = [t[0] for t in self._assembly.ingredients] + [ingredient]
             inferred = self._infer_recipe_slug_from_ingredients(all_ings)
             if inferred:
                 self._assembly.target_recipe_slug = inferred
@@ -559,7 +559,7 @@ class GameEnv(GastronomeEnv, DessertEnv):
 
         # 检查是否重复添加（按 ingredient-cooker 组合统计）
         already_added = sum(
-            1 for t in self._assembly.ingredients_cookers if t[0] == ingredient
+            1 for t in self._assembly.ingredients if t[0] == ingredient
         )
         needed = raw_ings.count(ingredient) if raw_ings else 1
         if already_added >= needed:
@@ -568,7 +568,7 @@ class GameEnv(GastronomeEnv, DessertEnv):
             )
             return False
 
-        self._assembly.ingredients_cookers.append((ingredient, cooker))
+        self._assembly.ingredients.append((ingredient, cooker, 0.0))
         return True
 
     def get_condiment_count(self, condiment: str) -> int:

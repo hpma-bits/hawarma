@@ -1,9 +1,12 @@
 """
 core/models: 核心数据模型
+
+统一的状态类型，供真实环境和模拟器共享。
 """
 
 from __future__ import annotations
 from dataclasses import dataclass, field
+
 
 @dataclass
 class CookerState:
@@ -24,6 +27,10 @@ class CookerState:
         self.done_at = None
         self.expired_at = None
 
+    def clear(self) -> None:
+        """清空灶台状态（reset 的别名）"""
+        self.reset()
+
     def is_done(self, current_time: float) -> bool:
         """检查烹饪是否已完成"""
         return self.done_at is not None and current_time >= self.done_at
@@ -37,22 +44,46 @@ class CookerState:
 class AssemblyState:
     """组装站状态"""
 
-    ingredients_cookers: list[tuple[str, str]] = field(default_factory=list)
+    ingredients: list[tuple[str, str, float]] = field(default_factory=list)
+    """(ingredient_name, cooker_type, added_at) — 真实环境中 added_at 可设为 0.0"""
     target_recipe_slug: str | None = None
+    target_recipe: object | None = None
+    """完整 Recipe 对象（模拟器专用，真实环境为 None）"""
     owner_order_id: int | None = None
     condiments: dict[str, int] = field(default_factory=dict)
 
     @property
+    def ingredients_cookers(self) -> list[tuple[str, str]]:
+        """兼容旧接口：返回 (ingredient, cooker) 二元组列表"""
+        return [(ing[0], ing[1]) for ing in self.ingredients]
+
+    @property
     def is_free(self) -> bool:
         """组装站是否空闲"""
-        return len(self.ingredients_cookers) == 0 and self.target_recipe_slug is None
+        return len(self.ingredients) == 0 and self.target_recipe_slug is None
+
+    @property
+    def is_complete(self) -> bool:
+        """是否所有食材已到齐（由子类或外部设置 target_recipe 后可用）"""
+        return self.target_recipe_slug is not None and len(self.ingredients) > 0
+
+    def can_add_ingredient(self, ing_name: str, cooker: str) -> bool:
+        """检查食材是否与当前组装兼容"""
+        if not self.ingredients:
+            return True
+        present_names = {ing[0] for ing in self.ingredients}
+        return ing_name not in present_names
 
     def reset(self) -> None:
         """重置组装站状态"""
-        self.ingredients_cookers.clear()
+        self.ingredients.clear()
         self.target_recipe_slug = None
         self.owner_order_id = None
         self.condiments.clear()
+
+    def clear(self) -> None:
+        """清空组装站（reset 的别名）"""
+        self.reset()
 
 
 @dataclass
@@ -89,6 +120,16 @@ class StockpileSlot:
             self.cooker_type = None
         return True
 
+    def remove_one(self) -> bool:
+        """从槽位取出一个食材（remove 的别名）"""
+        return self.remove()
+
+    def clear(self) -> None:
+        """清空槽位"""
+        self.ingredient_name = None
+        self.cooker_type = None
+        self.count = 0
+
 
 @dataclass
 class MixingBowlState:
@@ -120,13 +161,17 @@ class MixingBowlState:
         self.target_recipe_slug = None
         self.is_stirred = False
 
+    def clear(self) -> None:
+        """清空搅拌盆（reset 的别名）"""
+        self.reset()
+
 
 @dataclass
-class OrderInfo:
+class Order:
     """
     订单信息
 
-    统一的订单数据结构，用于真实环境和模拟器
+    统一的订单数据结构，用于真实环境和模拟器。
     """
 
     order_id: int
@@ -135,10 +180,33 @@ class OrderInfo:
     created_at: float
     timeout_at: float
     done: bool = False
+    served_at: float | None = None
+    spawned_at_visibility: float = 0.0
+    recipe: object | None = None
+    """完整 Recipe 对象（模拟器专用，真实环境为 None）"""
+    condiments_applied: dict[str, int] = field(default_factory=dict)
+    """已添加的调料（模拟器专用）"""
+
+    @property
+    def is_completed(self) -> bool:
+        """订单是否已完成"""
+        return self.done or self.served_at is not None
+
+    def is_expired(self, current_time: float) -> bool:
+        """订单是否已超时"""
+        return current_time >= self.timeout_at and not self.is_completed
+
+    def time_remaining(self, current_time: float) -> float:
+        """订单剩余时间（秒）"""
+        if self.is_completed:
+            return 0.0
+        return max(0.0, self.timeout_at - current_time)
 
 
-# ============================================================================
+# 向后兼容别名
+OrderInfo = Order
+
+
+# ========================================================================
 # Env 抽象基类
-# ============================================================================
-
-
+# ========================================================================

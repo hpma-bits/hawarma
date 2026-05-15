@@ -13,6 +13,7 @@ from .models import (
     AssemblyState,
     CookerState,
     MixingBowlState,
+    Order,
     OrderInfo,
     StockpileSlot,
 )
@@ -31,7 +32,7 @@ class UnifiedState:
     time: float
     """当前游戏时间（秒）"""
 
-    orders: tuple[OrderInfo | None, ...]
+    orders: tuple[Order | None, ...]
     """4个订单槽位的状态"""
 
     cookers: dict[str, CookerState]

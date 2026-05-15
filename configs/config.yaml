@@ -2,7 +2,7 @@ adb_address: 127.0.0.1:16384
 image_directory: static/img
 log_directory: logs
 recipes_data_path: data/recipes.json
-episode_duration: 103
+episode_duration: 105
 screen:
   resolution:
   - 1920

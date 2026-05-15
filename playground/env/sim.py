@@ -32,14 +32,9 @@ from hawarma.core.actions import (
     ClearCookerAction,
     ClearAssemblyAction,
 )
-from hawarma.core.models import (
-    AssemblyState as BaseAssemblyState,
-    CookerState as BaseCookerState,
-    OrderInfo,
-    StockpileSlot as BaseStockpileSlot,
-)
+from hawarma.core.models import Order
 from playground.env_simulator import GameSimulator
-from playground.env_simulator_types import Event, EventType
+from playground.env_simulator_types import Event, EventType, Recipe as SimRecipe
 
 from .game_env import GameEnv
 from .recipe_adapter import RecipeAdapter
@@ -215,9 +210,9 @@ class SimEnv(GameEnv):
         return UnifiedState(
             time=sim_state.time,
             orders=orders,
-            cookers=self._convert_cookers(sim_state.cookers),
-            assembly=self._convert_assembly(sim_state.assembly),
-            stockpile=self._convert_stockpile(sim_state.stockpile),
+            cookers=sim_state.cookers,
+            assembly=sim_state.assembly,
+            stockpile=sim_state.stockpile,
             recipes=dict(self._recipe_adapters),
             game_duration=self._sim._game_duration,
             is_in_animation_window=self._sim.is_in_animation_window(),
@@ -308,67 +303,7 @@ class SimEnv(GameEnv):
         return tuple(result)
 
     def _convert_orders(
-        self, orders: list[Any]
-    ) -> tuple[OrderInfo | None, ...]:
-        """将 simulator Order 转换为 OrderInfo"""
-        result = []
-        for order in orders:
-            if order is None:
-                result.append(None)
-            else:
-                result.append(
-                    OrderInfo(
-                        order_id=order.order_id,
-                        recipe_slug=order.recipe.slug,
-                        is_rush=order.is_rush,
-                        created_at=order.created_at,
-                        timeout_at=order.timeout_at,
-                        done=order.is_completed,
-                    )
-                )
-        return tuple(result)
-
-    def _convert_cookers(
-        self, cookers: dict[str, Any]
-    ) -> dict[str, BaseCookerState]:
-        """将 simulator CookerState 转换为 base_environment CookerState"""
-        result = {}
-        for name, sim_cooker in cookers.items():
-            cooker_type = sim_cooker.cooker_type if sim_cooker.cooker_type else name
-            result[name] = BaseCookerState(
-                busy=sim_cooker.busy,
-                item_name=sim_cooker.item_name,
-                cooker_type=cooker_type,
-                started_at=sim_cooker.started_at,
-                done_at=sim_cooker.done_at,
-                expired_at=sim_cooker.expired_at,
-            )
-        return result
-
-    def _convert_assembly(
-        self, sim_assembly: Any
-    ) -> BaseAssemblyState:
-        """将 simulator AssemblyState 转换为 base_environment AssemblyState"""
-        ingredients = [(ing[0], ing[1]) for ing in sim_assembly.ingredients]
-
-        return BaseAssemblyState(
-            ingredients_cookers=ingredients,
-            target_recipe_slug=sim_assembly.target_recipe.slug
-            if sim_assembly.target_recipe
-            else None,
-            owner_order_id=None,
-            condiments=sim_assembly.condiments.copy(),
-        )
-
-    def _convert_stockpile(
-        self, stockpile: dict[str, Any]
-    ) -> dict[str, BaseStockpileSlot]:
-        """将 simulator StockpileSlot 转换为 base_environment StockpileSlot"""
-        result = {}
-        for name, sim_slot in stockpile.items():
-            result[name] = BaseStockpileSlot(
-                ingredient_name=sim_slot.ingredient_name,
-                cooker_type=sim_slot.cooker_type,
-                count=sim_slot.count,
-            )
-        return result
+        self, orders: list[Order | None]
+    ) -> tuple[Order | None, ...]:
+        """将 simulator 订单列表转为 tuple（类型已统一，无需转换）"""
+        return tuple(orders)

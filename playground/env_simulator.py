@@ -539,6 +539,7 @@ class GameSimulator:
         timeout = self._calculate_timeout(recipe, is_rush)
         order = Order(
             order_id=self._next_order_id,
+            recipe_slug=recipe.slug,
             recipe=recipe,
             is_rush=is_rush,
             created_at=self._state.time,
@@ -717,16 +718,18 @@ class GameSimulator:
                     for ing in order.recipe.ingredients:
                         if ing.name == ingredient_name and ing.cooker_type == cooker_type:
                             self._state.assembly.target_recipe = order.recipe
+                            self._state.assembly.target_recipe_slug = order.recipe.slug
                             break
                     if self._state.assembly.target_recipe:
                         break
-            
+
             # Fallback: search for any recipe that has this ingredient (original behavior)
             if self._state.assembly.target_recipe is None:
                 for recipe in self._recipes.values():
                     for ing in recipe.ingredients:
                         if ing.name == ingredient_name and ing.cooker_type == cooker_type:
                             self._state.assembly.target_recipe = recipe
+                            self._state.assembly.target_recipe_slug = recipe.slug
                             break
                     if self._state.assembly.target_recipe:
                         break
@@ -968,6 +971,7 @@ class GameSimulator:
                 for ing in recipe.ingredients:
                     if ing.name == ingredient_name and ing.cooker_type == cooker_type:
                         self._state.assembly.target_recipe = recipe
+                        self._state.assembly.target_recipe_slug = recipe.slug
                         break
                 if self._state.assembly.target_recipe:
                     break
@@ -1259,6 +1263,7 @@ class GameSimulator:
         self._state.assembly.ingredients.clear()
         self._state.assembly.condiments.clear()
         self._state.assembly.target_recipe = None
+        self._state.assembly.target_recipe_slug = None
         
         return ActionResult.success_result()
     
@@ -1529,6 +1534,7 @@ class GameSimulator:
         # 创建订单（加成比例在生成瞬间锁定）
         order = Order(
             order_id=self._next_order_id,
+            recipe_slug=recipe.slug,
             recipe=recipe,
             is_rush=is_rush,
             created_at=created_at,
