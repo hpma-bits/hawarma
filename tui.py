@@ -122,7 +122,13 @@ class RecipeSelectionScreen(Screen):
                 *[Selection(r.name, r.slug) for r in filtered],
                 id="rs-recipe-list",
             ),
-            Static("3. 选择策略：", classes="subtitle"),
+            Static("3. 准备顺序（留空=默认顺序，如 '012'）：", classes="subtitle"),
+            Input(
+                placeholder="输入数字索引，最多4位",
+                id="rs-order-input",
+                restrict=r"[0-3]{0,4}",
+            ),
+            Static("4. 选择策略：", classes="subtitle"),
             Select(
                 options=strategy_options,
                 value=current_strategy, id="rs-strategy-select",
@@ -187,18 +193,24 @@ class RecipeSelectionScreen(Screen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "confirm":
             station = self.app.station
-            # 保存 station
             self.app.station = station
-            # 保存 strategy
             self.app.game_strategy = self.query_one("#rs-strategy-select", Select).value
-            # 保存选中的配方
             sl = self.query_one("#rs-recipe-list", SelectionList)
             selected_slugs = sl.selected
             if selected_slugs:
-                self.app.selected_recipes = [
+                selected_recipes = [
                     r for r in self._all_recipes
                     if r.slug in selected_slugs and r.station == station
                 ]
+                order_input = self.query_one("#rs-order-input", Input).value.strip()
+                if order_input and all(c.isdigit() for c in order_input) and len(order_input) == len(selected_recipes):
+                    try:
+                        ordered = [selected_recipes[int(idx)] for idx in order_input]
+                        self.app.selected_recipes = ordered
+                    except IndexError:
+                        self.app.selected_recipes = selected_recipes
+                else:
+                    self.app.selected_recipes = selected_recipes
                 self.app.pop_screen()
         elif event.button.id == "back":
             self.app.pop_screen()
@@ -491,6 +503,13 @@ class HawarmaApp(App):
         width: 60%;
         max-width: 30;
         min-width: 16;
+        margin: 0 0 1 0;
+    }
+
+    #rs-order-input {
+        width: 40%;
+        max-width: 20;
+        min-width: 10;
         margin: 0 0 1 0;
     }
 
