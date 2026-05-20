@@ -149,7 +149,7 @@ debug:
   save_order_screenshots: false
   save_assembly_verify_screenshots: false
   screenshot_directory: logs/order_screenshots
-strategy: visibility_aware
+strategy: gastronome
 stations:
   gastronome:
     enabled: true

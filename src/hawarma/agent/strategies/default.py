@@ -1,26 +1,20 @@
 """
-DefaultStrategy: 默认策略（主动预烹饪 + 决策优先级优化）
+GreedyCascadeStrategy: 贪心瀑布基类（主动预烹饪 + 决策优先级优化）
 
-核心优化（基于CookingFirstV2Strategy）：
-1. 调料优先：组装站食材齐全时立即添加（更快释放组装站）
-2. 最长烹饪优先：按时长降序排列（最大化并行重叠）
-3. 主动预烹饪：灶台空闲时预烹饪活跃订单的未来食材
-4. 快速存储：非必要食材2秒后存储（更快释放灶台）
-5. 过期优先移动：优先移动接近过期的食材到组装站
-6. 库存优先取用：为组装站目标优先拉取库存
+架构：通过贪心优先级瀑布（greedy priority cascade）做出决策。
+      所有 Gastronome 策略都继承此类，仅覆写个别 _try_* 方法调整排序/抢占/烹饪逻辑。
 
 决策优先级：
-1. 清理组装站（超时订单）
+1. 清理组装站（死锁检测）
 2. 送餐
-3. 清理过期食材
-4. 添加调料（食材齐全时优先）
-5. 移动完成食材到组装站（过期优先）
-6. 从库存取用（为组装站目标）
-7. 开始烹饪（最长优先）
-8. 添加调料（回退）
-9. 主动预烹饪
-10. 存入库存（2秒快速存储）
-11. 从库存取用
+3. 清理过期灶台
+4. 移动完成食材到组装站（过期优先）
+5. 开始烹饪（最长优先）
+6. 添加调料（食材齐全时优先）
+7. 从库存取用（为组装站目标）
+8. 主动预烹饪
+9. 存入库存
+10. 从库存取用（回退）
 
 输入: UnifiedState
 输出: Action | None
@@ -45,8 +39,8 @@ from hawarma.core.state import UnifiedState
 from hawarma.agent.strategy import Strategy
 
 
-class DefaultStrategy(Strategy):
-    """默认策略：主动预烹饪 + 决策优先级优化"""
+class GreedyCascadeStrategy(Strategy):
+    """贪心瀑布基类：Gastronome 策略的通用决策架构"""
 
     EXPIRED_THRESHOLD = 5.0
     WARN_THRESHOLD = 4.0
@@ -108,8 +102,6 @@ class DefaultStrategy(Strategy):
         if action := self._try_add_condiment_urgent(state, assembly_ings):
             return action
         if action := self._try_pull_from_stockpile_urgent(state):
-            return action
-        if action := self._try_add_condiment(state, assembly_ings):
             return action
         if action := self._try_precook(state, assembly_ings):
             return action
@@ -769,3 +761,7 @@ class DefaultStrategy(Strategy):
         if isinstance(recipe, dict):
             return recipe.get(attr_name, default)
         return default
+
+
+# 向后兼容别名
+DefaultStrategy = GreedyCascadeStrategy

@@ -20,7 +20,7 @@ class TestRunner:
 
         assert result.seed == 42
         assert result.steps > 100
-        assert result.strategy_name == "DefaultStrategy"
+        assert result.strategy_name == "GreedyCascadeStrategy"
 
     def test_run_episode_records_history(self):
         env = SimEnv()

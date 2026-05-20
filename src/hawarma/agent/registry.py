@@ -4,21 +4,17 @@
 支持通过配置字符串动态加载策略类。
 
 使用方式：
-    strategy = get_strategy("cpm")
-    action = strategy.decide(env.get_unified_state())
+    strategy = get_strategy("gastronome")   # 推荐：用户界面使用
+    strategy = get_strategy("dessert")      # 甜点模式
+    strategy = get_strategy("cpm_cascade")  # 内部/benchmark 使用
 
-注册新策略：
-    在 _STRATEGY_REGISTRY 中添加映射即可
+注册表分组：
+  - 用户级（推荐 CLI/TUI 使用）：gastronome, dessert
+  - 内部级（bench/playground 使用）：全部策略名
 
-推荐策略（Tier 1，任选皆可）：
-- cpm: CPMStrategy（关键路径法，稳健首选）
-- delay_aware: DelayAwareCPMStrategy（真实设备有延迟时最优）
-- cpm_enhanced: CPMEnhancedStrategy（CPM 增强，经典最优）
-
-其他策略（Tier 2-3，保留兼容）：
-- default: DefaultStrategy（安全默认）
-- visibility_aware: VisibilityAwareStrategy（CPM + visibility）
-- preempt_score: PreemptScoreStrategy（分数权重抢占）
+架构说明：
+  所有 Gastronome 策略都基于 GreedyCascadeStrategy 的贪心瀑布框架。
+  最佳策略是 CPMEnhancedCascadeStrategy（benchmark: 3934 avg reward）。
 """
 
 from __future__ import annotations
@@ -28,15 +24,26 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from hawarma.agent.strategy import Strategy
 
-
 _STRATEGY_REGISTRY: dict[str, str] = {
-    "default": "hawarma.agent.strategies.default:DefaultStrategy",
-    "cpm": "hawarma.agent.strategies.cpm:CPMStrategy",
-    "visibility_aware": "hawarma.agent.strategies.visibility_aware:VisibilityAwareStrategy",
-    "preempt_score": "hawarma.agent.strategies.preempt_score:PreemptScoreStrategy",
-    "cpm_enhanced": "hawarma.agent.strategies.cpm_enhanced:CPMEnhancedStrategy",
-    "delay_aware": "hawarma.agent.strategies.delay_aware:DelayAwareCPMStrategy",
+    # ── 用户级（推荐 CLI/TUI 使用） ──
+    "gastronome": "hawarma.agent.strategies.cpm_enhanced:CPMEnhancedCascadeStrategy",
     "dessert": "hawarma.agent.strategies.dessert:DessertStrategy",
+
+    # ── 内部级（bench/playground 精确指定） ──
+    "greedy_cascade": "hawarma.agent.strategies.default:GreedyCascadeStrategy",
+    "cpm_cascade": "hawarma.agent.strategies.cpm:CPMCascadeStrategy",
+    "visibility_cascade": "hawarma.agent.strategies.visibility_aware:VisibilityAwareCascadeStrategy",
+    "preempt_cascade": "hawarma.agent.strategies.preempt_score:PreemptScoreCascadeStrategy",
+    "cpm_enhanced_cascade": "hawarma.agent.strategies.cpm_enhanced:CPMEnhancedCascadeStrategy",
+    "delay_cascade": "hawarma.agent.strategies.delay_aware:DelayAwareCascadeStrategy",
+
+    # ── 向后兼容旧名 ──
+    "default": "hawarma.agent.strategies.default:GreedyCascadeStrategy",
+    "cpm": "hawarma.agent.strategies.cpm:CPMCascadeStrategy",
+    "visibility_aware": "hawarma.agent.strategies.visibility_aware:VisibilityAwareCascadeStrategy",
+    "preempt_score": "hawarma.agent.strategies.preempt_score:PreemptScoreCascadeStrategy",
+    "cpm_enhanced": "hawarma.agent.strategies.cpm_enhanced:CPMEnhancedCascadeStrategy",
+    "delay_aware": "hawarma.agent.strategies.delay_aware:DelayAwareCascadeStrategy",
 }
 
 
@@ -45,12 +52,17 @@ def list_strategies() -> list[str]:
     return sorted(_STRATEGY_REGISTRY.keys())
 
 
+def list_user_strategies() -> list[str]:
+    """返回用户级策略名称（CLI/TUI 使用）"""
+    return ["gastronome", "dessert"]
+
+
 def get_strategy(name: str) -> Strategy:
     """
     根据名称获取策略实例。
 
     Args:
-        name: 策略名称（如 "default", "cpm"）
+        name: 策略名称（如 "gastronome", "cpm_cascade"）
 
     Returns:
         Strategy: 策略实例

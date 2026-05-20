@@ -1,25 +1,23 @@
 """
-CPMEnhancedStrategy: CPM 增强版
+CPMEnhancedCascadeStrategy: 贪心瀑布 - CPM 增强变体（当前最优）
 
-基于 VisibilityAwareStrategy，增加单食材订单优先：
-- 1-ingredient 订单获得 CP 减少 0.3s 的优先级加成
-- 逻辑：单食材订单处理更快（只需 1 个 cooker + 1 次移动），
-  优先完成它们可以降低平均 SrvGap，提升整体吞吐
+覆写 _prioritized_orders：CP 排序 + visibility 跨越奖励 + 单食材订单优先（CP -0.3s）。
+继承自 VisibilityAwareCascadeStrategy。
 
 基准测试（100局配对）：
-  CPMEnhanced:     3934 avg reward
-  VisibilityAware: 3923 avg reward
+  CPMEnhancedCascadeStrategy:  3934 avg reward
+  VisibilityAwareCascadeStrategy: 3923 avg reward
   Δ = +11 (n.s.)
 """
 
 from __future__ import annotations
 
 from hawarma.core.state import UnifiedState
-from hawarma.agent.strategies.visibility_aware import VisibilityAwareStrategy
+from hawarma.agent.strategies.visibility_aware import VisibilityAwareCascadeStrategy
 
 
-class CPMEnhancedStrategy(VisibilityAwareStrategy):
-    """CPM 增强：单食材订单优先 + visibility 阈值感知"""
+class CPMEnhancedCascadeStrategy(VisibilityAwareCascadeStrategy):
+    """贪心瀑布变体：CP + visibility + 单食材优先（当前最优）"""
 
     SINGLE_INGREDIENT_BONUS = 0.3
 
@@ -57,3 +55,7 @@ class CPMEnhancedStrategy(VisibilityAwareStrategy):
                         best_cp = cp
                         best_order = order
         return best_order.order_id if best_order else None
+
+
+# 向后兼容别名
+CPMEnhancedStrategy = CPMEnhancedCascadeStrategy

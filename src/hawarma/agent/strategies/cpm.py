@@ -1,16 +1,14 @@
 """
-CPMStrategy: 关键路径法策略（Critical Path Method）
+CPMCascadeStrategy: 贪心瀑布 - 关键路径法变体（Critical Path Method）
+
+覆写 _prioritized_orders（CP 排序）、_try_clear_assembly（抢占）、
+_try_parallel_cooking（CPM 评分），新增 _get_critical_path 计算订单预计剩余时间。
 
 核心思想（运筹学）：
 1. 每个订单是一个项目，食材准备是并行活动
 2. 关键路径长度 = 完成该订单的预计剩余时间
 3. 优先服务关键路径最短的订单（SPT - Shortest Processing Time）
 4. 当 assembly 被长订单占用时，如果短订单已准备好，抢占 assembly
-
-与 DefaultStrategy 的区别：
-- 订单优先级：CPM 排序替代 rush+age
-- assembly 抢占：当长订单阻塞短订单时，主动清空 assembly
-- 烹饪目标：选择"单位时间收益最高"的订单集中烹饪
 """
 
 from __future__ import annotations
@@ -27,11 +25,11 @@ from hawarma.core.actions import (
     ClearAssemblyAction,
 )
 from hawarma.core.state import UnifiedState
-from hawarma.agent.strategies.default import DefaultStrategy
+from hawarma.agent.strategies.default import GreedyCascadeStrategy
 
 
-class CPMStrategy(DefaultStrategy):
-    """关键路径法策略：SPT 优先 + assembly 抢占"""
+class CPMCascadeStrategy(GreedyCascadeStrategy):
+    """贪心瀑布变体：CP 排序 + assembly 抢占"""
 
     # 操作耗时估算（秒）
     MOVE_TIME = 0.3
@@ -171,7 +169,7 @@ class CPMStrategy(DefaultStrategy):
         if not assembly.ingredients_cookers:
             return None
         
-        # 先执行 DefaultStrategy 的清理逻辑
+        # 先执行基类的清理逻辑
         result = super()._try_clear_assembly(state, assembly_ings)
         if result:
             return result
@@ -284,3 +282,7 @@ class CPMStrategy(DefaultStrategy):
         ing_name, cooker, duration, _ = candidates[0]
         order_id = self._get_order_id_for_ingredient(state, ing_name)
         return CookAction(ingredient=ing_name, cooker=cooker, duration=duration, order_id=order_id)
+
+
+# 向后兼容别名
+CPMStrategy = CPMCascadeStrategy

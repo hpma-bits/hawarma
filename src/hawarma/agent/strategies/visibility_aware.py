@@ -1,35 +1,17 @@
 """
-VisibilityAwareStrategy: visibility 区间跨越感知策略
+VisibilityAwareCascadeStrategy: 贪心瀑布 - visibility 阈值跨越感知变体
 
-核心思想：
-- visibility 倍率在每个阈值（40, 80, 160, 240, 360）处跳跃提升
-- 完成一个能让 visibility 跨越阈值的订单，其"真实价值" = 自身分数 + 后续所有订单的额外收益
-- 订单优先级 = CP（同 CPM），但跨越阈值的订单获得额外优先级加成
-
-与 CPM 的区别：
-- 优先完成那些能让 visibility 进入下一区间的订单
-- 这比单纯按分数排序更精准，因为它考虑了 visibility 的阶跃效应
+覆写 _prioritized_orders：CP 排序，跨越 visibility 阈值的订单获得额外优先级（CP -5s）。
 """
 
 from __future__ import annotations
 
-from hawarma.core.actions import (
-    Action,
-    CookAction,
-    MoveToAssemblyAction,
-    MoveToStockpileAction,
-    PullFromStockpileAction,
-    AddCondimentAction,
-    ServeOrderAction,
-    ClearCookerAction,
-    ClearAssemblyAction,
-)
 from hawarma.core.state import UnifiedState
-from hawarma.agent.strategies.cpm import CPMStrategy
+from hawarma.agent.strategies.cpm import CPMCascadeStrategy
 
 
-class VisibilityAwareStrategy(CPMStrategy):
-    """visibility 跨越感知：跨越阈值的订单获得额外优先级"""
+class VisibilityAwareCascadeStrategy(CPMCascadeStrategy):
+    """贪心瀑布变体：CP + visibility 阈值跨越感知"""
 
     # visibility 阈值
     VIS_THRESHOLDS = [40, 80, 160, 240, 360]
@@ -96,3 +78,7 @@ class VisibilityAwareStrategy(CPMStrategy):
                         best_cp = cp
                         best_order = order
         return best_order.order_id if best_order else None
+
+
+# 向后兼容别名
+VisibilityAwareStrategy = VisibilityAwareCascadeStrategy

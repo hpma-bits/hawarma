@@ -117,7 +117,7 @@ def main():
         "--strategy",
         type=str,
         default=None,
-        help="Strategy name (recommended: cpm, delay_aware, cpm_enhanced; others: default, visibility_aware, preempt_score, dessert)",
+        help="Strategy: gastronome (default, CPM enhanced cascade) or dessert",
     )
     parser.add_argument(
         "--station",

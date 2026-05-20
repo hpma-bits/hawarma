@@ -104,8 +104,8 @@ class AppConfig(BaseModel):
     matching: MatchingConfig
     game: GameConfig = Field(default_factory=GameConfig)
     debug: DebugConfig = Field(default_factory=DebugConfig)
-    strategy: str = "default"
-    """策略名称，可选: default, cpm, preempt_score, visibility_aware, cpm_enhanced, dessert"""
+    strategy: str = "gastronome"
+    """策略名称: gastronome (CPM enhanced cascade) 或 dessert"""
     stations: StationsConfig = Field(default_factory=StationsConfig)
 
 

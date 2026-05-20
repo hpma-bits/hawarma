@@ -27,7 +27,7 @@
 - **输入**: GameEnv 实例、配方列表、可选 Strategy
 - **输出**: 动作对象供执行器执行
 - **关键类**: `Runner`, 各种 `Action` 子类
-- **注意**: 所有决策逻辑已迁移到 `src/hawarma/agent/strategies/`，默认使用 `DefaultStrategy`，可通过 `strategy_registry` 切换
+- **注意**: 所有决策逻辑已迁移到 `src/hawarma/agent/strategies/`，默认使用 `GreedyCascadeStrategy`（贪心瀑布架构），可通过 `strategy_registry` 切换。用户级使用 `gastronome`（CPMEnhancedCascadeStrategy）或 `dessert`（DessertStrategy）。
 
 ---
 
@@ -46,7 +46,7 @@ Runner
     │       │
     │       └── strategy.decide(state) ──→ Action
     │               │
-    │               └─→ DefaultStrategy (决策逻辑)
+    │               └─→ GreedyCascadeStrategy (贪心瀑布决策架构)
     │
     └─→ _execute_action() - 执行 Agent 返回的动作
 ```
@@ -134,7 +134,7 @@ def step(self) -> Optional[Action]:
 
 ### Strategy 默认实现
 
-决策逻辑位于 `playground/strategies/default.py` 的 `DefaultStrategy`：
+决策逻辑位于 `src/hawarma/agent/strategies/default.py` 的 `GreedyCascadeStrategy`（贪心瀑布架构）：
 
 ```python
 def decide(self, state: UnifiedState) -> Action | None:
@@ -159,14 +159,22 @@ def decide(self, state: UnifiedState) -> Action | None:
         return action
 
     # 5. 添加调料
-    if action := self._try_add_condiment(state, assembly_ings):
+    if action := self._try_add_condiment_urgent(state, assembly_ings):
         return action
 
-    # 6. 存入 stockpile
+    # 6. 从库存取用
+    if action := self._try_pull_from_stockpile_urgent(state):
+        return action
+
+    # 7. 预烹饪
+    if action := self._try_precook(state, assembly_ings):
+        return action
+
+    # 8. 存入 stockpile
     if action := self._try_store_to_stockpile(state):
         return action
 
-    # 7. 从库存取用
+    # 9. 从库存取用（回退）
     if action := self._try_pull_from_stockpile(state):
         return action
 

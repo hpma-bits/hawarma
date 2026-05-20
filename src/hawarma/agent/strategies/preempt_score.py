@@ -1,42 +1,19 @@
 """
-PreemptScoreStrategy: 分数权重抢占策略
+PreemptScoreCascadeStrategy: 贪心瀑布 - 分数/CP 效率抢占变体
 
-核心洞察（来自效率指标分析）：
-  - 后期 cooker idle 80% 的根本原因是 assembly 饱和
-  - 当 assembly 被长订单占用时，短高价值订单在排队
-  - stockpile 堆积食材，但 assembly 吞吐受限
-
-策略设计：
-  1. 订单优先级 = 预估分数 / 关键路径（单位时间收益）
-  2. 智能抢占：当 assembly 订单还需 T 秒且已投入少时，
-     如果另一订单能在 T 秒内完成且收益更高，抢占 assembly
-  3. 抢占门槛：只抢占 assembly 中食材数 <= 1 的订单（避免浪费）
-  4. 超时保护：接近 timeout 的订单获得优先保护，不被抢占
-
-与 CPMStrategy 的区别：
-  - 优先级从纯 CP 改为 score/CP
-  - 抢占逻辑更激进但有安全阀（食材数门槛 + 超时保护）
+覆写 _prioritized_orders（score/CP 降序，单位时间收益高优先），
+覆写 _try_clear_assembly（进度感知抢占：只有 assembly 中食材数<=1 且无超时风险才抢占）。
 """
 
 from __future__ import annotations
 
-from hawarma.core.actions import (
-    Action,
-    CookAction,
-    MoveToAssemblyAction,
-    MoveToStockpileAction,
-    PullFromStockpileAction,
-    AddCondimentAction,
-    ServeOrderAction,
-    ClearCookerAction,
-    ClearAssemblyAction,
-)
+from hawarma.core.actions import ClearAssemblyAction
 from hawarma.core.state import UnifiedState
-from hawarma.agent.strategies.cpm import CPMStrategy
+from hawarma.agent.strategies.cpm import CPMCascadeStrategy
 
 
-class PreemptScoreStrategy(CPMStrategy):
-    """分数感知抢占：score/CP 排序 + 进度感知抢占"""
+class PreemptScoreCascadeStrategy(CPMCascadeStrategy):
+    """贪心瀑布变体：分数权重 CP + 进度感知抢占"""
 
     # 抢占条件：assembly 中食材数 <= 这个阈值才允许抢占
     MAX_ASSEMBLY_INGREDIENTS_FOR_PREEMPT = 1
@@ -112,7 +89,7 @@ class PreemptScoreStrategy(CPMStrategy):
         if not assembly.ingredients_cookers:
             return None
 
-        # 1) 先用 DefaultStrategy 检查死锁
+        # 1) 先检查死锁（基类逻辑）
         result = super()._try_clear_assembly(state, assembly_ings)
         if result:
             return result
@@ -213,3 +190,7 @@ class PreemptScoreStrategy(CPMStrategy):
                 continue
             return False
         return True
+
+
+# 向后兼容别名
+PreemptScoreStrategy = PreemptScoreCascadeStrategy

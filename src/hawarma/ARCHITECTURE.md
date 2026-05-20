@@ -104,13 +104,14 @@ Runner (game/bridge.py)
   ├─ Operator (game/ui_runner.py)
   │     └─ swipe 坐标映射和执行
   │
-  └─ Strategy (agent/strategies/)
-        ├─ DefaultStrategy (Gastronome)
-        ├─ CPMStrategy (Gastronome)
-        ├─ CPMEnhancedStrategy (Gastronome)
-        ├─ VisibilityAwareStrategy (Gastronome)
-        ├─ PreemptScoreStrategy (Gastronome)
-        └─ DessertStrategy (Dessert) ← 待实现
+  └─ Strategy (agent/strategies/) — 贪心瀑布（Greedy Cascade）架构
+        ├─ GreedyCascadeStrategy   (基类：10 级贪心瀑布)
+        ├─ CPMCascadeStrategy       (CP 排序 + assembly 抢占)
+        ├─ CPMEnhancedCascadeStrategy (当前最优，用户级：gastronome)
+        ├─ VisibilityAwareCascadeStrategy
+        ├─ PreemptScoreCascadeStrategy
+        ├─ DelayAwareCascadeStrategy
+        └─ DessertStrategy          (Dessert 独立瀑布)
 ```
 
 ### Agent 决策优先级（Gastronome）

@@ -1,39 +1,52 @@
 """
-内置策略集合
+内置策略集合 — 贪心瀑布（Greedy Cascade）架构
 
-所有策略都接收 UnifiedState，返回 Action | None。
+所有 Gastronome 策略共享 GreedyCascadeStrategy 的 10 级贪心瀑布决策框架，
+仅覆写 _prioritized_orders / _try_clear_assembly / _try_parallel_cooking 等来
+调整排序、抢占、烹饪策略。
 
-可用策略：
-- DefaultStrategy: 安全默认策略（主动预烹饪 + 决策优先级优化）
-- CPMStrategy: 关键路径法（SPT 优先，高吞吐）
-- VisibilityAwareStrategy: CPM + visibility 阈值感知
-- PreemptScoreStrategy: 分数权重抢占（激进型变体）
-- CPMEnhancedStrategy: CPM 增强（单食材优先 + visibility 阈值，当前最佳）
+Gastronome 策略（按基准测试排名）：
+  1. CPMEnhancedCascadeStrategy   3934  (baseline, 当前最佳)
+  2. VisibilityAwareCascadeStrategy  3923  (Δ -11, n.s.)
+  3. CPMCascadeStrategy             3878  (Δ -56, n.s.)
+  4. PreemptScoreCascadeStrategy    3793  (Δ -141, p=0.01)
+  5. GreedyCascadeStrategy          3736  (Δ -198, p=0.01)
 
-基准测试排名（100局）：
-  1. CPMEnhancedStrategy       3934  (baseline)
-  2. VisibilityAwareStrategy   3923  (Δ -11, n.s.)
-  3. CPMStrategy               3878  (Δ -56, n.s.)
-  4. PreemptScoreStrategy      3793  (Δ -141, p=0.01)
-  5. DefaultStrategy           3736  (Δ -198, p=0.01)
+Dessert 策略：
+  - DessertStrategy: 独立贪心瀑布（搅拌盆流水线）
 """
 
 from __future__ import annotations
 
-from .default import DefaultStrategy
-from .cpm import CPMStrategy
-from .visibility_aware import VisibilityAwareStrategy
-from .preempt_score import PreemptScoreStrategy
-from .cpm_enhanced import CPMEnhancedStrategy
-from .delay_aware import DelayAwareCPMStrategy
+from .default import GreedyCascadeStrategy
+from .cpm import CPMCascadeStrategy
+from .visibility_aware import VisibilityAwareCascadeStrategy
+from .preempt_score import PreemptScoreCascadeStrategy
+from .cpm_enhanced import CPMEnhancedCascadeStrategy
+from .delay_aware import DelayAwareCascadeStrategy
 from .dessert import DessertStrategy
 
+# 向后兼容别名
+DefaultStrategy = GreedyCascadeStrategy
+CPMStrategy = CPMCascadeStrategy
+VisibilityAwareStrategy = VisibilityAwareCascadeStrategy
+PreemptScoreStrategy = PreemptScoreCascadeStrategy
+CPMEnhancedStrategy = CPMEnhancedCascadeStrategy
+DelayAwareCPMStrategy = DelayAwareCascadeStrategy
+
 __all__ = [
+    "GreedyCascadeStrategy",
+    "CPMCascadeStrategy",
+    "VisibilityAwareCascadeStrategy",
+    "PreemptScoreCascadeStrategy",
+    "CPMEnhancedCascadeStrategy",
+    "DelayAwareCascadeStrategy",
+    "DessertStrategy",
+    # 向后兼容别名
     "DefaultStrategy",
     "CPMStrategy",
     "VisibilityAwareStrategy",
     "PreemptScoreStrategy",
     "CPMEnhancedStrategy",
     "DelayAwareCPMStrategy",
-    "DessertStrategy",
 ]

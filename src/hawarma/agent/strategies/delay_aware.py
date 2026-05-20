@@ -1,28 +1,23 @@
 """
-DelayAwareCPMStrategy: 延迟感知的 CPM 策略变体
+DelayAwareCascadeStrategy: 贪心瀑布 - 延迟感知变体
+
+覆写 _try_precook（更激进预烹饪：烹饪时长 > 1.0s 才预烹饪，库存上限 4）
+覆写 _try_store_to_stockpile（更激进存储：烹饪完成后快速存储，释放灶台）
 
 在显式 action_delay(300ms) + detection_delay(400ms) 条件下优化。
-
 Benchmark (50局，带延迟)：
-  1. DelayAwareCPMStrategy  4711  ★
-  2. CPMStrategy            4614  (Δ -97, n.s.)
-  3. DefaultStrategy        4054  (Δ -657, p=0.01)
-
-核心思路：
-- 检测延迟意味着 agent 看到订单时已晚 400ms → 更激进地预烹饪补偿
-- 每个动作消耗 300ms → 只预烹饪值得的食材（烹饪时长 > 1.0s）
-- 烹饪完成即存储，腾出灶台做更多预烹饪
+  1. DelayAwareCascadeStrategy  4711  ★
+  2. CPMCascadeStrategy          4614  (Δ -97, n.s.)
 """
 
 from __future__ import annotations
 
-from hawarma.core.actions import CookAction, MoveToStockpileAction
 from hawarma.core.state import UnifiedState
-from hawarma.agent.strategies.cpm import CPMStrategy
+from hawarma.agent.strategies.cpm import CPMCascadeStrategy
 
 
-class DelayAwareCPMStrategy(CPMStrategy):
-    """延迟感知策略 — 智能预烹饪版"""
+class DelayAwareCascadeStrategy(CPMCascadeStrategy):
+    """贪心瀑布变体：延迟感知 - 智能预烹饪 + 快速存储"""
 
     MIN_PRECOOK_DURATION = 1.0
     PRECOOK_STORE_THRESHOLD = 1.0
@@ -121,3 +116,7 @@ class DelayAwareCPMStrategy(CPMStrategy):
             return MoveToStockpileAction(cooker=cooker_name, slot=slot)
 
         return None
+
+
+# 向后兼容别名
+DelayAwareCPMStrategy = DelayAwareCascadeStrategy

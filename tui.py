@@ -149,11 +149,7 @@ class RecipeSelectionScreen(Screen):
     def _strategy_options_for_station(self, station: Station) -> tuple[list[tuple[str, str]], list[str]]:
         """根据 station 返回可用的策略选项列表"""
         if station == Station.GASTRONOME:
-            options = [
-                ("cpm (稳健首选)", "cpm"),
-                ("delay_aware (有延迟优化)", "delay_aware"),
-                ("cpm_enhanced (经典最优)", "cpm_enhanced"),
-            ]
+            options = [("gastronome (CPM enhanced cascade)", "gastronome")]
         else:
             options = [("dessert", "dessert")]
         return options, [v for _, v in options]

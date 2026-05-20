@@ -116,11 +116,11 @@ TUI 鎻愪緵瀹屾暣鐨勪华琛ㄦ澘鐣岄潰锛屽寘鎷?
 
 ```bash
 # 閰嶇疆鏂囦欢: configs/config.yaml
-strategy: "cpm"
+strategy: "gastronome"      # CPM enhanced cascade (濞寸偠鐫愰敍灞惧春閸? 或 "dessert"
 
 # 鍛戒护琛岃鐩?
-python main.py --strategy cpm
-python -m playground bench --games 50 --strategies default,cpm
+python main.py --strategy gastronome
+python -m playground bench --games 50 --strategies gastronome,dessert
 ```
 
 ### 杩愯娴嬭瘯
