@@ -22,6 +22,7 @@ from airtest.core.api import G, Template
 from loguru import logger
 
 from hawarma.config import AppConfig
+from hawarma.paths import resolve_path
 from hawarma.recipe import Recipe
 from hawarma.utils.image_utils import local_match
 
@@ -53,7 +54,7 @@ class Scanner:
         """
         self.config = config
         self.recipes = recipes
-        self.image_dir = Path(config.image_directory)
+        self.image_dir = resolve_path(config.image_directory)
 
         # 配方 slug -> Recipe 映射
         self._recipe_by_slug = {r.slug: r for r in recipes}

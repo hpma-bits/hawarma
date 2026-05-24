@@ -7,6 +7,10 @@ Reward 数据查表模块
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from hawarma.paths import data_path
+
 
 class RecipeRewardLookup:
     """
@@ -23,12 +27,10 @@ class RecipeRewardLookup:
 
     def _load(self, csv_path: str) -> None:
         import csv
-        from pathlib import Path
 
         path = Path(csv_path)
         if not path.exists():
-            # 尝试从项目根目录查找
-            path = Path(__file__).parent.parent.parent / csv_path
+            path = data_path(path.name)
 
         with open(path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
@@ -123,11 +125,10 @@ class RecipeTimeoutLookup:
 
     def _load(self, csv_path: str) -> None:
         import csv
-        from pathlib import Path
 
         path = Path(csv_path)
         if not path.exists():
-            path = Path(__file__).parent.parent.parent / csv_path
+            path = data_path(path.name)
 
         with open(path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)

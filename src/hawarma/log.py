@@ -14,6 +14,8 @@ from pathlib import Path
 
 from loguru import logger
 
+from hawarma.paths import log_dir
+
 
 def setup_logging(log_level: str = "INFO", terminal: bool = True, log_name: str = "game") -> None:
     """
@@ -41,11 +43,11 @@ def setup_logging(log_level: str = "INFO", terminal: bool = True, log_name: str 
             colorize=True,
         )
 
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
+    log_path = log_dir()
+    log_path.mkdir(exist_ok=True)
 
     logger.add(
-        str(log_dir / f"{log_name}_{{time:YYYYMMDD_HHmmss}}.log"),
+        str(log_path / f"{log_name}_{{time:YYYYMMDD_HHmmss}}.log"),
         level="DEBUG",
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} | {message}",
         encoding="utf-8",

@@ -1,9 +1,11 @@
 [project]
 name = "hawarma-auto"
-version = "0.1.2"
-description = "Add your description here"
+version = "0.2.0"
+description = "Cooking game automation agent with image detection and strategy optimization"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+keywords = ["game-automation", "airtest", "agent"]
 dependencies = [
     "airtest",
     "loguru>=0.7.3",

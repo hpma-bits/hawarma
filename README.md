@@ -1,87 +1,127 @@
-# Project Overview
+# Hawarma - 烹饪游戏自动化 Agent
 
-This project is a bot for a cooking game, designed to automate the process of cooking and serving dishes. It uses the `airtest` framework to interact with an Android emulator running the game. The bot is capable of detecting customer orders, managing a cooking pipeline, and strategically stockpiling ingredients to improve efficiency.
+自动识别订单、管理烹饪流水线、最优策略配菜的自动化机器人。
 
-## Main Technologies
+## 快速开始
 
-*   **Python:** The core programming language.
-*   **Airtest:** A framework for UI automation of games and apps.
-*   **Loguru:** A library for pleasant and powerful logging.
-*   **Pydantic:** A library for data validation and settings management.
-*   **Questionary:** A library for building interactive command-line prompts.
+### 1. 安装 Python
 
-## Architecture
+下载并安装 **Python 3.10+**：https://www.python.org/downloads/
 
-The application is structured into several key components:
+> Windows 安装时请勾选 **"Add Python to PATH"**
 
-*   **`src/hawarma/cli.py`:** The CLI entry point of the application. Handles initial setup, user input for recipe selection, and the main application loop.
-*   **`src/hawarma/`:** Core application package.
-*   **`src/hawarma/config.py`:** Configuration module. Loads settings from `configs/config.yaml` via Pydantic models.
-*   **`src/hawarma/bridge/`:** Real-game bridge -- coordinates `Scanner` (image-based order detection), `GameEnv` (state tracking), `Operator` (swipe/touch execution), and the agent decision loop.
-*   **`src/hawarma/agent/`:** Agent shell + pluggable strategy pattern. `Strategy.decide(state)` returns actions; the shell handles diagnostics and statistics.
-*   **`src/hawarma/services/recipe_manager.py`:** Loads and queries recipe data from `data/recipes.json`.
-*   **`src/hawarma/env_simulator.py`:** Lightweight deterministic game simulator used as the ground-truth game rules engine (shared by playground).
-*   **`playground/`:** Simulation environment for benchmarking strategies without a real device.
-*   **`configs/config.yaml`:** Main configuration file -- screen coordinates, matching parameters, game settings.
-*   **`data/`:** Game data including `recipes.json`, `reward.csv`, and `recipe_timeout.csv`.
-
-# Building and Running
-
-## Prerequisites
-
-*   Python 3.10 or higher
-*   An Android emulator with the game installed. The emulator must be connected to `adb` at `127.0.0.1:16384`.
-
-## Installation
-
-Requires [uv](https://docs.astral.sh/uv/).
+### 2. 下载项目
 
 ```bash
-uv sync
+git clone https://github.com/你的用户名/hawarma.git
+cd hawarma
 ```
 
-This installs all dependencies including dev extras (pytest, etc.).
+### 3. 一键安装
 
-## Running the Application
-
-### 命令行界面 (CLI)
-
+**Windows:**
 ```bash
+setup.bat
+```
+
+**Mac/Linux:**
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+### 4. 启动
+
+**方式一：双击 `run.bat`（Windows）或 `./run.sh`（Mac/Linux）**
+
+**方式二：命令行**
+```bash
+# TUI 图形界面（推荐）
+python -m hawarma.tui
+
+# CLI 命令行界面
 python -m hawarma
 ```
 
-The application will prompt you to select the recipes to use for the current session. After selection, the bot starts automatically and processes orders.
+## 前置要求
 
-### 文本用户界面 (TUI)
+- **Python 3.10+**
+- **Android 模拟器**（如 MuMu、雷电、夜神）
+- 模拟器需开启 ADB 调试，默认连接地址 `127.0.0.1:16384`
+- 游戏已安装在模拟器中
+
+## 使用方式
+
+### TUI 仪表板（推荐）
 
 ```bash
 python -m hawarma.tui
 ```
 
-TUI 提供完整的仪表板界面，包含：
-- 📋 配方选择界面
-- ⚙️ 配置面板（可编辑所有配置）
-- 🎮 游戏控制界面（开始、暂停、停止）
-- 📊 实时日志显示
+提供完整的图形界面：
+- 配方选择
+- 配置面板
+- 游戏控制（开始/暂停/停止）
+- 实时日志
 
-### Switching Strategies
-
-```bash
-python -m hawarma --strategy cpm
-```
-
-Available strategies: `default`, `cpm`, `preempt_score`, `visibility_aware`.
-
-### Running Benchmarks (No Device Required)
+### CLI 命令行
 
 ```bash
-python -m playground bench --games 50
-python -m playground bench --games 100 --strategies default,cpm --csv results.csv
+python -m hawarma                    # 默认策略
+python -m hawarma --strategy cpm     # 指定策略
+python -m hawarma --station dessert   # 甜点站
 ```
 
-### Running Tests
+### 策略列表
+
+| 策略名 | 说明 |
+|--------|------|
+| `gastronome` | CPM 增强瀑布策略（推荐） |
+| `dessert` | 甜点站策略 |
+| `default` | 默认策略 |
+
+### 模拟器基准测试（无需设备）
+
+```bash
+python -m playground run --seed 42
+python -m playground bench --games 50 --strategies gastronome,dessert
+```
+
+## 项目结构
+
+```
+hawarma/
+├── configs/config.yaml    # 配置文件（屏幕坐标、策略参数等）
+├── data/                  # 游戏数据（配方、分数表）
+├── static/img/            # 模板图片
+├── src/hawarma/           # 核心代码
+│   ├── cli.py             # CLI 入口
+│   ├── tui.py             # TUI 入口
+│   ├── config.py          # 配置管理
+│   ├── paths.py           # 路径解析
+│   ├── agent/             # 策略引擎
+│   ├── game/              # 游戏桥接（扫描、操作、验证）
+│   ├── core/              # 数据模型
+│   └── services/          # 配方管理等
+├── playground/            # 模拟器基准测试
+├── tests/                 # 单元测试
+└── setup.bat / setup.sh   # 一键安装脚本
+```
+
+## 配置
+
+编辑 `configs/config.yaml` 修改：
+- ADB 连接地址
+- 屏幕分辨率和坐标
+- 匹配阈值
+- 策略参数
+
+## 运行测试
 
 ```bash
 python -m unittest discover tests
-python -m unittest discover playground/tests
 ```
+
+## 许可证
+
+MIT License

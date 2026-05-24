@@ -140,7 +140,7 @@ def main():
         strategy = None
         logger.info(f"Using strategy from config: {config.strategy}")
 
-    recipe_manager = RecipeManager(recipes_path="data/recipes.json")
+    recipe_manager = RecipeManager()
     all_recipes = recipe_manager.get_all_recipes()
     # 按 station 过滤食谱
     filtered_recipes = [r for r in all_recipes if r.station == station]

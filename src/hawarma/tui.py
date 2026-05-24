@@ -525,7 +525,7 @@ class HawarmaApp(App):
         self.theme = "catppuccin-frappe"
         setup_logging(terminal=False, log_name="tui")
         self.config = load_config()
-        self.recipe_manager = RecipeManager(recipes_path="data/recipes.json")
+        self.recipe_manager = RecipeManager()
         self.selected_recipes: list[Recipe] = []
         self.station: Station = Station.GASTRONOME
         self.game_strategy: str | None = None

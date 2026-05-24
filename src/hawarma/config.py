@@ -15,6 +15,8 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field
 
+from hawarma.paths import config_path as get_config_path
+
 
 class ScreenConfig(BaseModel):
     resolution: tuple[int, int]
@@ -109,15 +111,19 @@ class AppConfig(BaseModel):
     stations: StationsConfig = Field(default_factory=StationsConfig)
 
 
-def load_config(config_path: Path | str = "configs/config.yaml") -> AppConfig:
+def load_config(config_path: Path | str | None = None) -> AppConfig:
     """Loads the application configuration from a YAML file."""
+    if config_path is None:
+        config_path = get_config_path()
     with open(config_path, "r", encoding="utf-8") as f:
         config_data = yaml.safe_load(f)
     return AppConfig.model_validate(config_data)
 
 
-def save_config(config: AppConfig, config_path: Path | str = "configs/config.yaml") -> None:
+def save_config(config: AppConfig, config_path: Path | str | None = None) -> None:
     """Saves the application configuration to a YAML file."""
+    if config_path is None:
+        config_path = get_config_path()
     # model_dump with mode='json' converts tuples to lists for clean YAML output
     config_data = config.model_dump(mode="json")
     with open(config_path, "w", encoding="utf-8") as f:

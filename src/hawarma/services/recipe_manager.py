@@ -15,6 +15,7 @@ from pathlib import Path
 
 from loguru import logger
 
+from hawarma.paths import data_path
 from hawarma.recipe import Recipe
 
 
@@ -30,7 +31,10 @@ class RecipeManager:
         Args:
             recipes_path: The path to the JSON file containing recipe data.
         """
-        self._recipes_path = Path(recipes_path)
+        path = Path(recipes_path)
+        if not path.exists():
+            path = data_path(path.name)
+        self._recipes_path = path
         self._recipes: list[Recipe] = []
         self._recipes_by_slug: dict[str, Recipe] = {}
 

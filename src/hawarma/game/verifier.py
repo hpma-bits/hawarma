@@ -20,6 +20,7 @@ from airtest.aircv import crop_image
 from loguru import logger
 
 from hawarma.config import AppConfig
+from hawarma.paths import resolve_path
 
 
 class Verifier:
@@ -32,11 +33,11 @@ class Verifier:
 
     def __init__(self, config: AppConfig):
         self.config = config
-        self.image_dir = Path(config.image_directory)
+        self.image_dir = resolve_path(config.image_directory)
         self.assembly_region: tuple[int, int, int, int] = (1150, 720, 1600, 1030)
         self._empty_template: Optional[Template] = None
         self._save_debug = config.debug.save_assembly_verify_screenshots
-        self._debug_dir = Path(config.debug.screenshot_directory) / "assembly_verify"
+        self._debug_dir = resolve_path(config.debug.screenshot_directory) / "assembly_verify"
         if self._save_debug and not self._debug_dir.exists():
             self._debug_dir.mkdir(parents=True, exist_ok=True)
         self._load_template()
