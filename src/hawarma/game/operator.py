@@ -56,7 +56,7 @@ class Operator:
         self._pickup_positions: list[tuple[int, int]] = [
             tuple(pos) for pos in config.screen.pickup_stations_positions
         ]
-        self._mixing_bowl_position: tuple[int, int] = (1245, 870)
+        self._mixing_bowl_position: tuple[int, int] = tuple(config.stations.dessert.mixing_bowl_position)
         
         # 异步锁
         self._lock = asyncio.Lock()

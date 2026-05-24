@@ -32,6 +32,7 @@ class TestVerifier(unittest.TestCase):
         config.debug.save_assembly_verify_screenshots = False
         config.debug.screenshot_directory = "logs/order_screenshots"
         config.matching.assembly_threshold = 0.9
+        config.screen.assembly_region = (1150, 720, 1600, 1030)
         return config
 
     def _mock_device(self, screen):
