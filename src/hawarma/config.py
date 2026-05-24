@@ -13,31 +13,50 @@
 from pathlib import Path
 
 import yaml
+from loguru import logger
 from pydantic import BaseModel, Field
 
 from hawarma.paths import config_path as get_config_path
 
 
 class ScreenConfig(BaseModel):
-    resolution: tuple[int, int]
-    save_screenshots: bool
-    assembly_station_position: tuple[int, int]
-    trash_position: tuple[int, int]
+    resolution: tuple[int, int] = (1920, 1080)
+    save_screenshots: bool = False
+    assembly_station_position: tuple[int, int] = (1375, 865)
+    trash_position: tuple[int, int] = (25, 590)
     timer_region: tuple[int, int, int, int] = (0, 0, 400, 140)
     assembly_region: tuple[int, int, int, int] = (1150, 720, 1600, 1030)
-    raw_ingredients_positions: list[tuple[int, int]]
-    cookers_positions: list[tuple[int, int]]
-    stockpile_positions: list[tuple[int, int]]
-    condiments_positions: list[tuple[int, int]]
-    orders_regions: list[tuple[int, int, int, int]]
-    ingredients_regions: list[tuple[int, int, int, int]]
-    pickup_stations_positions: list[tuple[int, int]]
+    raw_ingredients_positions: list[tuple[int, int]] = Field(default_factory=lambda: [
+        (115, 930), (265, 930), (150, 780), (300, 780),
+        (200, 670), (350, 670), (255, 570), (390, 570),
+    ])
+    cookers_positions: list[tuple[int, int]] = Field(default_factory=lambda: [
+        (595, 585), (850, 585), (1120, 585), (1370, 585),
+    ])
+    stockpile_positions: list[tuple[int, int]] = Field(default_factory=lambda: [
+        (800, 900), (950, 900), (1100, 900),
+    ])
+    condiments_positions: list[tuple[int, int]] = Field(default_factory=lambda: [
+        (1675, 915), (1825, 925), (1640, 800), (1800, 800),
+        (1615, 685), (1775, 685), (1600, 550), (1725, 555),
+    ])
+    orders_regions: list[tuple[int, int, int, int]] = Field(default_factory=lambda: [
+        (500, 80, 720, 210), (875, 80, 1095, 210),
+        (1250, 80, 1470, 210), (1620, 80, 1840, 210),
+    ])
+    ingredients_regions: list[tuple[int, int, int, int]] = Field(default_factory=lambda: [
+        (440, 250, 780, 385), (815, 250, 1155, 385),
+        (1190, 250, 1530, 385), (1565, 250, 1905, 385),
+    ])
+    pickup_stations_positions: list[tuple[int, int]] = Field(default_factory=lambda: [
+        (610, 135), (990, 135), (1360, 135), (1740, 135),
+    ])
 
 
 class MatchingConfig(BaseModel):
-    ingredients_strategy: list[str]
-    ingredients_threshold: float
-    save_best_match_images: bool
+    ingredients_strategy: list[str] = Field(default_factory=lambda: ["tpl"])
+    ingredients_threshold: float = 0.7
+    save_best_match_images: bool = False
     assembly_threshold: float = 0.9
     default_strategy: list[str] = Field(default_factory=list)
 
@@ -99,12 +118,12 @@ class StationsConfig(BaseModel):
 
 class AppConfig(BaseModel):
     adb_address: str = "127.0.0.1:16384"
-    image_directory: str
-    log_directory: str
-    recipes_data_path: str
-    episode_duration: int
-    screen: ScreenConfig
-    matching: MatchingConfig
+    image_directory: str = "static/img"
+    log_directory: str = "logs"
+    recipes_data_path: str = "data/recipes.json"
+    episode_duration: int = 105
+    screen: ScreenConfig = Field(default_factory=ScreenConfig)
+    matching: MatchingConfig = Field(default_factory=MatchingConfig)
     game: GameConfig = Field(default_factory=GameConfig)
     debug: DebugConfig = Field(default_factory=DebugConfig)
     strategy: str = "gastronome"
@@ -112,11 +131,28 @@ class AppConfig(BaseModel):
     stations: StationsConfig = Field(default_factory=StationsConfig)
 
 
+def _default_config() -> AppConfig:
+    """Create a default AppConfig with sensible defaults."""
+    return AppConfig()
+
+
 def load_config(config_path: Path | str | None = None) -> AppConfig:
-    """Loads the application configuration from a YAML file."""
+    """Loads the application configuration from a YAML file.
+
+    If the config file does not exist, generates a default one and saves it.
+    """
     if config_path is None:
         config_path = get_config_path()
-    with open(config_path, "r", encoding="utf-8") as f:
+
+    path = Path(config_path)
+    if not path.exists():
+        logger.info(f"Config file not found at {path}, generating default config")
+        config = _default_config()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        save_config(config, path)
+        return config
+
+    with open(path, "r", encoding="utf-8") as f:
         config_data = yaml.safe_load(f)
     return AppConfig.model_validate(config_data)
 
