@@ -86,7 +86,7 @@
 ## 🔗 架构
 
 ```
-main.py
+cli.py
   ↓
 Runner (game/bridge.py)
   │
@@ -161,7 +161,7 @@ Runner._execute_action()
 ## 🚀 运行
 
 ```bash
-python main.py
+python -m hawarma
 ```
 
 选择配方后自动运行游戏，结束后显示统计。

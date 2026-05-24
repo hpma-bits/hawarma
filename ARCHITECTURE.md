@@ -33,7 +33,6 @@ hawarma/
 ├── static/            # 静态资源（模板图片、APK）
 ├── tests/             # 测试代码
 ├── logs/              # 运行日志
-├── main.py            # 入口文件
 └── AGENTS.md          # 上下文索引（入口文档）
 ```
 
@@ -41,7 +40,7 @@ hawarma/
 
 ### `src/hawarma/` — 核心代码
 - **地位**: Agent 自动化烹饪游戏的全部逻辑
-- **架构**: `main.py` → `Runner` → 双循环（scan_loop + agent_loop）
+- **架构**: `cli.py` → `Runner` → 双循环（scan_loop + agent_loop）
 - **深入阅读**: [`src/hawarma/ARCHITECTURE.md`](src/hawarma/ARCHITECTURE.md)
 
 ### `docs/` — 项目文档

@@ -214,10 +214,10 @@ stations:
 
 ```bash
 # CLI（station 模式默认为 gastronome）
-python main.py --station dessert --strategy dessert
+python -m hawarma --station dessert --strategy dessert
 
 # TUI
-python tui.py  # 在配置面板中选择 station 和 strategy
+python -m hawarma.tui  # 在配置面板中选择 station 和 strategy
 
 # 代码
 from hawarma.agent.registry import get_strategy

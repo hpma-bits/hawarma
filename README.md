@@ -14,7 +14,7 @@ This project is a bot for a cooking game, designed to automate the process of co
 
 The application is structured into several key components:
 
-*   **`main.py`:** The entry point of the application. Handles initial setup, user input for recipe selection, and the main application loop.
+*   **`src/hawarma/cli.py`:** The CLI entry point of the application. Handles initial setup, user input for recipe selection, and the main application loop.
 *   **`src/hawarma/`:** Core application package.
 *   **`src/hawarma/config.py`:** Configuration module. Loads settings from `configs/config.yaml` via Pydantic models.
 *   **`src/hawarma/bridge/`:** Real-game bridge -- coordinates `Scanner` (image-based order detection), `GameEnv` (state tracking), `Operator` (swipe/touch execution), and the agent decision loop.
@@ -47,7 +47,7 @@ This installs all dependencies including dev extras (pytest, etc.).
 ### 命令行界面 (CLI)
 
 ```bash
-python main.py
+python -m hawarma
 ```
 
 The application will prompt you to select the recipes to use for the current session. After selection, the bot starts automatically and processes orders.
@@ -55,7 +55,7 @@ The application will prompt you to select the recipes to use for the current ses
 ### 文本用户界面 (TUI)
 
 ```bash
-python tui.py
+python -m hawarma.tui
 ```
 
 TUI 提供完整的仪表板界面，包含：
@@ -67,7 +67,7 @@ TUI 提供完整的仪表板界面，包含：
 ### Switching Strategies
 
 ```bash
-python main.py --strategy cpm
+python -m hawarma --strategy cpm
 ```
 
 Available strategies: `default`, `cpm`, `preempt_score`, `visibility_aware`.

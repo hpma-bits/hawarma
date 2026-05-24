@@ -16,9 +16,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from hawarma.agent.registry import list_strategies, get_strategy
 

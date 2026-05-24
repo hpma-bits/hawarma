@@ -14,7 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-hawarma-tui = "tui:main"
+hawarma = "hawarma.cli:main"
+hawarma-tui = "hawarma.tui:main"
 
 [build-system]
 requires = ["setuptools>=64"]

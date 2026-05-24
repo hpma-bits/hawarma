@@ -11,5 +11,5 @@ if not exist ".venv" (
 
 :: 启动 TUI
 call .venv\Scripts\activate.bat
-python tui.py
+python -m hawarma.tui
 pause

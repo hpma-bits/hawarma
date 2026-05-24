@@ -95,13 +95,13 @@
 #### 鍛戒护琛岀晫闈?CLI)
 ```bash
 .venv\Scripts\activate
-python main.py
+python -m hawarma
 ```
 
 #### 鏂囨湰鐢ㄦ埛鐣岄潰 (TUI)
 ```bash
 .venv\Scripts\activate
-python tui.py
+python -m hawarma.tui
 ```
 
 TUI 鎻愪緵瀹屾暣鐨勪华琛ㄦ澘鐣岄潰锛屽寘鎷?
@@ -119,7 +119,7 @@ TUI 鎻愪緵瀹屾暣鐨勪华琛ㄦ澘鐣岄潰锛屽寘鎷?
 strategy: "gastronome"      # CPM enhanced cascade (濞寸偠鐫愰敍灞惧春閸? 或 "dessert"
 
 # 鍛戒护琛岃鐩?
-python main.py --strategy gastronome
+python -m hawarma --strategy gastronome
 python -m playground bench --games 50 --strategies gastronome,dessert
 ```
 

@@ -550,7 +550,7 @@ class GameEnv(GastronomeEnv, DessertEnv):
 # runner.py — 调整后的构造顺序
 def __init__(self, env: GastronomeEnv | DessertEnv, operator: Operator,
              scanner: Scanner, verifier: Verifier, strategy: Strategy):
-    # 1. Operator 已在 main.py 创建（从 recipes 推断灶台名称和坐标）
+    # 1. Operator 已在 cli.py 创建（从 recipes 推断灶台名称和坐标）
     self.ui = operator
     self.env = env
     # ...
@@ -606,10 +606,10 @@ Phase 1 中甜点 `serve_from_cooker` 不执行验证。直接执行 `ui.serve_f
 
 Runner 使用**构造函数注入**接收所有组件，使用 **ExecMixin** 模式组织 station 专用执行方法。
 
-#### 组装根在 main.py
+#### 组装根在 cli.py
 
 ```python
-# main.py — 组装根
+# cli.py — 组装根
 station = Station(args.station)  # 或 TUI 选择
 station_recipes = [r for r in all_recipes if r.station == station]
 strategy = get_strategy(args.strategy)
@@ -729,7 +729,7 @@ if isinstance(self.env, DessertEnv) and action_type == "ServeFromCookerAction":
 
 #### Scanner / Verifier 传入策略
 
-Scanner 和 Verifier 通过 DI 直接传入 Runner（不强制定义抽象接口）。创建逻辑集中在 main.py。这比 Env/Operator 的注入要求更低——Scanner 和 Verifier 硬件依赖性强，不需要替换实现，但集中在 main.py 创建便于管理依赖关系。
+Scanner 和 Verifier 通过 DI 直接传入 Runner（不强制定义抽象接口）。创建逻辑集中在 cli.py。这比 Env/Operator 的注入要求更低——Scanner 和 Verifier 硬件依赖性强，不需要替换实现，但集中在 cli.py 创建便于管理依赖关系。
 
 ---
 
@@ -1157,7 +1157,7 @@ class AppConfig(BaseModel):
 | `src/hawarma/agent/registry.py` | 注册 `dessert` 策略 |
 | `src/hawarma/agent/strategies/__init__.py` | 导出 `DessertStrategy` |
 | `configs/config.yaml` | 添加 `stations` 配置节；移除 `cookers` 字段 |
-| `main.py` | 增加 `--station` CLI 参数；recipe 按 station 过滤；**组装根**（创建 Operator→GameEnv→Runner，DI 注入） |
+| `cli.py` | 增加 `--station` CLI 参数；recipe 按 station 过滤；**组装根**（创建 Operator→GameEnv→Runner，DI 注入） |
 | `tui.py` | 增加 station 选择 UI；recipe 按 station 过滤；组装根 |
 | `docs/ARCHITECTURE.md` | 更新文档列表 |
 | `docs/game_rules.md` | 添加甜点模式规则 |
@@ -1179,14 +1179,14 @@ class AppConfig(BaseModel):
 
 | 步骤 | 任务 | 验证 |
 |------|------|------|
-| 0.1 | 设计 CLI `--station` 参数（`main.py`） | `python main.py --station dessert` 可用 |
+| 0.1 | 设计 CLI `--station` 参数（`cli.py`） | `python -m hawarma --station dessert` 可用 |
 | 0.2 | TUI 配置面板增加 station dropwdown（`tui.py`） | UI 可切换 station |
-| 0.3 | `main.py` 和 `tui.py` 的 recipe 列表按 station 过滤 | 选择 station 后食谱列表对应 |
+| 0.3 | `cli.py` 和 `tui.py` 的 recipe 列表按 station 过滤 | 选择 station 后食谱列表对应 |
 | 0.4 | 拆分 Env 接口：`Env`（共享）+ `GastronomeEnv(Env)` + `DessertEnv(Env)` | Import 成功 |
 | 0.5 | `GameEnv` 实现 `GastronomeEnv` 和 `DessertEnv` | Import 成功 |
 | 0.6 | `Operator._build_mappings()` 根据 station 分支 | 坐标映射正确 |
 | 0.7 | 移除 `AppConfig.cookers` 和 `config.yaml` 中的 `cookers` 字段 | 配置加载正常 |
-| 0.8 | `main.py` 作为组装根：创建 Operator→GameEnv→Runner，DI 注入 | Runner 构造正确 |
+| 0.8 | `cli.py` 作为组装根：创建 Operator→GameEnv→Runner，DI 注入 | Runner 构造正确 |
 | 0.9 | 拆分 Runner：`Runner(ABC)` + `GastronomeExecMixin` + `DessertExecMixin` + 子类 | Import 成功 |
 | 0.10 | 运行现有测试 | 全部通过 |
 
@@ -1224,7 +1224,7 @@ class AppConfig(BaseModel):
 | 4.1 | `Operator._build_mappings()` 根据 station 分支 | 坐标映射正确 |
 | 4.2 | 在 `Operator` 添加 `add_condiment_to_mixing_bowl()`、`stir()`、`move_mixing_bowl_to_cooker()`、`serve_from_cooker()` | Import 成功 |
 | 4.3 | 拆分 Runner：`Runner(ABC)` + `GastronomeExecMixin` + `DessertExecMixin` + `GastronomeRunner` + `DessertRunner` | Import 成功 |
-| 4.4 | `main.py` 作为组装根，创建组件后 DI 注入 Runner | 运行正确 |
+| 4.4 | `cli.py` 作为组装根，创建组件后 DI 注入 Runner | 运行正确 |
 | 4.5 | `Runner._agent_loop` 添加 `ServeFromCookerAction` 到动画窗口守卫 | Import 成功 |
 | 4.6 | 运行集成测试 | 全部通过 |
 
@@ -1271,7 +1271,7 @@ class AppConfig(BaseModel):
 | Recipe 过滤 | 选择 station 后只显示对应 station 的食谱 | 防止误选 |
 | 动画窗口守卫 | `ServeFromCookerAction` 与 `ServeOrderAction` 一起跳过 | 防止送餐动画期操作冲突 |
 | Env 接口拆分 | `Env`（共享）+ `GastronomeEnv(Env)` + `DessertEnv(Env)` | 避免胖接口，Runner 不会误调不属于当前 station 的方法 |
-| Runner DI | 构造函数注入 Env、Operator、Scanner、Verifier | DIP 合规，main.py 作为组装根 |
+| Runner DI | 构造函数注入 Env、Operator、Scanner、Verifier | DIP 合规，cli.py 作为组装根 |
 | Runner ExecMixin | `GastronomeExecMixin` / `DessertExecMixin` + dispatch table | exec 方法集按 station 分离，共享循环逻辑在基类 |
 | station 推断 | 从 Env 类型推断（`isinstance(env, DessertEnv)`），无显式 station 参数 | Runner 不需要额外的 station 参数 |
 | Scanner/Verifier | DI 传入但不强制定义抽象接口 | 硬件依赖性强，不需要替换实现，集中创建便于管理 |

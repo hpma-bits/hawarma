@@ -29,7 +29,7 @@ uv pip install -r requirements.txt
 ## 运行 TUI
 
 ```bash
-python tui.py
+python -m hawarma.tui
 ```
 
 ## 快捷键
@@ -118,7 +118,7 @@ python tui.py
 
 ## 开发说明
 
-TUI 代码位于 `tui.py` 文件中，使用 Textual 框架构建。主要包含以下组件：
+TUI 代码位于 `src/hawarma/tui.py` 文件中，使用 Textual 框架构建。主要包含以下组件：
 
 - `MainMenuScreen`: 主菜单屏幕
 - `RecipeSelectionScreen`: 配方选择屏幕

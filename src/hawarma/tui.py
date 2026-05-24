@@ -10,10 +10,6 @@ Hawarma TUI - 烹饪游戏自动化 Agent 的文本用户界面
 """
 
 import asyncio
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from textual import work
 from textual.app import App, ComposeResult

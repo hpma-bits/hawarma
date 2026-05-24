@@ -5,11 +5,8 @@ TUI 测试脚本
 """
 
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-from tui import HawarmaApp
+from hawarma.tui import HawarmaApp
 
 
 def test_tui_creation():

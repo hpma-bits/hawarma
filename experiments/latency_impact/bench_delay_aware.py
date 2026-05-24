@@ -10,8 +10,6 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-
 from hawarma.agent.registry import get_strategy
 from playground.bench.compare import print_comparison, export_csv
 from experiments.latency_impact.delay_aware_cpm import DelayAwareCPMStrategy

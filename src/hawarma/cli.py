@@ -5,10 +5,6 @@ Hawarma - 烹饪游戏自动化 Agent
 """
 
 import asyncio
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import questionary
 from loguru import logger
