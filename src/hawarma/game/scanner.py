@@ -288,31 +288,6 @@ class Scanner:
 
         return None
 
-        best_match = None
-        best_confidence = 0.0
-
-        for recipe in candidates:
-            cooker_name = recipe.cookers[0]
-            cooker_path = self.image_dir / f"icon-{cooker_name}.jpg"
-            if not cooker_path.exists():
-                continue
-
-            match = local_match(Template(str(cooker_path)), cooker_roi, screen)
-            if match:
-                confidence = float(match.get("confidence", 0))
-                if confidence > best_confidence:
-                    best_confidence = confidence
-                    best_match = recipe
-
-        if best_match and best_confidence > 0.6:
-            logger.debug(
-                f"Resolved conflict for {first_ing}: {best_match.slug} "
-                f"(cooker confidence: {best_confidence:.2f})"
-            )
-            return best_match
-
-        return matched_recipe
-
     RUSH_DETECTION_POSITIONS = [
         (480, 195),
         (860, 195),
