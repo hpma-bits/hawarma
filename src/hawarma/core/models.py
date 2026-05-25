@@ -169,7 +169,8 @@ class Order:
     """
     订单信息
 
-    统一的订单数据结构，用于真实环境和模拟器。
+    共享订单数据结构，只包含真实环境和模拟器都需要的字段。
+    模拟器专有数据（recipe 对象、调料追踪、visibility）由模拟器内部维护。
     """
 
     order_id: int
@@ -179,11 +180,6 @@ class Order:
     timeout_at: float
     done: bool = False
     served_at: float | None = None
-    spawned_at_visibility: float = 0.0
-    recipe: object | None = None
-    """完整 Recipe 对象（模拟器专用，真实环境为 None）"""
-    condiments_applied: dict[str, int] = field(default_factory=dict)
-    """已添加的调料（模拟器专用）"""
 
     @property
     def is_completed(self) -> bool:

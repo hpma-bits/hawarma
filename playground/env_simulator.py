@@ -191,6 +191,15 @@ class GameSimulator:
         
         # 订单得分查表
         self._reward_lookup: RecipeRewardLookup | None = None
+        
+        # 模拟器专有数据（不属于共享 Order 模型）
+        self._order_recipes: dict[int, Recipe] = {}
+        self._order_condiments: dict[int, dict[str, int]] = {}
+        self._order_visibility: dict[int, float] = {}
+    
+    def _get_recipe(self, order: Order) -> Recipe:
+        """获取订单对应的配方对象（模拟器内部数据）"""
+        return self._order_recipes[order.order_id]
     
     # ------------------------------------------------------------------
     # 配置和初始化
@@ -535,18 +544,20 @@ class GameSimulator:
                 f"Slot {slot_idx} is already occupied"
             )
         
-        # 创建订单（加成比例在生成瞬间锁定）
+        # 创建订单
         timeout = self._calculate_timeout(recipe, is_rush)
         order = Order(
             order_id=self._next_order_id,
             recipe_slug=recipe.slug,
-            recipe=recipe,
             is_rush=is_rush,
             created_at=self._state.time,
             timeout_at=self._state.time + timeout,
-            condiments_applied=condiments if condiments else {},
-            spawned_at_visibility=self._state.total_visibility,
         )
+        
+        # 存储模拟器专有数据
+        self._order_recipes[order.order_id] = recipe
+        self._order_condiments[order.order_id] = condiments if condiments else {}
+        self._order_visibility[order.order_id] = self._state.total_visibility
         
         self._next_order_id += 1
         
@@ -715,9 +726,10 @@ class GameSimulator:
             for order in self._state.orders:
                 if order and not order.is_completed:
                     # Check if this ingredient is part of the order's recipe
-                    for ing in order.recipe.ingredients:
+                    recipe = self._get_recipe(order)
+                    for ing in recipe.ingredients:
                         if ing.name == ingredient_name and ing.cooker_type == cooker_type:
-                            self._state.assembly.target_recipe_slug = order.recipe.slug
+                            self._state.assembly.target_recipe_slug = recipe.slug
                             break
                     if self._state.assembly.target_recipe_slug:
                         break
@@ -1188,13 +1200,13 @@ class GameSimulator:
             return ActionResult.failure_result("Assembly is not complete")
         
         # 检查组装站的配方是否匹配订单的配方
-        if self._state.assembly.target_recipe_slug != order.recipe.slug:
+        recipe = self._get_recipe(order)
+        if self._state.assembly.target_recipe_slug != recipe.slug:
             return ActionResult.failure_result(
                 f"Assembly recipe does not match order recipe"
             )
         
         # 检查调料是否满足要求
-        recipe = order.recipe
         assembly_condiments = self._state.assembly.condiments
         
         # 验证每种调料数量
@@ -1213,7 +1225,7 @@ class GameSimulator:
         if self._reward_lookup is None:
             self._reward_lookup = RecipeRewardLookup()
         has_condiments = bool(assembly_condiments)
-        visibility = self._reward_lookup.get_visibility(order.recipe.slug, has_condiments)
+        visibility = self._reward_lookup.get_visibility(recipe.slug, has_condiments)
         self._state.total_visibility += visibility
         
         # 标记订单完成
@@ -1235,11 +1247,11 @@ class GameSimulator:
             details={
                 'order_id': order.order_id,
                 'slot': slot_idx,
-                'recipe': order.recipe.slug,
+                'recipe': recipe.slug,
                 'score': score,
                 'served_at': order.served_at,
                 'visibility': visibility,
-                'spawned_at_visibility': order.spawned_at_visibility,
+                'spawned_at_visibility': self._order_visibility.get(order.order_id, 0.0),
             }
         )
         
@@ -1284,11 +1296,12 @@ class GameSimulator:
             self._reward_lookup = RecipeRewardLookup()
         
         has_condiments = bool(assembly_condiments)
+        recipe_slug = order.recipe_slug
         return self._reward_lookup.get_score(
-            order.recipe.slug,
+            recipe_slug,
             has_condiments=has_condiments,
             is_rush=order.is_rush,
-            total_visibility=order.spawned_at_visibility,
+            total_visibility=self._order_visibility.get(order.order_id, 0.0),
         )
     
     def _advance_slots(self, current_time: float) -> None:
@@ -1399,7 +1412,7 @@ class GameSimulator:
                     details={
                         'order_id': order.order_id,
                         'slot': i,
-                        'recipe': order.recipe.slug
+                        'recipe': order.recipe_slug
                     }
                 ))
                 
@@ -1531,17 +1544,19 @@ class GameSimulator:
         # 计算超时时间（基于recipe）
         timeout = self._calculate_timeout(recipe, is_rush)
         
-        # 创建订单（加成比例在生成瞬间锁定）
+# 创建订单
         order = Order(
             order_id=self._next_order_id,
             recipe_slug=recipe.slug,
-            recipe=recipe,
             is_rush=is_rush,
             created_at=created_at,
             timeout_at=created_at + timeout,
-            condiments_applied={},
-            spawned_at_visibility=self._state.total_visibility,
         )
+        
+        # 存储模拟器专有数据
+        self._order_recipes[order.order_id] = recipe
+        self._order_condiments[order.order_id] = condiments if condiments else {}
+        self._order_visibility[order.order_id] = self._state.total_visibility
         
         self._next_order_id += 1
         

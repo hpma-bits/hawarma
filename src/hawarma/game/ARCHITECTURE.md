@@ -1,47 +1,32 @@
-# src/hawarma/bridge 目录架构
+# src/hawarma/game 目录架构
 
 ## 📁 目录概述
 
-此目录包含真实游戏环境的桥接层，连接 Agent 与真实游戏。
+此目录包含真实游戏环境的状态追踪和管理层。
 
 ## ⚠️ 重要提示
 
-**一旦本目录有变化（新增/删除/重命名文件），请立即更新本文档！**
+**一旦本目录有变化（新增/删除/重命名文件），务必对开头注释进行相应的必要更新，同时更新所属目录的md**
 
 ## 📄 文件列表
 
 ### `__init__.py`
 - **地位**: 包初始化文件
-- **功能**: 导出所有桥接组件
-- **导出**: `GameEnv`, `Scanner`, `Operator`, `Runner`
+- **功能**: 导出所有游戏组件
+- **导出**: `GameEnv`, `Scanner`, `Operator`, `Runner`, `CookerState`, `AssemblyState`, `StockpileSlot`, `Order`, `MixingBowlState`
 
-### `base_environment.py`
-- **地位**: 游戏环境抽象基类
-- **状态**: ✅ 完成
-- **功能**:
-  - 定义 Agent 与环境交互的统一接口
-  - 定义统一数据结构（OrderInfo, CookerState, AssemblyState, StockpileSlot）
-  - 确保 GameEnv 和 SimulatorEnvironment 使用相同的数据结构
-- **输入**: 无（纯接口定义）
-- **输出**: Env 抽象基类和统一数据结构
-- **关键类**: `Env`, `OrderInfo`, `CookerState`, `AssemblyState`, `StockpileSlot`
-- **CookerState 字段**: `busy`, `ingredient_name`, `cooker_type`, `started_at`, `done_at`, `expired_at`
-- **CookerState 方法**: `reset()`, `is_done(current_time)`, `is_expired(current_time)`
+### `env.py`
+- **地位**: 模块文档（不再定义 ABC）
+- **功能**: 说明真实环境和模拟环境通过 UnifiedState + Action 共享数据契约，不定义行为接口
 
-### `environment.py`
-- **地位**: 真实游戏环境
-- **状态**: ✅ 完成
+### `game_env.py`
+- **地位**: 真实游戏状态追踪器
 - **功能**:
-  - 继承 Env，实现统一接口
-  - 追踪灶台状态（通过程序逻辑，含过期时间管理）
-  - 追踪组装站状态（含配方校验）
-  - 追踪库存状态
-  - 追踪订单状态
-  - 管理游戏时间
-  - **食材过期强制阻止**：`move_to_assembly` / `move_to_stockpile` 拒绝过期食材
-  - **组装站配方校验**：`add_to_assembly` / `add_condiment` 校验食材和调料是否属于目标配方
-- **输入**: UI操作结果、订单检测结果、配方字典
-- **输出**: 游戏状态供Agent决策
+  - 独立类（不继承 ABC），追踪灶台、组装站、搅拌盆、库存、订单、调料
+  - 通过 `get_unified_state()` 产出 `UnifiedState` 供 Strategy 决策
+  - 异步环境：状态由 Scanner/Runner 外部更新，不实现 `step()`
+- **输入**: UI操作结果、订单检测结果
+- **输出**: `UnifiedState` 快照供 Strategy 决策
 - **关键类**: `GameEnv`
 
 ### `scanner.py`
@@ -403,7 +388,7 @@ if action:
 class CookerState:
     """灶台状态"""
     busy: bool = False
-    ingredient_name: Optional[str] = None
+    item_name: Optional[str] = None
     cooker_type: Optional[str] = None
     started_at: Optional[float] = None
     done_at: Optional[float] = None
@@ -459,7 +444,7 @@ class AssemblyState:
 @dataclass
 class StockpileSlot:
     """库存槽位"""
-    ingredient_name: Optional[str] = None
+    item_name: Optional[str] = None
     cooker_type: Optional[str] = None
     count: int = 0
 ```

@@ -1,19 +1,15 @@
 """
 Game 模块
 
-地位：游戏控制层，管理游戏生命周期、环境状态、UI 操作和订单检测。
+游戏控制层，管理游戏生命周期、环境状态、UI 操作和订单检测。
 
 ⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
 """
 
-from .env import Env, GastronomeEnv, DessertEnv
-from hawarma.core.models import CookerState, AssemblyState, StockpileSlot, Order, MixingBowlState
 from .game_env import GameEnv
+from hawarma.core.models import CookerState, AssemblyState, StockpileSlot, Order, MixingBowlState
 
 __all__ = [
-    "Env",
-    "GastronomeEnv",
-    "DessertEnv",
     "GameEnv",
     "CookerState",
     "AssemblyState",

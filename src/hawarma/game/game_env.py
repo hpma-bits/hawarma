@@ -1,8 +1,8 @@
 """
 游戏环境（真实游戏）
 
-地位：追踪真实游戏的状态，通过程序逻辑维护灶台、组装站、库存状态
-      接口供 Agent 使用
+GameEnv 追踪真实游戏的状态，通过程序逻辑维护灶台、组装站、库存状态。
+不继承 ABC — 真实环境和模拟环境本质不同（同步 vs 异步），通过 UnifiedState + Action 共享数据契约。
 
 输入：UI操作结果、订单检测结果
 输出：游戏状态供Agent决策
@@ -16,7 +16,6 @@ import time
 
 from loguru import logger
 
-from .env import Env, GastronomeEnv, DessertEnv
 from hawarma.core.models import (
     AssemblyState,
     CookerState,
@@ -26,7 +25,7 @@ from hawarma.core.models import (
 )
 
 
-class GameEnv(GastronomeEnv, DessertEnv):
+class GameEnv:
     """
     真实游戏环境
 

@@ -53,7 +53,7 @@
 - **地位**: 数据层，定义 Action、State、Model、Reward
 - **文件**:
   - `actions.py`: 所有 Action 定义（按 station 分组）
-  - `models.py`: CookerState、AssemblyState、MixingBowlState、StockpileSlot、OrderInfo
+  - `models.py`: CookerState、AssemblyState、MixingBowlState、StockpileSlot、Order
   - `state.py`: UnifiedState，env → strategy 的数据契约
   - `reward.py`: RecipeRewardLookup、RecipeTimeoutLookup，精确分数和超时查表
   - `__init__.py`: 导出所有类型
@@ -80,11 +80,11 @@
 - **功能**: 扫描、状态追踪、UI 执行、生命周期管理
 - **文件**:
   - `runner.py`: Runner，三循环并行架构（scan + timeout + agent）
-  - `game_env.py`: GameEnv，程序逻辑追踪状态
+  - `game_env.py`: GameEnv，独立类（不再继承 ABC），程序逻辑追踪状态
   - `scanner.py`: Scanner，图像检测订单（食材、rush 检测、冲突解决）
   - `operator.py`: Operator，swipe 坐标映射和执行
   - `verifier.py`: Verifier，组装站清空验证
-  - `env.py`: Env ABC + GastronomeEnv / DessertEnv 类型标注
+  - `env.py`: 模块文档（真实环境和模拟环境通过 UnifiedState + Action 共享数据契约，不定义 ABC）
   - `patch_maxtouch.py`: Maxtouch swipe 补丁
 
 ### `services/` 子目录

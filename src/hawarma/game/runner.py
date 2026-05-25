@@ -22,7 +22,7 @@ from loguru import logger
 from hawarma.core.models import Order
 from hawarma.agent.strategy import Strategy
 
-from .env import Env, DessertEnv
+from .game_env import GameEnv
 from .scanner import Scanner
 from .operator import Operator
 from .verifier import Verifier
@@ -37,7 +37,7 @@ class Runner:
 
     def __init__(
         self,
-        env: Env,
+        env: GameEnv,
         operator: Operator,
         scanner: Scanner,
         verifier: Verifier,
