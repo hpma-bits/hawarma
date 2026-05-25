@@ -279,13 +279,13 @@ class GreedyCascadeStrategy(Strategy):
         )
         if not has_active:
             return None
-        needed = self._get_needed_ingredient_names(state)
+        needed = self._get_needed_item_names(state)
         if not needed:
             return None
         for slot_name, slot in state.stockpile.items():
-            if slot.ingredient_name in needed and slot.count > 0:
-                if self._can_add_to_assembly(state, slot.ingredient_name, slot.cooker_type):
-                    return PullFromStockpileAction(slot=slot_name, ingredient=slot.ingredient_name)
+            if slot.item_name in needed and slot.count > 0:
+                if self._can_add_to_assembly(state, slot.item_name, slot.cooker_type):
+                    return PullFromStockpileAction(slot=slot_name, ingredient=slot.item_name)
         return None
 
     def _try_pull_from_stockpile(self, state: UnifiedState) -> PullFromStockpileAction | None:
@@ -297,13 +297,13 @@ class GreedyCascadeStrategy(Strategy):
             )
             if not has_active:
                 return None
-        needed_ings = self._get_needed_ingredient_names(state)
+        needed_ings = self._get_needed_item_names(state)
         if not needed_ings:
             return None
         for slot_name, slot in state.stockpile.items():
-            if slot.ingredient_name in needed_ings and slot.count > 0:
-                if self._can_add_to_assembly(state, slot.ingredient_name, slot.cooker_type):
-                    return PullFromStockpileAction(slot=slot_name, ingredient=slot.ingredient_name)
+            if slot.item_name in needed_ings and slot.count > 0:
+                if self._can_add_to_assembly(state, slot.item_name, slot.cooker_type):
+                    return PullFromStockpileAction(slot=slot_name, ingredient=slot.item_name)
         return None
 
     # ====================================================================
@@ -467,7 +467,7 @@ class GreedyCascadeStrategy(Strategy):
 
     def _try_store_to_stockpile(self, state: UnifiedState) -> MoveToStockpileAction | None:
         assembly = state.assembly
-        needed = self._get_needed_ingredient_names(state)
+        needed = self._get_needed_item_names(state)
 
         for cooker_name, cooker in state.cookers.items():
             if not cooker.busy or cooker.done_at is None:
@@ -597,7 +597,7 @@ class GreedyCascadeStrategy(Strategy):
 
         return []
 
-    def _get_needed_ingredient_names(self, state: UnifiedState) -> set[str]:
+    def _get_needed_item_names(self, state: UnifiedState) -> set[str]:
         return {ing for ing, _ in self._get_needed_ingredients(state)}
 
     def _can_add_to_assembly(self, state: UnifiedState, ingredient: str, cooker_type: str | None = None) -> bool:
@@ -672,21 +672,21 @@ class GreedyCascadeStrategy(Strategy):
 
     def _has_in_stockpile(self, state: UnifiedState, ingredient: str, cooker_type: str | None = None) -> bool:
         for slot in state.stockpile.values():
-            if slot.ingredient_name == ingredient and slot.count > 0:
+            if slot.item_name == ingredient and slot.count > 0:
                 if cooker_type is None or slot.cooker_type == cooker_type:
                     return True
         return False
 
     def _find_available_slot(self, state: UnifiedState, ingredient: str, cooker_type: str) -> str | None:
         for slot_name, slot in state.stockpile.items():
-            if slot.ingredient_name is None or (slot.ingredient_name == ingredient and slot.cooker_type == cooker_type):
+            if slot.item_name is None or (slot.item_name == ingredient and slot.cooker_type == cooker_type):
                 if slot.count < 5:
                     return slot_name
         return None
 
     def _try_increment_stockpile(self, state: UnifiedState, ingredient: str, cooker_type: str) -> str | None:
         for slot_name, slot in state.stockpile.items():
-            if slot.ingredient_name == ingredient and slot.cooker_type == cooker_type:
+            if slot.item_name == ingredient and slot.cooker_type == cooker_type:
                 if slot.count < 5:
                     return slot_name
         return None

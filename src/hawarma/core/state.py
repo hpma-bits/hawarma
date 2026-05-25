@@ -14,7 +14,6 @@ from .models import (
     CookerState,
     MixingBowlState,
     Order,
-    OrderInfo,
     StockpileSlot,
 )
 from hawarma.recipe import Station

@@ -79,7 +79,7 @@ class DelayAwareCascadeStrategy(CPMCascadeStrategy):
 
     def _try_store_to_stockpile(self, state: UnifiedState) -> MoveToStockpileAction | None:
         assembly = state.assembly
-        needed = self._get_needed_ingredient_names(state)
+        needed = self._get_needed_item_names(state)
 
         candidates: list[tuple[str, str, float, float]] = []
         for cooker_name, cooker in state.cookers.items():

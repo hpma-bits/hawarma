@@ -27,7 +27,7 @@ from hawarma.core.actions import (
 from hawarma.core.models import (
     AssemblyState,
     CookerState,
-    OrderInfo,
+    Order,
     StockpileSlot,
 )
 
@@ -41,7 +41,7 @@ def mock_unified_state(time: float = 0.0) -> UnifiedState:
     return UnifiedState(
         time=time,
         orders=(
-            OrderInfo(order_id=1, recipe_slug="burger", is_rush=False, created_at=0.0, timeout_at=60.0),
+            Order(order_id=1, recipe_slug="burger", is_rush=False, created_at=0.0, timeout_at=60.0),
             None,
             None,
             None,
@@ -52,8 +52,8 @@ def mock_unified_state(time: float = 0.0) -> UnifiedState:
         },
         assembly=AssemblyState(),
         stockpile={
-            "stk0": StockpileSlot(),
-            "stk1": StockpileSlot(),
+            "slot0": StockpileSlot(),
+            "slot1": StockpileSlot(),
         },
         recipes={"burger": object()},  # mock recipe adapter
         game_duration=90.0,

@@ -45,7 +45,7 @@ class DelayAwareCPMStrategy(CPMStrategy):
         - 只有组装站被占用时才存储
         """
         assembly = state.assembly
-        needed = self._get_needed_ingredient_names(state)
+        needed = self._get_needed_item_names(state)
 
         # 如果组装站空闲，优先不存储 — 让食材留在灶台上等待直接移到组装站
         if assembly.is_free and not assembly.ingredients_cookers:

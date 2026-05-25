@@ -19,7 +19,7 @@ import time
 from airtest.core.api import G
 from loguru import logger
 
-from hawarma.core.models import OrderInfo
+from hawarma.core.models import Order
 from hawarma.agent.strategy import Strategy
 
 from .env import Env, DessertEnv
@@ -171,7 +171,7 @@ class Runner:
             scanned_types.append((d.recipe_slug, d.is_rush))
 
         now = time.time()
-        new_orders: list[OrderInfo | None] = [None] * 4
+        new_orders: list[Order | None] = [None] * 4
         reused_ids: set[int] = set()
 
         for i, (recipe_slug, is_rush) in enumerate(scanned_types):
@@ -220,7 +220,7 @@ class Runner:
 
             # 创建新订单
             timeout = 40.0 if is_rush else 70.0
-            order = OrderInfo(
+            order = Order(
                 order_id=self.env._next_order_id,
                 recipe_slug=recipe_slug,
                 is_rush=is_rush,

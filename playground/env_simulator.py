@@ -109,7 +109,7 @@ class GameSimulator:
         sim = GameSimulator()
         sim.load_recipes("data/recipes.json")
         sim.setup_cookers(['grill', 'oven', 'skillet', 'pot'])
-        sim.setup_stockpile(['stk0', 'stk1', 'stk2'])
+        sim.setup_stockpile(['slot0', 'slot1', 'slot2'])
         
         # 注入订单
         sim.inject_order(0, recipe, is_rush=False)
@@ -293,7 +293,7 @@ class GameSimulator:
         self.setup_cookers(self._game_config.available_cookers)
         
         # 库存区保持为空（由Agent自己决定存什么）
-        self.setup_stockpile(['stk0', 'stk1', 'stk2'])
+        self.setup_stockpile(['slot0', 'slot1', 'slot2'])
         
         if self._debug:
             print(f"Game configured with {len(recipe_slugs)} recipes")
@@ -434,7 +434,7 @@ class GameSimulator:
         初始化库存区
         
         Args:
-            slots: 库存槽位名称列表（如 ['stk0', 'stk1', 'stk2']）
+            slots: 库存槽位名称列表（如 ['slot0', 'slot1', 'slot2']）
         """
         self._state.stockpile = {slot_name: StockpileSlot() for slot_name in slots}
         
@@ -710,28 +710,26 @@ class GameSimulator:
         self._state.assembly.ingredients.append((ingredient_name, cooker_type, self._state.time))
         
         # 设置目标配方 - use current order if exists, otherwise search for matching recipe
-        if self._state.assembly.target_recipe is None:
+        if self._state.assembly.target_recipe_slug is None:
             # First, try to find the recipe from current orders that need this ingredient
             for order in self._state.orders:
                 if order and not order.is_completed:
                     # Check if this ingredient is part of the order's recipe
                     for ing in order.recipe.ingredients:
                         if ing.name == ingredient_name and ing.cooker_type == cooker_type:
-                            self._state.assembly.target_recipe = order.recipe
                             self._state.assembly.target_recipe_slug = order.recipe.slug
                             break
-                    if self._state.assembly.target_recipe:
+                    if self._state.assembly.target_recipe_slug:
                         break
 
             # Fallback: search for any recipe that has this ingredient (original behavior)
-            if self._state.assembly.target_recipe is None:
+            if self._state.assembly.target_recipe_slug is None:
                 for recipe in self._recipes.values():
                     for ing in recipe.ingredients:
                         if ing.name == ingredient_name and ing.cooker_type == cooker_type:
-                            self._state.assembly.target_recipe = recipe
                             self._state.assembly.target_recipe_slug = recipe.slug
                             break
-                    if self._state.assembly.target_recipe:
+                    if self._state.assembly.target_recipe_slug:
                         break
         
         # 清空灶台
@@ -743,13 +741,14 @@ class GameSimulator:
                 timestamp=self._state.time,
                 event_type=EventType.ASSEMBLY_COMPLETED,
                 details={
-                    'recipe': self._state.assembly.target_recipe.slug if self._state.assembly.target_recipe else None,
+                    'recipe': self._state.assembly.target_recipe_slug,
                     'ingredients': [ing[0] for ing in self._state.assembly.ingredients]
                 }
             )
             self._event_history.append(complete_event)
             if self._debug:
-                print(f"Assembly completed for recipe: {self._state.assembly.target_recipe.name if self._state.assembly.target_recipe else 'Unknown'}")
+                slug = self._state.assembly.target_recipe_slug or 'Unknown'
+                print(f"Assembly completed for recipe: {slug}")
         
         # 创建事件
         event = Event(
@@ -797,9 +796,12 @@ class GameSimulator:
             )
         
         # 获取目标配方
-        recipe = self._state.assembly.target_recipe
-        if recipe is None:
+        recipe_slug = self._state.assembly.target_recipe_slug
+        if recipe_slug is None:
             return ActionResult.failure_result("No target recipe for assembly")
+        recipe = self._recipes.get(recipe_slug)
+        if recipe is None:
+            return ActionResult.failure_result(f"Unknown recipe slug: {recipe_slug}")
         
         # 检查是否为无效调料（非recipe要求）- 忽略但不报错
         if condiment_name not in recipe.condiments:
@@ -895,7 +897,7 @@ class GameSimulator:
         if not stockpile_slot.can_add(ingredient_name, cooker_type):
             return ActionResult.failure_result(
                 f"Cannot add {ingredient_name} ({cooker_type}) to slot '{slot_name}' "
-                f"(incompatible with existing: {stockpile_slot.ingredient_name})"
+                f"(incompatible with existing: {stockpile_slot.item_name})"
             )
         
         # 检查库存槽位是否已满
@@ -953,7 +955,7 @@ class GameSimulator:
         if stockpile_slot.count <= 0:
             return ActionResult.failure_result(f"Stockpile slot '{slot_name}' is empty")
         
-        ingredient_name = stockpile_slot.ingredient_name
+        ingredient_name = stockpile_slot.item_name
         cooker_type = stockpile_slot.cooker_type
         
         # 检查组装站兼容性
@@ -966,14 +968,13 @@ class GameSimulator:
         self._state.assembly.ingredients.append((ingredient_name, cooker_type, self._state.time))
         
         # 设置目标配方（如果是第一个食材）
-        if self._state.assembly.target_recipe is None:
+        if self._state.assembly.target_recipe_slug is None:
             for recipe in self._recipes.values():
                 for ing in recipe.ingredients:
                     if ing.name == ingredient_name and ing.cooker_type == cooker_type:
-                        self._state.assembly.target_recipe = recipe
                         self._state.assembly.target_recipe_slug = recipe.slug
                         break
-                if self._state.assembly.target_recipe:
+                if self._state.assembly.target_recipe_slug:
                     break
         
         # 从库存移除
@@ -1004,7 +1005,7 @@ class GameSimulator:
         
         支持的来源位置：
         - cooker名称（如 'grill'）
-        - stockpile名称（如 'stk0'）
+        - stockpile名称（如 'slot0'）
         - 'assembly'（清空整个组装站）
         
         Args:
@@ -1079,7 +1080,7 @@ class GameSimulator:
                     f"Stockpile slot '{from_location}' is empty"
                 )
             
-            ingredient_name = stockpile_slot.ingredient_name
+            ingredient_name = stockpile_slot.item_name
             
             # 清空库存槽位
             stockpile_slot.clear()
@@ -1187,7 +1188,7 @@ class GameSimulator:
             return ActionResult.failure_result("Assembly is not complete")
         
         # 检查组装站的配方是否匹配订单的配方
-        if self._state.assembly.target_recipe != order.recipe:
+        if self._state.assembly.target_recipe_slug != order.recipe.slug:
             return ActionResult.failure_result(
                 f"Assembly recipe does not match order recipe"
             )
@@ -1262,7 +1263,6 @@ class GameSimulator:
         discarded = [ing[0] for ing in self._state.assembly.ingredients]
         self._state.assembly.ingredients.clear()
         self._state.assembly.condiments.clear()
-        self._state.assembly.target_recipe = None
         self._state.assembly.target_recipe_slug = None
         
         return ActionResult.success_result()

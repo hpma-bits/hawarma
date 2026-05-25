@@ -25,7 +25,6 @@ from typing import Any
 
 from hawarma.core.models import (
     Order,
-    OrderInfo,
     CookerState,
     AssemblyState,
     StockpileSlot,
@@ -177,7 +176,6 @@ __all__ = [
 
     # 统一状态类型（从 core.models 导入）
     'Order',
-    'OrderInfo',
     'CookerState',
     'AssemblyState',
     'StockpileSlot',

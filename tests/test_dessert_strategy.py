@@ -16,7 +16,7 @@ import unittest
 from dataclasses import dataclass, field
 
 from hawarma.core.state import UnifiedState
-from hawarma.core.models import CookerState, AssemblyState, MixingBowlState, OrderInfo
+from hawarma.core.models import CookerState, AssemblyState, MixingBowlState, Order
 from hawarma.core.actions import (
     ServeFromCookerAction,
     ClearCookerAction,
@@ -63,7 +63,7 @@ class TestDessertStrategy(unittest.TestCase):
         defaults = {
             "time": 10.0,
             "orders": (
-                OrderInfo(order_id=1, recipe_slug="domeFigueMiel", is_rush=False,
+                Order(order_id=1, recipe_slug="domeFigueMiel", is_rush=False,
                           created_at=0.0, timeout_at=80.0, done=False),
                 None, None, None,
             ),
@@ -163,9 +163,9 @@ class TestDessertStrategy(unittest.TestCase):
     def test_add_when_cooker_has_same_recipe_two_orders(self):
         """双同名 order，灶台已有 1 份 → 跳过第一 order，为第二 order 生产."""
         orders = (
-            OrderInfo(order_id=1, recipe_slug="domeFigueMiel", is_rush=False,
+            Order(order_id=1, recipe_slug="domeFigueMiel", is_rush=False,
                       created_at=0.0, timeout_at=80.0, done=False),
-            OrderInfo(order_id=2, recipe_slug="domeFigueMiel", is_rush=False,
+            Order(order_id=2, recipe_slug="domeFigueMiel", is_rush=False,
                       created_at=1.0, timeout_at=80.0, done=False),
             None, None,
         )
@@ -189,7 +189,7 @@ class TestDessertStrategy(unittest.TestCase):
     def test_add_when_cooker_has_different_recipe(self):
         """灶台忙 A recipe，但是 B recipe 的 order → 正常启动 B 批次."""
         orders = (
-            OrderInfo(order_id=2, recipe_slug="velvetTiramisu", is_rush=False,
+            Order(order_id=2, recipe_slug="velvetTiramisu", is_rush=False,
                       created_at=1.0, timeout_at=80.0, done=False),
             None, None, None,
         )
@@ -223,11 +223,11 @@ class TestDessertStrategy(unittest.TestCase):
             "cooling_plate": CookerState(cooker_type="cooling_plate"),
         }
         orders = (
-            OrderInfo(order_id=1, recipe_slug="domeFigueMiel", is_rush=False,
+            Order(order_id=1, recipe_slug="domeFigueMiel", is_rush=False,
                       created_at=0.0, timeout_at=80.0, done=False),
-            OrderInfo(order_id=2, recipe_slug="domeFigueMiel", is_rush=False,
+            Order(order_id=2, recipe_slug="domeFigueMiel", is_rush=False,
                       created_at=1.0, timeout_at=80.0, done=False),
-            OrderInfo(order_id=3, recipe_slug="domeFigueMiel", is_rush=False,
+            Order(order_id=3, recipe_slug="domeFigueMiel", is_rush=False,
                       created_at=2.0, timeout_at=80.0, done=False),
             None,
         )
@@ -404,9 +404,9 @@ class TestDessertStrategy(unittest.TestCase):
     def test_rush_order_prioritized(self):
         """Rush orders should be processed before normal orders."""
         # Two orders: one rush, one normal. Both need the first ingredient.
-        order_rush = OrderInfo(order_id=1, recipe_slug="domeFigueMiel", is_rush=True,
+        order_rush = Order(order_id=1, recipe_slug="domeFigueMiel", is_rush=True,
                                created_at=0.0, timeout_at=80.0, done=False)
-        order_normal = OrderInfo(order_id=2, recipe_slug="velvetTiramisu", is_rush=False,
+        order_normal = Order(order_id=2, recipe_slug="velvetTiramisu", is_rush=False,
                                  created_at=1.0, timeout_at=80.0, done=False)
         state = self._make_state(
             orders=(order_normal, order_rush, None, None),

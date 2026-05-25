@@ -70,8 +70,8 @@ class CPMCascadeStrategy(GreedyCascadeStrategy):
 
         stockpile_ings: dict[str, int] = {}
         for slot in state.stockpile.values():
-            if slot.count > 0 and slot.ingredient_name:
-                stockpile_ings[slot.ingredient_name] = stockpile_ings.get(slot.ingredient_name, 0) + slot.count
+            if slot.count > 0 and slot.item_name:
+                stockpile_ings[slot.item_name] = stockpile_ings.get(slot.item_name, 0) + slot.count
 
         cooking: dict[str, float] = {}
         for c in state.cookers.values():
@@ -134,8 +134,8 @@ class CPMCascadeStrategy(GreedyCascadeStrategy):
         
         stockpile_ings: dict[str, int] = {}
         for slot in state.stockpile.values():
-            if slot.count > 0 and slot.ingredient_name:
-                stockpile_ings[slot.ingredient_name] = stockpile_ings.get(slot.ingredient_name, 0) + slot.count
+            if slot.count > 0 and slot.item_name:
+                stockpile_ings[slot.item_name] = stockpile_ings.get(slot.item_name, 0) + slot.count
         
         cooking_done: dict[str, bool] = {}
         for c in state.cookers.values():

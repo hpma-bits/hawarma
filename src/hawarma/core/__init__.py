@@ -23,7 +23,7 @@ from .actions import (
     ClearMixingBowlAction,
 )
 from .state import UnifiedState
-from .models import CookerState, AssemblyState, MixingBowlState, StockpileSlot, OrderInfo
+from .models import CookerState, AssemblyState, MixingBowlState, StockpileSlot, Order
 
 __all__ = [
     "Action",
@@ -46,5 +46,5 @@ __all__ = [
     "AssemblyState",
     "MixingBowlState",
     "StockpileSlot",
-    "OrderInfo",
+    "Order",
 ]

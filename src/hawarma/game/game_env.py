@@ -21,7 +21,7 @@ from hawarma.core.models import (
     AssemblyState,
     CookerState,
     MixingBowlState,
-    OrderInfo,
+    Order,
     StockpileSlot,
 )
 
@@ -54,7 +54,7 @@ class GameEnv(GastronomeEnv, DessertEnv):
             f"slot{i}": StockpileSlot() for i in range(stockpile_slots)
         }
 
-        self._orders: list[OrderInfo | None] = [None] * 4
+        self._orders: list[Order | None] = [None] * 4
 
         self._game_start_time: float | None = None
         self._game_duration = game_duration
@@ -86,7 +86,7 @@ class GameEnv(GastronomeEnv, DessertEnv):
         return time.time() - self._game_start_time
 
     @property
-    def orders(self) -> list[OrderInfo | None]:
+    def orders(self) -> list[Order | None]:
         """当前订单列表"""
         return self._orders
 
@@ -191,7 +191,7 @@ class GameEnv(GastronomeEnv, DessertEnv):
         if stockpile_slot.count <= 0:
             return False
 
-        ingredient = stockpile_slot.ingredient_name
+        ingredient = stockpile_slot.item_name
         cooker_type = stockpile_slot.cooker_type
 
         # 如果组装站为空，根据(ingredient, cooker)推断目标配方
@@ -616,7 +616,7 @@ class GameEnv(GastronomeEnv, DessertEnv):
         now = time.time()
         timeout = 40.0 if is_rush else 70.0
 
-        self._orders[target_slot] = OrderInfo(
+        self._orders[target_slot] = Order(
             order_id=order_id,
             recipe_slug=recipe_slug,
             is_rush=is_rush,
@@ -649,7 +649,7 @@ class GameEnv(GastronomeEnv, DessertEnv):
 
         return timed_out
 
-    def get_order_by_id(self, order_id: int) -> OrderInfo | None:
+    def get_order_by_id(self, order_id: int) -> Order | None:
         """根据ID获取订单"""
         for order in self._orders:
             if order and order.order_id == order_id:
@@ -682,21 +682,21 @@ class GameEnv(GastronomeEnv, DessertEnv):
     def get_stockpile_count(self, ingredient: str) -> int:
         """获取指定食材的库存数量"""
         for slot in self._stockpile.values():
-            if slot.ingredient_name == ingredient:
+            if slot.item_name == ingredient:
                 return slot.count
         return 0
 
     def find_stockpile_slot(self, ingredient: str) -> str | None:
         """找到存储指定食材的库存槽位"""
         for slot_name, slot in self._stockpile.items():
-            if slot.ingredient_name == ingredient and slot.count > 0:
+            if slot.item_name == ingredient and slot.count > 0:
                 return slot_name
         return None
 
     def find_empty_stockpile_slot(self) -> str | None:
         """找到空的库存槽位"""
         for slot_name, slot in self._stockpile.items():
-            if slot.ingredient_name is None or slot.count == 0:
+            if slot.item_name is None or slot.count == 0:
                 return slot_name
         return None
 

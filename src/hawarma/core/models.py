@@ -47,8 +47,6 @@ class AssemblyState:
     ingredients: list[tuple[str, str, float]] = field(default_factory=list)
     """(ingredient_name, cooker_type, added_at) — 真实环境中 added_at 可设为 0.0"""
     target_recipe_slug: str | None = None
-    target_recipe: object | None = None
-    """完整 Recipe 对象（模拟器专用，真实环境为 None）"""
     owner_order_id: int | None = None
     condiments: dict[str, int] = field(default_factory=dict)
 
@@ -64,7 +62,7 @@ class AssemblyState:
 
     @property
     def is_complete(self) -> bool:
-        """是否所有食材已到齐（由子类或外部设置 target_recipe 后可用）"""
+        """是否所有食材已到齐"""
         return self.target_recipe_slug is not None and len(self.ingredients) > 0
 
     def can_add_ingredient(self, ing_name: str, cooker: str) -> bool:
@@ -90,22 +88,22 @@ class AssemblyState:
 class StockpileSlot:
     """库存槽位"""
 
-    ingredient_name: str | None = None
+    item_name: str | None = None
     cooker_type: str | None = None
     count: int = 0
 
     def can_add(self, ingredient: str, cooker: str) -> bool:
         """检查是否可以添加食材"""
-        if self.ingredient_name is None:
+        if self.item_name is None:
             return True
-        return self.ingredient_name == ingredient and self.cooker_type == cooker
+        return self.item_name == ingredient and self.cooker_type == cooker
 
     def add(self, ingredient: str, cooker: str) -> bool:
         """添加食材"""
         if not self.can_add(ingredient, cooker):
             return False
-        if self.ingredient_name is None:
-            self.ingredient_name = ingredient
+        if self.item_name is None:
+            self.item_name = ingredient
             self.cooker_type = cooker
         self.count += 1
         return True
@@ -116,7 +114,7 @@ class StockpileSlot:
             return False
         self.count -= 1
         if self.count == 0:
-            self.ingredient_name = None
+            self.item_name = None
             self.cooker_type = None
         return True
 
@@ -126,7 +124,7 @@ class StockpileSlot:
 
     def clear(self) -> None:
         """清空槽位"""
-        self.ingredient_name = None
+        self.item_name = None
         self.cooker_type = None
         self.count = 0
 
@@ -203,8 +201,7 @@ class Order:
         return max(0.0, self.timeout_at - current_time)
 
 
-# 向后兼容别名
-OrderInfo = Order
+
 
 
 # ========================================================================

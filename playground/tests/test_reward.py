@@ -9,7 +9,7 @@ import pytest
 from hawarma.core.reward import RecipeRewardLookup
 from playground.env.reward import GameDataReward, SparseReward
 from hawarma.core.state import UnifiedState
-from hawarma.core.models import AssemblyState, OrderInfo
+from hawarma.core.models import AssemblyState, Order
 from playground.env_simulator_types import Event, EventType
 
 
@@ -110,7 +110,7 @@ class TestGameDataReward:
         prev_state = UnifiedState(
             time=10.0,
             orders=(
-                OrderInfo(order_id=1, recipe_slug="gildedShoreRisotto", is_rush=False,
+                Order(order_id=1, recipe_slug="gildedShoreRisotto", is_rush=False,
                          created_at=0.0, timeout_at=60.0),
             ),
             cookers={},
@@ -135,7 +135,7 @@ class TestGameDataReward:
         prev_state = UnifiedState(
             time=10.0,
             orders=(
-                OrderInfo(order_id=1, recipe_slug="gildedShoreRisotto", is_rush=False,
+                Order(order_id=1, recipe_slug="gildedShoreRisotto", is_rush=False,
                          created_at=0.0, timeout_at=60.0),
             ),
             cookers={},
@@ -160,7 +160,7 @@ class TestGameDataReward:
         prev_state = UnifiedState(
             time=10.0,
             orders=(
-                OrderInfo(order_id=1, recipe_slug="gildedShoreRisotto", is_rush=True,
+                Order(order_id=1, recipe_slug="gildedShoreRisotto", is_rush=True,
                          created_at=0.0, timeout_at=60.0),
             ),
             cookers={},
@@ -186,7 +186,7 @@ class TestGameDataReward:
         prev_state = UnifiedState(
             time=10.0,
             orders=(
-                OrderInfo(order_id=1, recipe_slug="gildedShoreRisotto", is_rush=False,
+                Order(order_id=1, recipe_slug="gildedShoreRisotto", is_rush=False,
                          created_at=0.0, timeout_at=60.0),
             ),
             cookers={},
@@ -215,8 +215,8 @@ class TestGameDataReward:
         prev_state = UnifiedState(
             time=10.0,
             orders=(
-                OrderInfo(order_id=1, recipe_slug="a", is_rush=False, created_at=0.0, timeout_at=60.0),
-                OrderInfo(order_id=2, recipe_slug="b", is_rush=False, created_at=0.0, timeout_at=60.0),
+                Order(order_id=1, recipe_slug="a", is_rush=False, created_at=0.0, timeout_at=60.0),
+                Order(order_id=2, recipe_slug="b", is_rush=False, created_at=0.0, timeout_at=60.0),
             ),
             cookers={},
             assembly=AssemblyState(condiments={"salt": 1}),

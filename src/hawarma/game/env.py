@@ -23,7 +23,7 @@ from hawarma.core.models import (
     AssemblyState,
     CookerState,
     MixingBowlState,
-    OrderInfo,
+    Order,
     StockpileSlot,
 )
 
@@ -43,7 +43,7 @@ class Env(ABC):
 
     @property
     @abstractmethod
-    def orders(self) -> list[OrderInfo | None]:
+    def orders(self) -> list[Order | None]:
         """当前订单列表（4个槽位）"""
 
     @property

@@ -94,7 +94,7 @@ class DelayAwareCPMStrategyV3(CPMStrategy):
     def _try_store_to_stockpile(self, state: UnifiedState) -> MoveToStockpileAction | None:
         """更快存储 + 按需紧急度排序"""
         assembly = state.assembly
-        needed = self._get_needed_ingredient_names(state)
+        needed = self._get_needed_item_names(state)
 
         # 收集所有可存储的食材
         candidates: list[tuple[str, str, float, float]] = []  # (cooker_name, ing_name, cooker_type, priority)

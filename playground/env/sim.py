@@ -289,10 +289,10 @@ class SimEnv(GameEnv):
     # ------------------------------------------------------------------
 
     def _apply_detection_delay(
-        self, orders: tuple[OrderInfo | None, ...], current_time: float
-    ) -> tuple[OrderInfo | None, ...]:
+        self, orders: tuple[Order | None, ...], current_time: float
+    ) -> tuple[Order | None, ...]:
         """过滤 detection_delay 内出现的新订单（模拟扫描滞后）"""
-        result: list[OrderInfo | None] = []
+        result: list[Order | None] = []
         for order in orders:
             if order is None:
                 result.append(None)

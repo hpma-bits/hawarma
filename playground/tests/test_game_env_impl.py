@@ -19,7 +19,7 @@ from hawarma.core.actions import (
     CookAction,
     ServeOrderAction,
 )
-from hawarma.core.models import OrderInfo
+from hawarma.core.models import Order
 
 
 @pytest.fixture

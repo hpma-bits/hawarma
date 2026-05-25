@@ -61,7 +61,7 @@ class DelayAwareCPMStrategyV2(CPMStrategy):
         腾出灶台才能做更多预烹饪。
         """
         assembly = state.assembly
-        needed = self._get_needed_ingredient_names(state)
+        needed = self._get_needed_item_names(state)
 
         for cooker_name, cooker in state.cookers.items():
             if not cooker.busy or cooker.done_at is None:

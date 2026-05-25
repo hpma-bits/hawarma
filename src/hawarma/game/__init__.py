@@ -7,7 +7,7 @@ Game 模块
 """
 
 from .env import Env, GastronomeEnv, DessertEnv
-from hawarma.core.models import CookerState, AssemblyState, StockpileSlot, OrderInfo, MixingBowlState
+from hawarma.core.models import CookerState, AssemblyState, StockpileSlot, Order, MixingBowlState
 from .game_env import GameEnv
 
 __all__ = [
@@ -19,7 +19,7 @@ __all__ = [
     "AssemblyState",
     "MixingBowlState",
     "StockpileSlot",
-    "OrderInfo",
+    "Order",
     "Scanner",
     "DetectedOrder",
     "Operator",
