@@ -1,144 +1,144 @@
-﻿# AGENTS.md
+# AGENTS.md
 
-> **涓婁笅鏂囩储寮?*锛氭湰鏂囨。鏄」鐩殑鍏ュ彛绱㈠紩銆傞渶瑕佹繁鍏ヤ簡瑙ｄ换浣曟ā鍧楁椂锛岃鍏堥槄璇诲搴旂殑 `ARCHITECTURE.md` 鏂囦欢鑾峰彇瀹屾暣涓婁笅鏂囥€?
+> **上下文索引**：本文档是项目的入口索引。需要深入了解任何模块时，请先阅读对应的 `ARCHITECTURE.md` 文件获取完整上下文。
 
-## 馃椇锔?涓婁笅鏂囧湴鍥?
+## 🗺️ 上下文地图
 
-### 椤圭洰姒傝
-杩欐槸涓€涓?Python 鐑归オ娓告垙鑷姩鍖栨満鍣ㄤ汉锛屼娇鐢?asyncio 骞跺彂澶勭悊銆丳ydantic 鏁版嵁楠岃瘉鍜?Airtest UI 鑷姩鍖栥€?
+### 项目概览
+这是一个 Python 烹饪游戏自动化机器人，使用 asyncio 并发处理、Pydantic 数据验证和 Airtest UI 自动化。
 
-| 涓婁笅鏂?| 鏂囦欢 | 浣曟椂闃呰 |
+| 上下文 | 文件 | 何时阅读 |
 |--------|------|----------|
-| **椤圭洰鎬昏** | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 浜嗚В鏁翠綋鐩綍缁撴瀯鍜屾ā鍧楀叧绯?|
-| **鏍稿績浠ｇ爜** | [`src/hawarma/ARCHITECTURE.md`](src/hawarma/ARCHITECTURE.md) | 淇敼鏍稿績閫昏緫銆佺悊瑙ｆ暟鎹祦鍜屾灦鏋?|
-| **Agent 鍐崇瓥** | [`src/hawarma/agent/ARCHITECTURE.md`](src/hawarma/agent/ARCHITECTURE.md) | 淇敼 Agent 绛栫暐銆佸姩浣滅被鍨嬨€佷紭鍏堢骇 |
-| **妗ユ帴灞?* | [`src/hawarma/game/ARCHITECTURE.md`](src/hawarma/game/ARCHITECTURE.md) | 淇敼 UI 鎿嶄綔銆佺姸鎬佽拷韪€佹壂鎻忓櫒銆佸弻寰幆鏋舵瀯 |
-| **鏈嶅姟灞?* | [`src/hawarma/services/ARCHITECTURE.md`](src/hawarma/services/ARCHITECTURE.md) | 淇敼閰嶆柟绠＄悊绛夋湇鍔＄粍浠?|
-| **宸ュ叿鍑芥暟** | [`src/hawarma/utils/ARCHITECTURE.md`](src/hawarma/utils/ARCHITECTURE.md) | 淇敼鍥惧儚澶勭悊宸ュ叿 |
-| **鏂囨。** | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 娓告垙瑙勫垯銆丄gent绛栫暐銆佹灦鏋勮璁?|
-| **娴嬭瘯** | [`tests/ARCHITECTURE.md`](tests/ARCHITECTURE.md) | 娣诲姞鎴栦慨鏀规祴璇?|
-| **瀹為獙** | [`experiments/ARCHITECTURE.md`](experiments/ARCHITECTURE.md) | 杩愯鍩哄噯娴嬭瘯銆佹煡鐪嬪疄楠岃褰?|
+| **项目总览** | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 了解整体目录结构和模块关系 |
+| **核心代码** | [`src/hawarma/ARCHITECTURE.md`](src/hawarma/ARCHITECTURE.md) | 修改核心逻辑、理解数据流和架构 |
+| **Agent 决策** | [`src/hawarma/agent/ARCHITECTURE.md`](src/hawarma/agent/ARCHITECTURE.md) | 修改 Agent 策略、动作类型、优先级 |
+| **桥接层** | [`src/hawarma/game/ARCHITECTURE.md`](src/hawarma/game/ARCHITECTURE.md) | 修改 UI 操作、状态追踪、扫描器、双循环架构 |
+| **服务层** | [`src/hawarma/services/ARCHITECTURE.md`](src/hawarma/services/ARCHITECTURE.md) | 修改配方管理等服务组件 |
+| **工具函数** | [`src/hawarma/utils/ARCHITECTURE.md`](src/hawarma/utils/ARCHITECTURE.md) | 修改图像处理工具 |
+| **文档** | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 游戏规则、Agent策略、架构设计 |
+| **测试** | [`tests/ARCHITECTURE.md`](tests/ARCHITECTURE.md) | 添加或修改测试 |
+| **实验** | [`experiments/ARCHITECTURE.md`](experiments/ARCHITECTURE.md) | 运行基准测试、查看实验记录 |
 
-### 蹇€熷鑸細鎸変换鍔￠€夋嫨涓婁笅鏂?
+### 快速导航：按任务选择上下文
 
-| 浠诲姟 | 闃呰椤哄簭 |
+| 任务 | 阅读顺序 |
 |------|----------|
-| 淇敼 Agent 绛栫暐 | `docs/game_rules.md` 鈫?`src/hawarma/agent/ARCHITECTURE.md` 鈫?`src/hawarma/ARCHITECTURE.md` |
-| 淇敼 UI 鎿嶄綔 | `src/hawarma/game/ARCHITECTURE.md` 鈫?`src/hawarma/ARCHITECTURE.md` |
-| 淇敼璁㈠崟妫€娴?| `src/hawarma/game/ARCHITECTURE.md` (scanner) 鈫?`docs/game_rules.md` |
-| 娣诲姞鏂版祴璇?| `tests/ARCHITECTURE.md` 鈫?瀵瑰簲妯″潡鐨?ARCHITECTURE.md |
-| 杩愯鍩哄噯娴嬭瘯 | `experiments/ARCHITECTURE.md` 鈫?`playground/` 鐩綍 |
-| 淇敼閰嶇疆 | `configs/config.yaml` 鈫?`src/hawarma/config.py` |
+| 修改 Agent 策略 | `docs/game_rules.md` → `src/hawarma/agent/ARCHITECTURE.md` → `src/hawarma/ARCHITECTURE.md` |
+| 修改 UI 操作 | `src/hawarma/game/ARCHITECTURE.md` → `src/hawarma/ARCHITECTURE.md` |
+| 修改订单检测 | `src/hawarma/game/ARCHITECTURE.md` (scanner) → `docs/game_rules.md` |
+| 添加新测试 | `tests/ARCHITECTURE.md` → 对应模块的 ARCHITECTURE.md |
+| 运行基准测试 | `experiments/ARCHITECTURE.md` → `playground/` 目录 |
+| 修改配置 | `configs/config.yaml` → `src/hawarma/config.py` |
 
 ---
 
-## 鈿狅笍 閲嶈鍘熷垯
+## ⚠️ 重要原则
 
-### 鏂囨。浼樺厛鍘熷垯
+### 文档优先原则
 
-**蹇呴』鎶?`docs/` 浣滀负鐪熷疄淇℃伅婧?*锛?
-- 鎵€鏈夋父鎴忚鍒欍€佺畻娉曡璁°€佺瓥鐣ュ垎鏋愰兘浠?`docs/` 涓殑鏂囨。涓哄噯
-- 鎬濊€冮棶棰樻椂锛?*浠庢枃妗ｅ嚭鍙?*锛岃€屼笉鏄粠浠ｇ爜鍑哄彂
-- 浠ｇ爜瑕佷笌鏂囨。淇濇寔涓€鑷达紝濡傛灉浠ｇ爜涓庢枃妗ｅ啿绐侊紝浠ユ枃妗ｄ负鍑?
+**必须把 `docs/` 作为真实信息源**：
+- 所有游戏规则、算法设计、策略分析都以 `docs/` 中的文档为准
+- 思考问题时，**从文档出发**，而不是从代码出发
+- 代码要与文档保持一致，如果代码与文档冲突，以文档为准
 
-**鐪熷疄娓告垙鐩稿叧鏂囨。**锛堜粎淇濈暀杩欎簺锛夛細
-- [`docs/game_rules.md`](docs/game_rules.md) - 娓告垙瑙勫垯锛堝敮涓€渚濇嵁锛?
-- [`docs/agent_strategy.md`](docs/agent_strategy.md) - Agent绛栫暐鍜屽疄楠岀粨鏋?
-- [`docs/real_game_implementation.md`](docs/real_game_implementation.md) - 鐪熷疄娓告垙瀹炵幇
+**真实游戏相关文档**（仅保留这些）：
+- [`docs/game_rules.md`](docs/game_rules.md) - 游戏规则（唯一依据）
+- [`docs/agent_strategy.md`](docs/agent_strategy.md) - Agent策略和实验结果
+- [`docs/real_game_implementation.md`](docs/real_game_implementation.md) - 真实游戏实现
 
-### 妯℃嫙鍣ㄥ眬闄愭€?
+### 模拟器局限性
 
-- 妯℃嫙鍣ㄥ彲鑳戒笉鑳藉畬鍏ㄥ弽鏄犵湡瀹炴父鎴忕殑琛屼负锛堝骞惰鎬э級
-- 閲嶈缁撹闇€瑕佸湪鐪熷疄鐜涓獙璇?
-- 涓嶈杩囧害渚濊禆妯℃嫙鍣ㄧ殑娴嬭瘯缁撴灉
+- 模拟器可能不能完全反映真实游戏的行为（如并行性）
+- 重要结论需要在真实环境中验证
+- 不要过度依赖模拟器的测试结果
 
-### 瀹為獙楠岃瘉
+### 实验验证
 
-- 閲嶈缁撹闇€瑕佸灞€娴嬭瘯楠岃瘉锛堝缓璁?0灞€浠ヤ笂锛?
-- 鑰冭檻涓嶅悓recipes缁勫悎鐨勫樊寮?
-- 浠庢枃妗ｄ腑鐨勬父鎴忚鍒欏嚭鍙戝垎鏋愰棶棰?
-
----
-
-## 馃彈锔?Harness 瀹炶返
-
-### 涓婁笅鏂囧姞杞界瓥鐣?
-
-1. **榛樿鍙姞杞?AGENTS.md**锛氭湰鏂囨。鍖呭惈瓒冲鐨勮鍒欏拰绱㈠紩
-2. **鎸夐渶娣卞叆**锛氭牴鎹换鍔＄被鍨嬶紝浠庝笂琛ㄧ殑"蹇€熷鑸?涓€夋嫨瀵瑰簲鐨?ARCHITECTURE.md
-3. **閫愬眰灞曞紑**锛氫粠鏍?`ARCHITECTURE.md` 鈫?瀛愮洰褰?`ARCHITECTURE.md` 鈫?鍏蜂綋婧愭枃浠?
-
-### 涓婁笅鏂囧畬鏁存€?
-
-姣忎釜 `ARCHITECTURE.md` 鏂囦欢鍖呭惈锛?
-- 鐩綍鐩殑鍜屾枃浠跺垪琛?
-- 杈撳叆/杈撳嚭瀹氫箟
-- 妯″潡闂村叧绯诲拰鏁版嵁娴?
-- 鍏抽敭璁捐鍐崇瓥鍜屽師鐞?
-
-### 缁存姢瑙勫垯
-
-1. 浠讳綍鏋舵瀯鍙樻洿蹇呴』鏇存柊鐩稿叧鐨?`ARCHITECTURE.md`
-2. 姣忎釜鐩綍蹇呴』鏈?`ARCHITECTURE.md`
-3. 鏂囦欢澶村繀椤诲０鏄庯細`涓€鏃︽枃浠跺唴瀹规湁鏇存柊锛屽姟蹇呭寮€澶存敞閲婅繘琛岀浉搴旂殑蹇呰鏇存柊锛屽悓鏃舵洿鏂版墍灞炵洰褰曠殑md`
+- 重要结论需要多局测试验证（建议30局以上）
+- 考虑不同recipes组合的差异
+- 从文档中的游戏规则出发分析问题
 
 ---
 
-## 馃敡 甯哥敤鍛戒护
+## 🏗️ Harness 实践
 
-### 杩愯搴旂敤锛堢湡瀹炴父鎴忥級
+### 上下文加载策略
 
-榛樿浣跨敤 **DefaultStrategy**锛堜富鍔ㄩ鐑归奥 + 鍐崇瓥浼樺厛绾т紭鍖栵級锛?
+1. **默认只加载 AGENTS.md**：本文档包含足够的规则和索引
+2. **按需深入**：根据任务类型，从上表的"快速导航"中选择对应的 ARCHITECTURE.md
+3. **逐层展开**：从根 `ARCHITECTURE.md` → 子目录 `ARCHITECTURE.md` → 具体源文件
 
-#### 鍛戒护琛岀晫闈?CLI)
+### 上下文完整性
+
+每个 `ARCHITECTURE.md` 文件包含：
+- 目录目的和文件列表
+- 输入/输出定义
+- 模块间关系和数据流
+- 关键设计决策和原理
+
+### 维护规则
+
+1. 任何架构变更必须更新相关的 `ARCHITECTURE.md`
+2. 每个目录必须有 `ARCHITECTURE.md`
+3. 文件头必须声明：`一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md`
+
+---
+
+## 🔧 常用命令
+
+### 运行应用（真实游戏）
+
+默认使用 **DefaultStrategy**（主动烹饪 + 决策优先级优化）：
+
+#### 命令行界面 (CLI)
 ```bash
 .venv\Scripts\activate
 python -m hawarma
 ```
 
-#### 鏂囨湰鐢ㄦ埛鐣岄潰 (TUI)
+#### 文本用户界面 (TUI)
 ```bash
 .venv\Scripts\activate
 python -m hawarma.tui
 ```
 
-TUI 鎻愪緵瀹屾暣鐨勪华琛ㄦ澘鐣岄潰锛屽寘鎷?
+TUI 提供完整的仪表板界面，包括：
 - 📋 配方选择界面
 - ⚙️ 配置面板（可编辑所有配置）
 - 🎮 游戏控制界面（开始、暂停、停止）
 - 📊 实时日志显示
 
-#### 鍒囨崲绛栫暐
+#### 切换策略
 
-绛栫暐閫氳繃閰嶇疆鏂囦欢鎴栧懡浠よ鍙傛暟鍒囨崲锛屾棤闇€淇敼浠ｇ爜銆傝瑙?[`docs/agent_strategy.md`](docs/agent_strategy.md)銆?
+策略通过配置文件或命令行参数切换，无需修改代码。详见 [`docs/agent_strategy.md`](docs/agent_strategy.md)。
 
 ```bash
-# 閰嶇疆鏂囦欢: configs/config.yaml
-strategy: "gastronome"      # CPM enhanced cascade (濞寸偠鐫愰敍灞惧春閸? 或 "dessert"
+# 配置文件: configs/config.yaml
+strategy: "gastronome"      # CPM enhanced cascade (默认) 或 "dessert"
 
-# 鍛戒护琛岃鐩?
+# 命令行覆盖
 python -m hawarma --strategy gastronome
 python -m playground bench --games 50 --strategies gastronome,dessert
 ```
 
-### 杩愯娴嬭瘯
+### 运行测试
 ```bash
 .venv\Scripts\activate
-python -m unittest discover tests        # 鍏ㄩ儴娴嬭瘯
-python -m unittest tests.test_capture_speed  # 鍗曚釜鏂囦欢
-python -m unittest discover -v tests     # 璇︾粏杈撳嚭
+python -m unittest discover tests        # 全部测试
+python -m unittest tests.test_capture_speed  # 单个文件
+python -m unittest discover -v tests     # 详细输出
 ```
 
-### 杩愯妯℃嫙锛圥layground锛?
+### 运行模拟（Playground）
 ```bash
 .venv\Scripts\activate
-python -m playground run --seed 42                    # 杩愯鍗曞眬
-python -m playground bench --games 50                 # 杩愯鍩哄噯娴嬭瘯
-python -m playground bench --games 100 --csv out.csv  # 瀵煎嚭 CSV
-python -m playground replay replay.json               # 鍥炴斁璁板綍
+python -m playground run --seed 42                    # 运行单局
+python -m playground bench --games 50                 # 运行基准测试
+python -m playground bench --games 100 --csv out.csv  # 导出 CSV
+python -m playground replay replay.json               # 回放记录
 ```
 
-### 鐜璁剧疆
+### 环境设置
 ```bash
 uv pip install -e .
 python -m venv .venv
@@ -147,42 +147,42 @@ python -m venv .venv
 
 ---
 
-## 馃摑 浠ｇ爜瑙勮寖
+## 📝 代码规范
 
-### 绫诲瀷娉ㄨВ
-- Python 3.10+ 灏忓啓娉涘瀷锛歚list[str]`銆乣dict[str, int]`
-- 浣跨敤 `|` 鑱斿悎杩愮畻绗︼細`Order | None`
-- 鎵€鏈夊叕鍏卞嚱鏁?鏂规硶蹇呴』鏈夌被鍨嬫彁绀?
+### 类型注解
+- Python 3.10+ 小写泛型：`list[str]`、`dict[str, int]`
+- 使用 `|` 联合运算符：`Order | None`
+- 所有公共函数/方法必须有类型提示
 
-### 鍛藉悕绾﹀畾
-- **鍙橀噺/鍑芥暟**锛歚snake_case`
-- **绫?*锛歚PascalCase`
-- **甯搁噺**锛歚UPPER_SNAKE_CASE`
-- **绉佹湁鏂规硶**锛歚_leading_underscore`
+### 命名约定
+- **变量/函数**：`snake_case`
+- **类**：`PascalCase`
+- **常量**：`UPPER_SNAKE_CASE`
+- **私有方法**：`_leading_underscore`
 
-### 瀵煎叆椤哄簭
-1. 鏍囧噯搴?
-2. 绗笁鏂瑰簱
-3. 鏈湴瀵煎叆
-4. 鐩稿瀵煎叆
+### 导入顺序
+1. 标准库
+2. 第三方库
+3. 本地导入
+4. 相对导入
 
-### 骞跺彂
-- 浣跨敤 `asyncio` 鍜?`asyncio.Lock()`
-- 浣跨敤 `asyncio.create_task()` 骞惰窡韪换鍔?
-- 浣跨敤 `asyncio.gather()` 鍒嗙粍骞跺彂鎿嶄綔
+### 并发
+- 使用 `asyncio` 和 `asyncio.Lock()`
+- 使用 `asyncio.create_task()` 并跟踪任务
+- 使用 `asyncio.gather()` 分组并发操作
 
-### 閿欒澶勭悊
-- 浣跨敤 `loguru` 缁撴瀯鍖栨棩蹇?
-- 鎹曡幏鍏蜂綋寮傚父鑰岄潪瑁?`except:`
-- 璁板綍閿欒鍚庡啀 re-raise
+### 错误处理
+- 使用 `loguru` 结构化日志
+- 捕获具体异常而非裸 `except:`
+- 记录错误后再 re-raise
 
-### 鍙嶆ā寮?
-- 涓嶄娇鐢?`List[Type]` 鈫?鐢?`list[Type]`
-- 涓嶄娇鐢?`Optional[Type]` 鈫?鐢?`Type | None`
-- 涓嶄娇鐢ㄨ８ `except:` 鈫?鎹曡幏鍏蜂綋寮傚父
-- 涓嶉噸澶嶈皟鐢?`asyncio.get_event_loop().time()` 鈫?缂撳瓨缁撴灉
-- 涓嶅垱寤烘湭璺熻釜鐨?asyncio 浠诲姟 鈫?浣跨敤浠诲姟璺熻釜闆嗗悎
-- 涓嶅鍏?Airtest 绉佹湁鏂规硶 鈫?浣跨敤鍏叡 API
+### 反模式
+- 不使用 `List[Type]` → 用 `list[Type]`
+- 不使用 `Optional[Type]` → 用 `Type | None`
+- 不使用裸 `except:` → 捕获具体异常
+- 不重复调用 `asyncio.get_event_loop().time()` → 缓存结果
+- 不创建未跟踪的 asyncio 任务 → 使用任务跟踪集合
+- 不导入 Airtest 私有方法 → 使用公共 API
 
 ---
 ## Behavioral guidelines
@@ -238,16 +238,16 @@ The test: Every changed line should trace directly to the user's request.
 
 Transform tasks into verifiable goals:
 
-- "Add validation" 鈫?"Write tests for invalid inputs, then make them pass"
-- "Fix the bug" 鈫?"Write a test that reproduces it, then make it pass"
-- "Refactor X" 鈫?"Ensure tests pass before and after"
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
 
 For multi-step tasks, state a brief plan:
 
 ```
-1. [Step] 鈫?verify: [check]
-2. [Step] 鈫?verify: [check]
-3. [Step] 鈫?verify: [check]
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
 ```
 
 
@@ -257,4 +257,3 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ------
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
-
