@@ -10,6 +10,7 @@ from __future__ import annotations
 from hawarma.core.actions import ClearAssemblyAction
 from hawarma.core.state import UnifiedState
 from hawarma.agent.strategies.cpm import CPMCascadeStrategy
+from hawarma.recipe import Recipe
 
 
 class PreemptScoreCascadeStrategy(CPMCascadeStrategy):
@@ -29,7 +30,7 @@ class PreemptScoreCascadeStrategy(CPMCascadeStrategy):
         super().__init__()
         self._reward_lookup = None
 
-    def on_game_start(self, recipes: dict[str, object]) -> None:
+    def on_game_start(self, recipes: dict[str, Recipe]) -> None:
         super().on_game_start(recipes)
         from hawarma.core.reward import RecipeRewardLookup
         self._reward_lookup = RecipeRewardLookup()
@@ -71,8 +72,7 @@ class PreemptScoreCascadeStrategy(CPMCascadeStrategy):
         for _, order in self._prioritized_orders(state):
             recipe = self._recipe_by_slug.get(order.recipe_slug)
             if recipe:
-                raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
-                if ingredient in raw:
+                if ingredient in recipe.raw_ingredients:
                     eff = self._get_order_score(state, order) / max(self._get_critical_path(state, order), 0.5)
                     if eff > best_eff:
                         best_eff = eff
@@ -114,7 +114,7 @@ class PreemptScoreCascadeStrategy(CPMCascadeStrategy):
         # 3.5) 如果 assembly 已集齐所有主食材（只剩调料），不抢占
         target_recipe = self._recipe_by_slug.get(target_slug)
         if target_recipe:
-            needed_ings = set(getattr(target_recipe, "raw_ingredients", []))
+            needed_ings = set(target_recipe.raw_ingredients)
             if needed_ings:
                 assembly_ing_names = set()
                 for ing in assembly.ingredients_cookers:

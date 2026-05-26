@@ -356,7 +356,7 @@ class GameEnv(GastronomeEnv, DessertEnv):
         if self._mixing_bowl.target_recipe_slug:
             recipe = self._recipes.get(self._mixing_bowl.target_recipe_slug)
             if recipe:
-                raw_ings = getattr(recipe, "raw_ingredients", [])
+                raw_ings = recipe.raw_ingredients
                 if ingredient not in raw_ings:
                     logger.warning(
                         f"[t={self.time:.1f}s] Ingredient {ingredient} not in dessert recipe {self._mixing_bowl.target_recipe_slug}"
@@ -381,7 +381,7 @@ class GameEnv(GastronomeEnv, DessertEnv):
         if self._mixing_bowl.target_recipe_slug:
             recipe = self._recipes.get(self._mixing_bowl.target_recipe_slug)
             if recipe is not None:
-                recipe_condiments = getattr(recipe, "condiments", [])
+                recipe_condiments = recipe.condiments
                 if isinstance(recipe_condiments, dict):
                     max_count = recipe_condiments.get(condiment, 0)
                     valid = max_count > 0
@@ -441,8 +441,8 @@ class GameEnv(GastronomeEnv, DessertEnv):
             return False
 
         # 甜点配方只有一个 cooker，取第一个
-        cookers = getattr(recipe, "cookers", [])
-        durations = getattr(recipe, "cook_durations", [])
+        cookers = recipe.cookers
+        durations = recipe.cook_durations
         if not cookers or not durations:
             logger.error(f"Recipe {self._mixing_bowl.target_recipe_slug} has no cookers/durations")
             return False
@@ -529,9 +529,9 @@ class GameEnv(GastronomeEnv, DessertEnv):
             if order and not order.done:
                 recipe = self._recipes.get(order.recipe_slug)
                 if recipe:
-                    station = getattr(recipe, "station", Station.GASTRONOME)
+                    station = recipe.station
                     if station == Station.DESSERT:
-                        raw_ings = getattr(recipe, "raw_ingredients", [])
+                        raw_ings = recipe.raw_ingredients
                         if ingredient in raw_ings:
                             return order.recipe_slug
         return None
@@ -813,11 +813,11 @@ class DessertStrategy(Strategy):
         self._dessert_recipes = {}
 
         for slug, recipe in recipes.items():
-            station = getattr(recipe, "station", Station.GASTRONOME)
+            station = recipe.station
             if station == Station.DESSERT:
                 self._dessert_recipes[slug] = recipe
 
-            condiments = getattr(recipe, "condiments", [])
+            condiments = recipe.condiments
             if isinstance(condiments, list):
                 self._recipe_condiments[slug] = {c: 1 for c in condiments}
             elif isinstance(condiments, dict):
@@ -910,7 +910,7 @@ class DessertStrategy(Strategy):
         if not recipe:
             return None
 
-        cookers = getattr(recipe, "cookers", [])
+        cookers = recipe.cookers
         if not cookers:
             return None
 
@@ -986,7 +986,7 @@ class DessertStrategy(Strategy):
             if not recipe:
                 continue
 
-            raw_ings = getattr(recipe, "raw_ingredients", [])
+            raw_ings = recipe.raw_ingredients
             for ing in raw_ings:
                 if ing not in mixing_bowl.ingredients:
                     return MoveToMixingBowlAction(ingredient=ing)
@@ -1026,7 +1026,7 @@ class DessertStrategy(Strategy):
             if order is not None and not order.done:
                 recipe = state.recipes.get(order.recipe_slug)
                 if recipe:
-                    station = getattr(recipe, "station", Station.GASTRONOME)
+                    station = recipe.station
                     if station == Station.DESSERT:
                         orders_with_idx.append((i, order))
 

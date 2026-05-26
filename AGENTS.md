@@ -12,7 +12,7 @@
 | **椤圭洰鎬昏** | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 浜嗚В鏁翠綋鐩綍缁撴瀯鍜屾ā鍧楀叧绯?|
 | **鏍稿績浠ｇ爜** | [`src/hawarma/ARCHITECTURE.md`](src/hawarma/ARCHITECTURE.md) | 淇敼鏍稿績閫昏緫銆佺悊瑙ｆ暟鎹祦鍜屾灦鏋?|
 | **Agent 鍐崇瓥** | [`src/hawarma/agent/ARCHITECTURE.md`](src/hawarma/agent/ARCHITECTURE.md) | 淇敼 Agent 绛栫暐銆佸姩浣滅被鍨嬨€佷紭鍏堢骇 |
-| **妗ユ帴灞?* | [`src/hawarma/bridge/ARCHITECTURE.md`](src/hawarma/bridge/ARCHITECTURE.md) | 淇敼 UI 鎿嶄綔銆佺姸鎬佽拷韪€佹壂鎻忓櫒銆佸弻寰幆鏋舵瀯 |
+| **妗ユ帴灞?* | [`src/hawarma/game/ARCHITECTURE.md`](src/hawarma/game/ARCHITECTURE.md) | 淇敼 UI 鎿嶄綔銆佺姸鎬佽拷韪€佹壂鎻忓櫒銆佸弻寰幆鏋舵瀯 |
 | **鏈嶅姟灞?* | [`src/hawarma/services/ARCHITECTURE.md`](src/hawarma/services/ARCHITECTURE.md) | 淇敼閰嶆柟绠＄悊绛夋湇鍔＄粍浠?|
 | **宸ュ叿鍑芥暟** | [`src/hawarma/utils/ARCHITECTURE.md`](src/hawarma/utils/ARCHITECTURE.md) | 淇敼鍥惧儚澶勭悊宸ュ叿 |
 | **鏂囨。** | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 娓告垙瑙勫垯銆丄gent绛栫暐銆佹灦鏋勮璁?|
@@ -24,8 +24,8 @@
 | 浠诲姟 | 闃呰椤哄簭 |
 |------|----------|
 | 淇敼 Agent 绛栫暐 | `docs/game_rules.md` 鈫?`src/hawarma/agent/ARCHITECTURE.md` 鈫?`src/hawarma/ARCHITECTURE.md` |
-| 淇敼 UI 鎿嶄綔 | `src/hawarma/bridge/ARCHITECTURE.md` 鈫?`src/hawarma/ARCHITECTURE.md` |
-| 淇敼璁㈠崟妫€娴?| `src/hawarma/bridge/ARCHITECTURE.md` (scanner) 鈫?`docs/game_rules.md` |
+| 淇敼 UI 鎿嶄綔 | `src/hawarma/game/ARCHITECTURE.md` 鈫?`src/hawarma/ARCHITECTURE.md` |
+| 淇敼璁㈠崟妫€娴?| `src/hawarma/game/ARCHITECTURE.md` (scanner) 鈫?`docs/game_rules.md` |
 | 娣诲姞鏂版祴璇?| `tests/ARCHITECTURE.md` 鈫?瀵瑰簲妯″潡鐨?ARCHITECTURE.md |
 | 杩愯鍩哄噯娴嬭瘯 | `experiments/ARCHITECTURE.md` 鈫?`playground/` 鐩綍 |
 | 淇敼閰嶇疆 | `configs/config.yaml` 鈫?`src/hawarma/config.py` |
@@ -44,9 +44,7 @@
 **鐪熷疄娓告垙鐩稿叧鏂囨。**锛堜粎淇濈暀杩欎簺锛夛細
 - [`docs/game_rules.md`](docs/game_rules.md) - 娓告垙瑙勫垯锛堝敮涓€渚濇嵁锛?
 - [`docs/agent_strategy.md`](docs/agent_strategy.md) - Agent绛栫暐鍜屽疄楠岀粨鏋?
-- [`docs/agent_architecture.md`](docs/agent_architecture.md) - Agent鏋舵瀯璁捐
 - [`docs/real_game_implementation.md`](docs/real_game_implementation.md) - 鐪熷疄娓告垙瀹炵幇
-- [`docs/assembly_deadlock_analysis.md`](docs/assembly_deadlock_analysis.md) - 浜嬩欢鍒嗘瀽鏁欒
 
 ### 妯℃嫙鍣ㄥ眬闄愭€?
 
@@ -142,7 +140,7 @@ python -m playground replay replay.json               # 鍥炴斁璁板綍
 
 ### 鐜璁剧疆
 ```bash
-uv pip install -r requirements.txt
+uv pip install -e .
 python -m venv .venv
 .venv\Scripts\activate
 ```

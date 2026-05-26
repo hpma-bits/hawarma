@@ -287,7 +287,7 @@ class GameSimulator:
                 ingredients_set.add(ing.name)
             
             # 收集调料
-            for condiment in recipe.condiments:
+            for condiment in recipe.condiments.keys():
                 condiments_set.add(condiment)
         
         # 创建游戏配置
@@ -355,6 +355,9 @@ class GameSimulator:
         """
         从 JSON 文件加载配方数据
         
+        直接使用统一的 hawarma.recipe.Recipe (Pydantic 模型)。
+        JSON 格式与真实环境相同（raw_ingredients, cookers, cook_durations, condiments）。
+        
         Args:
             filepath: 配方文件路径
         """
@@ -366,61 +369,9 @@ class GameSimulator:
             data = json.load(f)
         
         self._recipes = {}
-        # 支持两种格式：直接列表或包含 'recipes' 键的字典
         recipes_list = data.get('recipes', data) if isinstance(data, dict) else data
         for recipe_data in recipes_list:
-            # 解析食材需求 - 支持两种格式
-            ingredients = []
-            
-            if 'ingredients' in recipe_data:
-                # 格式1: ingredients 是对象列表 [{name, cooker, duration}, ...]
-                for ing_data in recipe_data['ingredients']:
-                    ing = IngredientRequirement(
-                        name=ing_data['name'],
-                        cooker_type=ing_data['cooker'],
-                        duration=ing_data['duration']
-                    )
-                    ingredients.append(ing)
-            elif 'raw_ingredients' in recipe_data:
-                # 格式2: raw_ingredients, cookers, cook_durations 是并行数组
-                raw_ingredients = recipe_data['raw_ingredients']
-                cookers = recipe_data.get('cookers', [])
-                durations = recipe_data.get('cook_durations', [])
-                
-                # 对于 cooker_layout 的处理
-                # cookers_layout 指定了每个食材使用哪个厨具
-                cookers_layout = recipe_data.get('cookers_layout', cookers)
-                
-                for i, ing_name in enumerate(raw_ingredients):
-                    # 使用 cookers_layout 确定每个食材的厨具
-                    cooker = cookers_layout[i] if i < len(cookers_layout) else cookers[0]
-                    duration = durations[i] if i < len(durations) else 3.0
-                    ing = IngredientRequirement(
-                        name=ing_name,
-                        cooker_type=cooker,
-                        duration=duration
-                    )
-                    ingredients.append(ing)
-            
-            # 解析调料 - 支持列表和字典两种格式
-            condiments_data = recipe_data.get('condiments', [])
-            if isinstance(condiments_data, dict):
-                # 格式1: {name: count, ...}
-                condiments = condiments_data
-            elif isinstance(condiments_data, list):
-                # 格式2: [name, name, ...] -> 每种调料需要1份
-                condiments = {name: 1 for name in condiments_data}
-            else:
-                condiments = {}
-            
-            # 创建配方对象
-            recipe = Recipe(
-                name=recipe_data['name'],
-                slug=recipe_data['slug'],
-                ingredients=tuple(ingredients),
-                condiments=condiments
-            )
-            
+            recipe = Recipe(**recipe_data)
             self._recipes[recipe.slug] = recipe
         
         if self._debug:
@@ -1555,7 +1506,7 @@ class GameSimulator:
         
         # 存储模拟器专有数据
         self._order_recipes[order.order_id] = recipe
-        self._order_condiments[order.order_id] = condiments if condiments else {}
+        self._order_condiments[order.order_id] = dict(recipe.condiments)
         self._order_visibility[order.order_id] = self._state.total_visibility
         
         self._next_order_id += 1

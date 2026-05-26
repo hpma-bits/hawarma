@@ -35,34 +35,27 @@ from hawarma.core.actions import (
 )
 from hawarma.core.state import UnifiedState
 from hawarma.agent.strategy import Strategy
-from hawarma.recipe import Station
+from hawarma.recipe import Recipe, Station
 
 
 class DessertStrategy(Strategy):
     """甜点策略：搅拌盆流水线"""
 
     def __init__(self):
-        self._recipe_by_slug: dict[str, object] = {}
+        self._recipe_by_slug: dict[str, Recipe] = {}
         self._recipe_condiments: dict[str, dict[str, int]] = {}
-        self._dessert_recipes: dict[str, object] = {}
+        self._dessert_recipes: dict[str, Recipe] = {}
 
-    def on_game_start(self, recipes: dict[str, object]) -> None:
+    def on_game_start(self, recipes: dict[str, Recipe]) -> None:
         self._recipe_by_slug = recipes
         self._recipe_condiments = {}
         self._dessert_recipes = {}
 
         for slug, recipe in recipes.items():
-            station = getattr(recipe, "station", Station.GASTRONOME)
-            if station == Station.DESSERT:
+            if recipe.station == Station.DESSERT:
                 self._dessert_recipes[slug] = recipe
 
-            condiments = getattr(recipe, "condiments", [])
-            if isinstance(condiments, list):
-                self._recipe_condiments[slug] = {c: 1 for c in condiments}
-            elif isinstance(condiments, dict):
-                self._recipe_condiments[slug] = dict(condiments)
-            else:
-                self._recipe_condiments[slug] = {}
+            self._recipe_condiments[slug] = dict(recipe.condiments)
 
     def decide(self, state: UnifiedState) -> Action | None:
         """甜点决策流水线"""
@@ -140,7 +133,7 @@ class DessertStrategy(Strategy):
         if not recipe:
             return None
 
-        cookers = getattr(recipe, "cookers", [])
+        cookers = recipe.cookers
         if not cookers:
             return None
 
@@ -192,7 +185,7 @@ class DessertStrategy(Strategy):
         # 所有食材齐全后才能调味
         recipe = state.recipes.get(recipe_slug)
         if recipe:
-            raw_ings = getattr(recipe, "raw_ingredients", [])
+            raw_ings = recipe.raw_ingredients
             if not all(ing in mixing_bowl.ingredients for ing in raw_ings):
                 return None
 
@@ -230,7 +223,7 @@ class DessertStrategy(Strategy):
         if mixing_bowl.target_recipe_slug:
             recipe = state.recipes.get(mixing_bowl.target_recipe_slug)
             if recipe:
-                raw_ings = getattr(recipe, "raw_ingredients", [])
+                raw_ings = recipe.raw_ingredients
                 for ing in raw_ings:
                     if ing not in mixing_bowl.ingredients:
                         return MoveToMixingBowlAction(ingredient=ing)
@@ -247,7 +240,7 @@ class DessertStrategy(Strategy):
             recipe = state.recipes.get(order.recipe_slug)
             if not recipe:
                 continue
-            raw_ings = getattr(recipe, "raw_ingredients", [])
+            raw_ings = recipe.raw_ingredients
             if not raw_ings:
                 continue
             if order.recipe_slug in in_progress_slugs:
@@ -288,7 +281,7 @@ class DessertStrategy(Strategy):
             if order is not None and not order.done:
                 recipe = state.recipes.get(order.recipe_slug)
                 if recipe:
-                    station = getattr(recipe, "station", Station.GASTRONOME)
+                    station = recipe.station
                     if station == Station.DESSERT:
                         orders_with_idx.append((i, order))
 

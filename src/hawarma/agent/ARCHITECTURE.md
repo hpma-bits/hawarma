@@ -14,20 +14,15 @@
 - **地位**: 包初始化文件
 - **功能**: 导出所有 Agent 类和动作类型
 
-### `agent.py`
-- **地位**: 统一烹饪 Agent Shell
-- **状态**: ✅ 完成（重构后：纯 Shell + Strategy 注入）
+### `strategy.py` (原 `agent.py` → 已拆分)
+- **地位**: Strategy 抽象基类 + 策略注册
+- **状态**: ✅ 完成
 - **功能**:
-  - **Agent Shell**：封装环境状态、调用 Strategy、返回 Action
-  - **Strategy 注入**：默认加载 `playground.strategies.default.DefaultStrategy`，支持外部策略替换
-  - **状态封装**：`_build_unified_state()` 将 `GameEnv` 状态转换为 `UnifiedState`
-  - **停滞检测**：`step_with_diagnostics()` 追踪连续无行动时间，5秒后输出诊断日志
-  - **统计维护**：`orders_served`, `total_score`, `orders_timeout`, `actions_taken`
-  - **动作类型定义**：`CookAction`, `ServeOrderAction`, `ClearAssemblyAction` 等
-- **输入**: GameEnv 实例、配方列表、可选 Strategy
-- **输出**: 动作对象供执行器执行
-- **关键类**: `Runner`, 各种 `Action` 子类
-- **注意**: 所有决策逻辑已迁移到 `src/hawarma/agent/strategies/`，默认使用 `GreedyCascadeStrategy`（贪心瀑布架构），可通过 `strategy_registry` 切换。用户级使用 `gastronome`（CPMEnhancedCascadeStrategy）或 `dessert`（DessertStrategy）。
+  - **Strategy ABC**：定义 `decide(state) -> Action` 纯决策接口
+  - **策略注册**：通过 `strategy_registry` 按名称查找策略类
+  - **`on_game_start()`**：可选钩子，接收当前局 Recipe dict
+- **输入**: UnifiedState
+- **输出**: Action | None
 
 ---
 
@@ -231,7 +226,7 @@ def _infer_recipe_from_assembly(self) -> Optional[str]:
     for _, order in self._prioritized_orders():
         recipe = self._recipe_by_slug.get(order.recipe_slug)
         if recipe:
-            raw = self._get_recipe_attr(recipe, 'raw_ingredients', [])
+            raw = recipe.raw_ingredients
             if all(ing in raw for ing in assembly_names):
                 return order.recipe_slug
     return None
@@ -319,11 +314,11 @@ def get_stats(self) -> dict:
 ## 🔗 与其他模块的关系
 
 ```
-Runner (game/bridge.py)
+Runner (game/runner.py)
     │
-    ├─→ Runner (agent/agent.py) ← 本模块
+    ├─→ Strategy (agent/strategy.py) ← 本模块
     │       │
-    │       ├─→ GameEnv (game/environment.py) - 读取状态
+    │       ├─→ GameEnv (game/game_env.py) - 读取状态
     │       └─→ 返回 Action 对象
     │
     └─→ _execute_action() - 执行 Agent 返回的动作

@@ -51,7 +51,7 @@ class TestReset:
         # 先 reset 一次加载 recipes
         env.reset(seed=42)
         # 然后用已知的 slugs
-        slugs = list(env._recipe_adapters.keys())[:2]
+        slugs = list(env._recipes.keys())[:2]
         obs, info = env.reset(seed=42, recipe_slugs=slugs)
         assert info["recipe_slugs"] == slugs
 
@@ -75,14 +75,14 @@ class TestGetUnifiedState:
         assert isinstance(state.orders, tuple)
         assert len(state.orders) == 4
 
-    def test_recipe_adapters(self, env: SimEnv):
+    def test_recipes(self, env: SimEnv):
         env.reset(seed=42)
         state = env.get_unified_state()
         assert len(state.recipes) == 4
-        for slug, adapter in state.recipes.items():
-            assert hasattr(adapter, "slug")
-            assert hasattr(adapter, "raw_ingredients")
-            assert hasattr(adapter, "cookers")
+        for slug, recipe in state.recipes.items():
+            assert recipe.slug
+            assert recipe.raw_ingredients
+            assert recipe.cookers
 
 
 class TestStep:
@@ -237,4 +237,4 @@ class TestConsistencyWithSimulator:
             else:
                 assert uni_order is not None
                 assert uni_order.order_id == sim_order.order_id
-                assert uni_order.recipe_slug == sim_order.recipe.slug
+                assert uni_order.recipe_slug == sim_order.recipe_slug

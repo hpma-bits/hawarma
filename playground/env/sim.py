@@ -34,10 +34,10 @@ from hawarma.core.actions import (
 )
 from hawarma.core.models import Order
 from playground.env_simulator import GameSimulator
-from playground.env_simulator_types import Event, EventType, Recipe as SimRecipe
+from playground.env_simulator_types import Event, EventType
+from hawarma.recipe import Recipe
 
 from .game_env import GameEnv
-from .recipe_adapter import RecipeAdapter
 from .reward import RewardFunction, GameDataReward, StepResult
 from hawarma.core.state import UnifiedState
 
@@ -72,7 +72,7 @@ class SimEnv(GameEnv):
         self._action_delay = action_delay
         self._detection_delay = detection_delay
         self._sim: GameSimulator | None = None
-        self._recipe_adapters: dict[str, RecipeAdapter] = {}
+        self._recipes: dict[str, Recipe] = {}
 
         # 统计
         self._orders_served = 0
@@ -115,12 +115,10 @@ class SimEnv(GameEnv):
         # 配置游戏
         self._sim.setup_from_recipes(recipe_slugs)
 
-        # 预创建 recipe adapters
-        self._recipe_adapters = {}
-        for slug in recipe_slugs:
-            recipe = self._sim._recipes.get(slug)
-            if recipe:
-                self._recipe_adapters[slug] = RecipeAdapter(recipe)
+        # 直接使用加载的 Recipe 对象（仅包含当前局选择的配方）
+        self._recipes: dict[str, Recipe] = {
+            slug: self._sim._recipes[slug] for slug in recipe_slugs if slug in self._sim._recipes
+        }
 
         # 初始 tick（推进 0 秒，生成初始事件如第一个订单）
         # 实际上 setup_from_recipes 后需要至少一次 tick 才能看到第一个订单
@@ -128,7 +126,7 @@ class SimEnv(GameEnv):
 
         obs = self.get_unified_state()
         info = {
-            "recipes": self._recipe_adapters,
+            "recipes": self._recipes,
             "recipe_slugs": recipe_slugs,
             "seed": seed,
             "game_duration": self._sim._game_duration,
@@ -213,7 +211,7 @@ class SimEnv(GameEnv):
             cookers=sim_state.cookers,
             assembly=sim_state.assembly,
             stockpile=sim_state.stockpile,
-            recipes=dict(self._recipe_adapters),
+            recipes=dict(self._recipes),
             game_duration=self._sim._game_duration,
             is_in_animation_window=self._sim.is_in_animation_window(),
             total_visibility=sim_state.total_visibility,

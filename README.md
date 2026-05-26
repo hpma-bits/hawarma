@@ -13,7 +13,7 @@
 ### 2. 下载项目
 
 ```bash
-git clone https://github.com/你的用户名/hawarma.git
+git clone https://github.com/hpma-bits/hawarma.git
 cd hawarma
 ```
 

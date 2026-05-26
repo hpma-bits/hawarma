@@ -215,8 +215,7 @@ class CPMCascadeStrategy(GreedyCascadeStrategy):
         for _, order in self._prioritized_orders(state):
             recipe = self._recipe_by_slug.get(order.recipe_slug)
             if recipe:
-                raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
-                if ingredient in raw:
+                if ingredient in recipe.raw_ingredients:
                     cp = self._get_critical_path(state, order)
                     if cp < best_cp:
                         best_cp = cp

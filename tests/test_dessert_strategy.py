@@ -13,8 +13,6 @@ DessertStrategy 单元测试
 
 import unittest
 
-from dataclasses import dataclass, field
-
 from hawarma.core.state import UnifiedState
 from hawarma.core.models import CookerState, AssemblyState, MixingBowlState, Order
 from hawarma.core.actions import (
@@ -27,20 +25,20 @@ from hawarma.core.actions import (
     ClearMixingBowlAction,
 )
 from hawarma.agent.strategies.dessert import DessertStrategy
-from hawarma.recipe import Station
+from hawarma.recipe import Recipe, Station
 
 
 def _make_mock_recipe(slug, raw_ings, cookers, durations, condiments, station=Station.DESSERT):
-    """Create a mock recipe object for testing."""
-    @dataclass
-    class MockRecipe:
-        slug: str
-        raw_ingredients: list[str]
-        cookers: list[str]
-        cook_durations: list[float]
-        condiments: list[str]
-        station: Station
-    return MockRecipe(slug, raw_ings, cookers, durations, condiments, station)
+    return Recipe(
+        slug=slug,
+        name=slug,
+        raw_ingredients=raw_ings,
+        cookers=cookers,
+        cookers_layout=cookers,
+        cook_durations=durations,
+        condiments=condiments,
+        station=station,
+    )
 
 
 class TestDessertStrategy(unittest.TestCase):

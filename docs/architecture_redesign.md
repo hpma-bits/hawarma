@@ -13,7 +13,7 @@
 |---|------|------|------|
 | 1 | **UnifiedState 拼装重复** | `agent.py` 和 `playground/game_env_impl.py` 各拼一份 | 维护成本翻倍，行为可能不一致 |
 | 2 | **Agent Shell 职责过重** | 持有配方数据、停滞诊断、状态拼装、统计 | 与 Strategy 职责边界模糊 |
-| 3 | **配方数据格式不统一** | Recipe / RecipeAdapter / dict 三种格式混用 | Strategy 充满 `hasattr` 检查 |
+| 3 | **配方数据格式不统一** | ~~Recipe / RecipeAdapter / dict 三种格式混用~~ ✅ 已统一为 `Recipe` (Pydantic) | ~~Strategy 充满 `hasattr` 检查~~ |
 | 4 | **Actions 定义位置错误** | 放在 `agent.py`，但被 strategy/bridge/playground 全局引用 | agent 模块反向依赖其他所有模块 |
 | 5 | **Playground Agent 与真实 Agent 职责不一致** | playground Agent 纯透传，真实 Agent 有停滞诊断 | 基准测试无法暴露停滞问题 |
 
@@ -127,49 +127,55 @@
 | 库存支持 | 有 | 无 |
 | 物理位置 | 组装站 | 搅拌盆（不同位置，类似瓶颈） |
 
-### 4.3 Recipe 数据模型
+### 4.3 Recipe data model (implemented)
 
 ```python
 from enum import Enum
 
-class Platform(Enum):
-    GASTRONOMY = "gastronomy"
+class Station(Enum):
+    GASTRONOME = "gastronome"
     DESSERT = "dessert"
 
 @dataclass
-class Recipe:
+class IngredientRequirement:
+    name: str
+    cooker_type: str
+    duration: float
+
+class Recipe(BaseModel):               # Pydantic model
     slug: str
     name: str
-    platform: Platform
-    ingredients: list[Ingredient]
-    condiments: dict[str, int]       # {condiment_name: count}
+    station: Station
+    raw_ingredients: list[str]
+    cookers: list[str]
+    cookers_layout: list[str]
+    cook_durations: list[float]
+    condiments: dict[str, int]         # {condiment_name: count}
+    
+    @property
+    def ingredients(self) -> list[IngredientRequirement]:
+        """Convert parallel lists to structured objects"""
+        ...
 
-@dataclass
-class Ingredient:
-    name: str
-    cooker: str                      # 需要使用的灶台类型
-    duration: float                  # 烹饪时长（秒）
-```
-
-### 4.7 UnifiedState 扩展
+### 4.7 UnifiedState (implemented as `hawarma.core.state.UnifiedState`)
 
 ```python
 @dataclass(frozen=True)
 class UnifiedState:
-    # 现有字段
+    # Existing fields
     time: float
-    orders: tuple[OrderInfo | None, ...]
+    orders: tuple[Order | None, ...]
     cookers: dict[str, CookerState]
-    assembly: AssemblyState              # Gastronomy 组装站
+    assembly: AssemblyState              # Gastronomy assembly station
     stockpile: dict[str, StockpileSlot]
-    recipes: dict[str, Recipe]           # 标准化 Recipe（不再用 object）
+    recipes: dict[str, Recipe]
     game_duration: float
     is_in_animation_window: bool
     total_visibility: float
 
-    # 新增字段
-    mixing_bowl: MixingBowlState         # Dessert 搅拌盆
-    platform: Platform                   # 当前订单的 platform（用于 Strategy 决策）
+    # Fields added for dessert
+    mixing_bowl: MixingBowlState         # Dessert mixing bowl
+    station: Station                     # Current game station type
 
     @property
     def remaining_time(self) -> float:
@@ -303,7 +309,7 @@ class Env(ABC):
 当前：                          建议：
 src/hawarma/                →  保持
   agent/                    →  保持（Strategy 在此）
-  bridge/                   →  rename: runtime/ 或 executor/
+   game/                   →  已重命名（原 bridge/ 已合并）
   env_simulator.py          →  merge into playground/
   env_simulator_types.py    →  merge into playground/
 playground/                 →  保持
@@ -339,7 +345,7 @@ playground/                 →  保持
 | 1.3 | 创建 `src/hawarma/core/recipe.py`，定义 `Platform` Enum + `Recipe` + `Ingredient` dataclass | 新文件 |
 | 1.4 | 创建 `src/hawarma/core/state.py`，从 `agent/unified_state.py` 迁移 `UnifiedState` | `agent/unified_state.py`, 新文件 |
 | 1.5 | 创建 `src/hawarma/core/__init__.py`，导出所有类型 | 新文件 |
-| 1.6 | 更新所有 import：agent/strategy/bridge/playground 改为从 `core` 导入 | 全局 |
+| 1.6 | 更新所有 import：agent/strategy/game/playground 改为从 `core` 导入 | 全局 |
 
 **验证**：`python -m pytest playground/tests/` 全部通过。
 
@@ -350,11 +356,11 @@ playground/                 →  保持
 | 步骤 | 变更 | 影响文件 |
 |------|------|---------|
 | 2.1 | `Env` 添加 `get_unified_state()` 和 `get_stats()` 抽象方法 | `base_environment.py` |
-| 2.2 | `GameEnv` 实现 `get_unified_state()` 和 `get_stats()`，从 `CookingAgent._build_unified_state()` 迁移逻辑 | `environment.py` |
-| 2.3 | `SimEnv`（playground）实现 `get_unified_state()`（已有）和 `get_stats()`（从 `EpisodeResult` 迁移） | `game_env_impl.py` |
+| 2.2 | `GameEnv` 实现 `get_unified_state()` 和 `get_stats()`，从 `CookingAgent._build_unified_state()` 迁移逻辑 | `game_env.py` |
+| 2.3 | `SimEnv`（playground）实现 `get_unified_state()`（已有）和 `get_stats()`（从 `EpisodeResult` 迁移） | `sim.py` |
 | 2.4 | 更新 `Strategy.on_game_start()` 接收标准化 `Recipe` dict（而非混合格式） | `strategy.py`, 所有 Strategy 实现 |
-| 2.5 | Bridge 的 `_agent_loop` 改为直接调用 `strategy.decide(env.get_unified_state())` | `bridge.py` |
-| 2.6 | 移除 `CookingAgent`，Bridge 直接持有 Strategy + Env | `bridge.py`, `agent.py` |
+| 2.5 | Runner 的 `_agent_loop` 改为直接调用 `strategy.decide(env.get_unified_state())` | `runner.py` |
+| 2.6 | 移除 `CookingAgent`，Runner 直接持有 Strategy + Env | `runner.py`（原 `bridge.py`） |
 | 2.7 | Playground 的 `Agent` 简化为纯透传壳（或直接由 `run_episode` 调用 Strategy） | `playground/agents/base.py` |
 
 **验证**：`python -m playground bench --games 50 --strategies cpm_enhanced` 结果与 Phase 1 一致。
@@ -365,13 +371,13 @@ playground/                 →  保持
 
 | 步骤 | 变更 | 影响文件 |
 |------|------|---------|
-| 3.1 | `Env` 添加甜点方法（`add_to_mixing_bowl`, `stir_mixing_bowl`, `move_mixing_bowl_to_cooker`, `serve_from_cooker`, `clear_mixing_bowl`） | `base_environment.py` |
-| 3.2 | `GameEnv` 实现甜点方法（gastronomy 版本 raise `NotImplementedError`） | `environment.py` |
-| 3.3 | `SimEnv` 实现甜点方法（调用 `GameSimulator` 对应操作） | `game_env_impl.py` |
-| 3.4 | `core/actions.py` 添加甜点动作（`MoveToMixingBowlAction`, `StirAction`, `MoveMixingBowlToCookerAction`, `ServeFromCookerAction`, `ClearMixingBowlAction`） | `core/actions.py` |
-| 3.5 | `base_environment.py` 添加 `MixingBowlState` 数据结构 | `base_environment.py` |
-| 3.6 | `core/state.py` 的 `UnifiedState` 添加 `mixing_bowl` 和 `platform` 字段 | `core/state.py` |
-| 3.7 | `data/recipes.json` 中添加 `platform` 字段（现有配方标记为 `gastronomy`，甜点标记为 `dessert`） | `data/recipes.json` |
+| 3.1 | `GameEnv` 添加甜点方法（`add_to_mixing_bowl`, `stir_mixing_bowl`, `move_mixing_bowl_to_cooker`, `serve_from_cooker`, `clear_mixing_bowl`） | `game/game_env.py` |
+| 3.2 | `GameEnv` 实现甜点方法（gastronomy 版本 raise `NotImplementedError`） | `game/game_env.py` |
+| 3.3 | `SimEnv` 实现甜点方法（调用 `GameSimulator` 对应操作） | `playground/env/sim.py` |
+| 3.4 | `core/actions.py` 添加甜点动作 | `core/actions.py` |
+| 3.5 | `core/models.py` 添加 `MixingBowlState` 数据结构 | `core/models.py` |
+| 3.6 | `core/state.py` 的 `UnifiedState` 添加 `mixing_bowl` 和 `station` 字段 | `core/state.py` |
+| 3.7 | `data/recipes.json` 中添加 `station` 字段 | `data/recipes.json` |
 | 3.8 | Recipe 加载逻辑适配 `Platform` Enum | `recipe_manager.py` |
 | 3.9 | 搅拌操作参数预留配置入口（`configs/config.yaml` 添加 `dessert.stir_*` 字段） | `configs/config.yaml` |
 
@@ -387,23 +393,22 @@ playground/                 →  保持
 |------|------|
 | `src/hawarma/core/__init__.py` | 导出 Action, Recipe, UnifiedState |
 | `src/hawarma/core/actions.py` | 所有 Action 定义（按 platform 分组） |
-| `src/hawarma/core/recipe.py` | Platform Enum, Recipe, Ingredient |
+| `src/hawarma/core/recipe.py` | Station Enum, Recipe, IngredientRequirement |
 | `src/hawarma/core/state.py` | UnifiedState（从 agent/unified_state.py 迁移） |
 
 ### 修改文件
 
 | 文件 | 变更 |
 |------|------|
-| `src/hawarma/agent/agent.py` | Phase 2 后移除或大幅简化 |
+| `src/hawarma/agent/strategy.py` | Agent Shell（`CookingAgent`）移除，Strategy 独立；`on_game_start` 接收标准化 Recipe dict |
 | `src/hawarma/agent/unified_state.py` | 改为从 `core.state` re-export |
-| `src/hawarma/agent/strategy.py` | `on_game_start` 接收标准化 Recipe dict |
 | `src/hawarma/agent/strategies/*.py` | 更新 import，移除 `hasattr` 检查 |
-| `src/hawarma/bridge/base_environment.py` | 添加 `MixingBowlState` + 新抽象方法 |
-| `src/hawarma/bridge/environment.py` | 实现 `get_unified_state()`, `get_stats()`, 甜点方法 |
-| `src/hawarma/bridge/bridge.py` | 直接调用 strategy，移除 agent 依赖 |
-| `playground/env/game_env_impl.py` | 统一 import 路径，实现甜点方法 |
+| `src/hawarma/game/game_env.py` | 添加 `MixingBowlState` + 甜点操作 |
+| `src/hawarma/game/game_env.py` | 实现 `get_unified_state()`, `get_stats()` |
+| `src/hawarma/game/runner.py` | 直接调用 strategy 移除 agent 依赖（原 `bridge.py`） |
+| `playground/env/sim.py` | 统一 import 路径，实现甜点方法（原 `game_env_impl.py`） |
 | `playground/agents/base.py` | 简化或移除 |
-| `data/recipes.json` | 添加 `platform` 字段 |
+| `data/recipes.json` | 添加 `station` 字段 |
 | `configs/config.yaml` | 添加 `dessert.stir_*` 配置项（预留） |
 
 ### 删除文件（Phase 2 完成后）
@@ -439,10 +444,10 @@ playground/                 →  保持
 | Q14 | 重构顺序 | ✅ Phase 1 → 2 → 3 |
 | C1 | 甜点配方数据 | ✅ 已存在 |
 | C2 | SimulatorEnvironment | ✅ 不需要保留 |
-| C3 | _get_recipe_attr 可移除 | ✅ 统一数据层后移除 |
+| C3 | _get_recipe_attr 可移除 | ✅ 已移除 — 策略现在直接访问 Recipe 属性 |
 | C4 | 搅拌盆 vs 组装站 | ✅ 不同物理位置，类似瓶颈，独立状态追踪 |
 | C5 | 搅拌参数 | ✅ 从配置读取，后续实际游戏测试确定 |
 | C6 | 每局 platform | ✅ 每局开始前确定，不混合 |
 | C7 | 甜点超时/计分 | ✅ 计分看 reward.csv，超时后续补充（甜点订单持续时间长，基本不会过期） |
 | C8 | 搅拌盆配方校验 | ✅ 有校验，只接受属于同一 recipe 的食材（类似组装站） |
-| C9 | condiments 格式 | ✅ 格式一致，无需特殊处理 |
+| C9 | condiments 格式 | ✅ 已统一为 dict[str, int]，Pydantic validator 自动处理 list[str] 输入 |

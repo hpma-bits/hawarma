@@ -16,7 +16,7 @@ from .models import (
     Order,
     StockpileSlot,
 )
-from hawarma.recipe import Station
+from hawarma.recipe import Recipe, Station
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,7 @@ class UnifiedState:
     stockpile: dict[str, StockpileSlot]
     """库存槽位名称 -> 状态的映射"""
 
-    recipes: dict[str, object]
+    recipes: dict[str, Recipe]
     """当前局可用配方 slug -> Recipe 的映射"""
 
     game_duration: float

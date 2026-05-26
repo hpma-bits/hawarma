@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from hawarma.core.state import UnifiedState
 from hawarma.agent.strategies.cpm import CPMCascadeStrategy
+from hawarma.recipe import Recipe
 
 
 class VisibilityAwareCascadeStrategy(CPMCascadeStrategy):
@@ -22,7 +23,7 @@ class VisibilityAwareCascadeStrategy(CPMCascadeStrategy):
         super().__init__()
         self._reward_lookup = None
 
-    def on_game_start(self, recipes: dict[str, object]) -> None:
+    def on_game_start(self, recipes: dict[str, Recipe]) -> None:
         super().on_game_start(recipes)
         from hawarma.core.reward import RecipeRewardLookup
         self._reward_lookup = RecipeRewardLookup()
@@ -69,8 +70,7 @@ class VisibilityAwareCascadeStrategy(CPMCascadeStrategy):
         for _, order in self._prioritized_orders(state):
             recipe = self._recipe_by_slug.get(order.recipe_slug)
             if recipe:
-                raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
-                if ingredient in raw:
+                if ingredient in recipe.raw_ingredients:
                     cp = self._get_critical_path(state, order)
                     if self._will_cross_threshold(state, order):
                         cp -= self.CROSSING_BONUS

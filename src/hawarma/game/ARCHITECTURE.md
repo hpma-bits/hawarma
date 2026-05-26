@@ -41,7 +41,7 @@
 - **输出**: 检测到的订单信息
 - **关键类**: `Scanner`, `DetectedOrder`
 
-### `assembly_verifier.py`
+### `verifier.py`
 - **地位**: 组装站提交验证器（可插拔组件）
 - **状态**: ✅ 新增
 - **功能**:
@@ -54,7 +54,7 @@
 - **关键类**: `Verifier`
 - **关键方法**: `is_assembly_empty()` — 返回 True 表示提交成功
 
-### `ui_runner.py`
+### `operator.py`
 - **地位**: UI操作执行器
 - **状态**: ✅ 完成
 - **功能**:
@@ -87,7 +87,7 @@ Operator根据菜谱选择顺序动态确定各元素坐标：
 
 详细规则参见 `docs/game_rules.md` 第2节。
 
-### `bridge.py`
+### `runner.py`
 - **地位**: 真实游戏桥接器
 - **状态**: ✅ 完成（含停滞检测集成 + 异步扫描）
 - **功能**:
@@ -354,7 +354,7 @@ async def _execute_serve_order(self, action) -> None:
 3. **Agent 内部**：`_try_serve()` 首先检查动画窗口
 
 ```python
-# bridge.py _agent_loop() 优化后的逻辑
+# runner.py _agent_loop() 优化后的逻辑
 action = await asyncio.to_thread(self.agent.step_with_diagnostics)
 if action:
     action_type = type(action).__name__
@@ -426,7 +426,7 @@ class AssemblyState:
 
 **⚠️ target_recipe_slug 完整性保证**（2026-04-05 修复）：
 
-`target_recipe_slug` 是组装站的"灵魂"字段，缺失会导致 Agent 决策链完全瘫痪（参见 `docs/assembly_deadlock_analysis.md`）。以下方法会自动推断配方：
+`target_recipe_slug` 是组装站的"灵魂"字段，缺失会导致 Agent 决策链完全瘫痪。以下方法会自动推断配方：
 
 | 方法 | 推断时机 | 推断依据 |
 |------|----------|----------|

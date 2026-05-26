@@ -1,16 +1,11 @@
 """
 游戏环境模拟器 - 核心数据结构和类型定义
 
-地位：定义游戏环境模拟器中使用的所有数据类型和结构
-      状态类型（Order, CookerState, AssemblyState, StockpileSlot）
-      统一从 hawarma.core.models 导入，消除类型漂移。
+地位：定义游戏环境模拟器中使用的所有数据结构和事件类型。
+      状态类型（Order, CookerState 等）从 hawarma.core.models 导入。
+      Recipe 和 IngredientRequirement 从 hawarma.recipe 导入（已统一）。
 
-真实游戏规则（2026-04-24 更新）：
-- 订单刷新间隔：随机 3-5 秒，与 recipe 食材耗时无关
-- 订单超时：与 recipe 食材耗时相关，普通 55-75s，rush 30-45s
-- 游戏时长：90-110 秒（可配置）
-
-⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新
+⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
 """
 
 from __future__ import annotations
@@ -30,6 +25,12 @@ from hawarma.core.models import (
     StockpileSlot,
     MixingBowlState,
 )
+
+# ============================================================================
+# 从 hawarma.recipe 导入统一配方类型
+# ============================================================================
+
+from hawarma.recipe import Recipe, IngredientRequirement
 
 # ============================================================================
 # 事件类型（模拟器专用）
@@ -73,48 +74,6 @@ class Event:
 
     def __repr__(self) -> str:
         return f"Event({self.timestamp:.2f}s, {self.event_type.name})"
-
-
-# ============================================================================
-# 配方和食材（模拟器专用，Phase 2 将统一到 core/models）
-# ============================================================================
-
-@dataclass(frozen=True)
-class IngredientRequirement:
-    """
-    食材需求
-
-    定义一个菜品所需的特定食材及其烹饪方式
-    """
-    name: str                           # 食材名称
-    cooker_type: str                    # 所需厨具类型 (grill, oven, etc.)
-    duration: float                     # 烹饪时长（秒）
-
-    def __repr__(self) -> str:
-        return f"{self.name}({self.cooker_type}, {self.duration}s)"
-
-
-@dataclass(frozen=True)
-class Recipe:
-    """
-    菜品配方（模拟器专用版本）
-
-    Phase 2 将统一到 core/models，与 hawarma.recipe.Recipe 合并。
-    """
-    name: str                                           # 配方名称
-    slug: str                                           # 配方唯一标识
-    ingredients: tuple[IngredientRequirement, ...]       # 所需食材列表
-    condiments: dict[str, int] = field(default_factory=dict)  # 调料需求 {名称: 数量}
-
-    def __post_init__(self):
-        """验证配方数据有效性"""
-        if not self.ingredients:
-            raise ValueError(f"Recipe {self.name} must have at least one ingredient")
-        if len(self.ingredients) > 2:
-            raise ValueError(f"Recipe {self.name} cannot have more than 2 ingredients")
-
-    def __repr__(self) -> str:
-        return f"Recipe({self.name}, {len(self.ingredients)} ingredients)"
 
 
 # ============================================================================
@@ -170,9 +129,9 @@ __all__ = [
     'EventType',
     'Event',
 
-    # 配方（模拟器专用，Phase 2 迁移）
-    'IngredientRequirement',
+    # 配方（从 hawarma.recipe 统一导入）
     'Recipe',
+    'IngredientRequirement',
 
     # 统一状态类型（从 core.models 导入）
     'Order',

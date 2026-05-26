@@ -72,7 +72,7 @@ AppConfig
 - **食材**: 收集 `raw_ingredients` 并去重，**反转顺序**后分配索引
 - **调料**: 收集 `condiments` 并去正序分配索引
 
-### 2.2 环境状态层 (environment.py)
+### 2.2 环境状态层 (game_env.py)
 
 ```python
 GameEnv(Env)
@@ -183,7 +183,7 @@ class DetectedOrder:
 
 ### 3.2 动态扫描频率算法
 
-在 `bridge.py` 中实现：
+在 `runner.py` 中实现：
 
 ```python
 def _compute_scan_interval(self) -> float:
@@ -206,7 +206,7 @@ def _compute_scan_interval(self) -> float:
 
 ### 3.3 送餐验证 + 快速重试算法
 
-在 `bridge.py` 中实现，使用快速重试机制（不依赖扫描）：
+在 `runner.py` 中实现，使用快速重试机制（不依赖扫描）：
 
 ```
 _serve_with_verify(slot_idx):
@@ -226,7 +226,7 @@ _serve_with_verify(slot_idx):
 
 ### 3.4 食材过期检测
 
-在 `environment.py` 的 `add_to_assembly()` 方法中：
+在 `game_env.py` 的 `add_to_assembly()` 方法中：
 
 ```python
 def add_to_assembly(self, cooker_name: str) -> bool:

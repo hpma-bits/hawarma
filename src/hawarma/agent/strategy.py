@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from hawarma.core.state import UnifiedState
     from hawarma.core.actions import Action
+    from hawarma.recipe import Recipe
 
 
 class Strategy(ABC):
@@ -40,13 +41,13 @@ class Strategy(ABC):
         """
         ...
 
-    def on_game_start(self, recipes: dict[str, object]) -> None:
+    def on_game_start(self, recipes: dict[str, Recipe]) -> None:
         """
         可选：游戏开始时调用。
         用于预计算、初始化缓存、分析食材频率等。
 
         Args:
-            recipes: 当前局可用配方 slug -> RecipeAdapter 的映射
+            recipes: 当前局可用配方 slug -> Recipe 的映射
         """
         pass
 

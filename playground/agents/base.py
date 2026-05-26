@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from hawarma.core.state import UnifiedState
     from hawarma.agent.strategy import Strategy
     from hawarma.core.actions import Action
+    from hawarma.recipe import Recipe
 
 
 class Agent:
@@ -72,6 +73,6 @@ class Agent:
         """重置内部记忆（新一局游戏开始时调用）"""
         pass
 
-    def on_game_start(self, recipes: dict[str, object]) -> None:
+    def on_game_start(self, recipes: dict[str, Recipe]) -> None:
         """转发给 Strategy"""
         self.strategy.on_game_start(recipes)

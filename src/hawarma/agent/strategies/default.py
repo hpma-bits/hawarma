@@ -37,6 +37,7 @@ from hawarma.core.actions import (
 )
 from hawarma.core.state import UnifiedState
 from hawarma.agent.strategy import Strategy
+from hawarma.recipe import Recipe
 
 
 class GreedyCascadeStrategy(Strategy):
@@ -48,37 +49,23 @@ class GreedyCascadeStrategy(Strategy):
     MAX_PRECOOK_STOCKPILE = 3
 
     def __init__(self):
-        self._recipe_by_slug: dict[str, object] = {}
+        self._recipe_by_slug: dict[str, Recipe] = {}
         self._recipe_condiments: dict[str, dict[str, int]] = {}
         self._ingredient_info: dict[str, tuple[str, float]] = {}
         self._recipe_ingredient_cooker: dict[str, list[tuple[str, str, float]]] = {}
 
-    def on_game_start(self, recipes: dict[str, object]) -> None:
+    def on_game_start(self, recipes: dict[str, Recipe]) -> None:
         self._recipe_by_slug = recipes
         self._recipe_condiments = {}
         self._ingredient_info = {}
         self._recipe_ingredient_cooker = {}
 
         for slug, recipe in recipes.items():
-            condiments = self._get_recipe_attr(recipe, "condiments", [])
-            if isinstance(condiments, list):
-                self._recipe_condiments[slug] = {c: 1 for c in condiments}
-            elif isinstance(condiments, dict):
-                self._recipe_condiments[slug] = dict(condiments)
-            else:
-                self._recipe_condiments[slug] = {}
-
-            raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
-            cookers = self._get_recipe_attr(recipe, "cookers", [])
-            durations = self._get_recipe_attr(recipe, "cook_durations", [])
-
+            self._recipe_condiments[slug] = dict(recipe.condiments)
             ics = []
-            for i, ing in enumerate(raw):
-                cooker = cookers[i] if i < len(cookers) else None
-                duration = durations[i] if i < len(durations) else 3.0
-                if cooker:
-                    self._ingredient_info[ing] = (cooker, duration)
-                    ics.append((ing, cooker, duration))
+            for ing in recipe.ingredients:
+                self._ingredient_info[ing.name] = (ing.cooker_type, ing.duration)
+                ics.append((ing.name, ing.cooker_type, ing.duration))
             self._recipe_ingredient_cooker[slug] = ics
 
     def decide(self, state: UnifiedState) -> Action | None:
@@ -590,7 +577,7 @@ class GreedyCascadeStrategy(Strategy):
             recipe = self._recipe_by_slug.get(order.recipe_slug)
             if not recipe:
                 continue
-            raw_ings = set(self._get_recipe_attr(recipe, "raw_ingredients", []))
+            raw_ings = set(recipe.raw_ingredients)
             if present_ing_names.issubset(raw_ings):
                 ics = self._recipe_ingredient_cooker.get(order.recipe_slug, [])
                 return [(n, c) for n, c, _ in ics if n not in present_ing_names]
@@ -617,14 +604,11 @@ class GreedyCascadeStrategy(Strategy):
                 recipe = self._recipe_by_slug.get(order.recipe_slug)
                 if not recipe:
                     continue
-                raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
-                cookers = self._get_recipe_attr(recipe, "cookers", [])
                 all_match = True
                 for ing_name, ck_type in present_ing_combos:
                     ing_matched = False
-                    for i, r_ing in enumerate(raw):
-                        r_ck = cookers[i] if i < len(cookers) else None
-                        if r_ing == ing_name and r_ck == ck_type:
+                    for r_ing in recipe.ingredients:
+                        if r_ing.name == ing_name and r_ing.cooker_type == ck_type:
                             ing_matched = True
                             break
                     if not ing_matched:
@@ -695,8 +679,7 @@ class GreedyCascadeStrategy(Strategy):
         for _, order in self._prioritized_orders(state):
             recipe = self._recipe_by_slug.get(order.recipe_slug)
             if recipe:
-                raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
-                if ingredient in raw:
+                if ingredient in recipe.raw_ingredients:
                     return order.order_id
         return None
 
@@ -727,14 +710,11 @@ class GreedyCascadeStrategy(Strategy):
         return None
 
     def _ingredients_match(self, actual: list, recipe) -> bool:
-        expected_raw = self._get_recipe_attr(recipe, "raw_ingredients", [])
-        expected_cookers = self._get_recipe_attr(recipe, "cookers", [])
-        if len(actual) != len(expected_raw):
+        if len(actual) != len(recipe.ingredients):
             return False
         expected_pairs = set()
-        for i, ing in enumerate(expected_raw):
-            cooker = expected_cookers[i] if i < len(expected_cookers) else None
-            expected_pairs.add((ing, cooker))
+        for ing in recipe.ingredients:
+            expected_pairs.add((ing.name, ing.cooker_type))
         actual_pairs = set()
         for ing in actual:
             if isinstance(ing, tuple):
@@ -749,19 +729,5 @@ class GreedyCascadeStrategy(Strategy):
                 return False
         return True
 
-    def _get_recipe_attr(self, recipe, attr_name, default=None):
-        if hasattr(recipe, "ingredients") and attr_name == "raw_ingredients":
-            return [ing.name for ing in recipe.ingredients]
-        if hasattr(recipe, "ingredients") and attr_name == "cookers":
-            return [ing.cooker for ing in recipe.ingredients]
-        if hasattr(recipe, "ingredients") and attr_name == "cook_durations":
-            return [ing.duration for ing in recipe.ingredients]
-        if hasattr(recipe, attr_name):
-            return getattr(recipe, attr_name)
-        if isinstance(recipe, dict):
-            return recipe.get(attr_name, default)
-        return default
-
-
-# 向后兼容别名
+    # 向后兼容别名
 DefaultStrategy = GreedyCascadeStrategy

@@ -21,6 +21,7 @@ from loguru import logger
 
 from hawarma.core.models import Order
 from hawarma.agent.strategy import Strategy
+from hawarma.recipe import Recipe
 
 from .game_env import GameEnv
 from .scanner import Scanner
@@ -42,7 +43,7 @@ class Runner:
         scanner: Scanner,
         verifier: Verifier,
         strategy: Strategy,
-        recipes: dict[str, object],
+        recipes: dict[str, Recipe],
     ):
         self.env = env
         self.ui = operator

@@ -35,8 +35,7 @@ SimEnv  →  UnifiedState  →  Strategy.decide()  →  Action  →  SimEnv.step
 
 | 目录 | 职责 |
 |------|------|
-| `env/` | GameEnv, UnifiedState, Reward, RecipeAdapter |
-| `strategies/` | Strategy ABC + DefaultStrategy |
+| `env/` | SimEnv, GameSimulator, Reward |
 | `agents/` | Agent 壳（透传 Strategy） |
 | `core/` | run_episode, run_benchmark |
 | `replay/` | 回放记录与 CLI 播放器 |
@@ -54,13 +53,13 @@ python -m pytest playground\tests\ -v
 ## 自定义 Strategy
 
 ```python
-from playground.strategies.base import Strategy
-from playground.env.unified_state import UnifiedState
-from hawarma.agent.agent import Action, CookAction
+from hawarma.agent.strategy import Strategy
+from hawarma.core.state import UnifiedState
+from hawarma.core.actions import Action, CookAction
 
 class MyStrategy(Strategy):
     def decide(self, state: UnifiedState) -> Action | None:
-        # 你的决策逻辑
+        # Your decision logic
         return CookAction(ingredient="beef", cooker="grill", duration=3.0)
 ```
 

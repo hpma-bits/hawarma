@@ -23,6 +23,7 @@ from hawarma.core.models import (
     Order,
     StockpileSlot,
 )
+from hawarma.recipe import Recipe, Station
 
 
 class GameEnv:
@@ -38,7 +39,7 @@ class GameEnv:
         cooker_names: list[str],
         stockpile_slots: int = 3,
         game_duration: float = 90.0,
-        recipes: dict[str, object] | None = None,
+        recipes: dict[str, Recipe] | None = None,
         cooker_retention: float = 5.0,
     ):
         self._cooker_retention = cooker_retention
@@ -208,14 +209,9 @@ class GameEnv:
         if self._assembly.target_recipe_slug:
             recipe = self._recipes.get(self._assembly.target_recipe_slug)
             if recipe is not None:
-                recipe_condiments = getattr(recipe, "condiments", [])
-                # Recipe model uses list[str]; simulator adapter uses dict[str, int]
-                if isinstance(recipe_condiments, dict):
-                    max_count = recipe_condiments.get(condiment, 0)
-                    valid = max_count > 0
-                else:
-                    max_count = recipe_condiments.count(condiment)
-                    valid = condiment in recipe_condiments
+                condiments = recipe.condiments
+                max_count = condiments.get(condiment, 0)
+                valid = max_count > 0
 
                 if not valid:
                     logger.warning(
@@ -291,7 +287,7 @@ class GameEnv:
         if self._mixing_bowl.target_recipe_slug:
             recipe = self._recipes.get(self._mixing_bowl.target_recipe_slug)
             if recipe:
-                raw_ings = getattr(recipe, "raw_ingredients", [])
+                raw_ings = recipe.raw_ingredients
                 if ingredient not in raw_ings:
                     logger.warning(
                         f"[t={self.time:.1f}s] Ingredient {ingredient} not in dessert recipe {self._mixing_bowl.target_recipe_slug}"
@@ -315,13 +311,9 @@ class GameEnv:
         if self._mixing_bowl.target_recipe_slug:
             recipe = self._recipes.get(self._mixing_bowl.target_recipe_slug)
             if recipe is not None:
-                recipe_condiments = getattr(recipe, "condiments", [])
-                if isinstance(recipe_condiments, dict):
-                    max_count = recipe_condiments.get(condiment, 0)
-                    valid = max_count > 0
-                else:
-                    valid = condiment in recipe_condiments
-                    max_count = 1
+                condiments = recipe.condiments
+                max_count = condiments.get(condiment, 0)
+                valid = max_count > 0
 
                 if not valid:
                     logger.warning(
@@ -369,8 +361,8 @@ class GameEnv:
             logger.error(f"Recipe not found: {self._mixing_bowl.target_recipe_slug}")
             return False
 
-        cookers_list = getattr(recipe, "cookers", [])
-        durations = getattr(recipe, "cook_durations", [])
+        cookers_list = recipe.cookers
+        durations = recipe.cook_durations
         if not cookers_list or not durations:
             logger.error(f"Recipe {self._mixing_bowl.target_recipe_slug} has no cookers/durations")
             return False
@@ -439,9 +431,9 @@ class GameEnv:
             if order and not order.done:
                 recipe = self._recipes.get(order.recipe_slug)
                 if recipe:
-                    station = getattr(recipe, "station", Station.GASTRONOME)
+                    station = recipe.station
                     if station == Station.DESSERT:
-                        raw_ings = getattr(recipe, "raw_ingredients", [])
+                        raw_ings = recipe.raw_ingredients
                         if ingredient in raw_ings:
                             return order.recipe_slug
         return None
@@ -549,7 +541,7 @@ class GameEnv:
         if self._assembly.target_recipe_slug:
             recipe = self._recipes.get(self._assembly.target_recipe_slug)
             if recipe is not None:
-                raw_ings = getattr(recipe, "raw_ingredients", [])
+                raw_ings = recipe.raw_ingredients
                 if ingredient not in raw_ings:
                     logger.warning(
                         f"[t={self.time:.1f}s] Ingredient {ingredient} not in recipe {self._assembly.target_recipe_slug}"
@@ -705,7 +697,7 @@ class GameEnv:
             if order and not order.done:
                 recipe = self._recipes.get(order.recipe_slug)
                 if recipe:
-                    raw_ings = getattr(recipe, "raw_ingredients", [])
+                    raw_ings = recipe.raw_ingredients
                     if ingredient in raw_ings:
                         return order.recipe_slug
         return None
@@ -731,8 +723,8 @@ class GameEnv:
             if order and not order.done:
                 recipe = self._recipes.get(order.recipe_slug)
                 if recipe:
-                    raw_ings = getattr(recipe, "raw_ingredients", [])
-                    cookers = getattr(recipe, "cookers", [])
+                    raw_ings = recipe.raw_ingredients
+                    cookers = recipe.cookers
                     if raw_ings and cookers:
                         if raw_ings[0] == ingredient and cookers[0] == cooker_type:
                             return order.recipe_slug
@@ -744,7 +736,7 @@ class GameEnv:
             if order and not order.done:
                 recipe = self._recipes.get(order.recipe_slug)
                 if recipe:
-                    raw_ings = set(getattr(recipe, "raw_ingredients", []))
+                    raw_ings = set(recipe.raw_ingredients)
                     if all(ing in raw_ings for ing in ingredients):
                         return order.recipe_slug
         return None

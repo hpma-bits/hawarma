@@ -26,20 +26,11 @@ Hawarma 项目的 RL 风格游戏模拟与策略验证环境。
 
 | 文件 | 地位 | 输入 | 输出 |
 |------|------|------|------|
-| `game_env.py` | GameEnv ABC | Action | StepResult |
-| `game_env_impl.py` | GameEnv 实现 | Action | 基于 GameSimulator 的 RL 包装 |
-| `unified_state.py` | UnifiedState | GameSimulator 内部状态 | 不可变观测快照 |
-| `rewards.py` | Reward 计算 | events + state | float reward |
-| `recipe_adapter.py` | Recipe 适配 | simulator Recipe | Strategy 期望的格式 |
+| `game_env.py` | GameEnv ABC (RL interface) | Action | StepResult |
+| `sim.py` | SimEnv implementation | Action | RL-style StepResult via GameSimulator |
+| `reward.py` | Reward calculation | events + state | float reward |
 
-### `strategies/` — 策略模块
-
-| 文件 | 地位 | 输入 | 输出 |
-|------|------|------|------|
-| `base.py` | Strategy ABC | UnifiedState | Action \| None |
-| `default.py` | 默认策略 | UnifiedState | 多订单并行决策 |
-
-### `agents/` — Agent 壳模块
+### `agents/` — Agent shell module
 
 | 文件 | 地位 | 输入 | 输出 |
 |------|------|------|------|
