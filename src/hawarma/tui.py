@@ -40,6 +40,7 @@ from hawarma.services.recipe_manager import RecipeManager
 from hawarma.device import setup_device
 from hawarma.patches import apply_patch
 from hawarma.log import setup_logging
+from hawarma.utils.order_parser import parse_order_input
 
 # 将 SelectionList 的选中标记从 "X" 改为 "✓"
 from textual.widgets._toggle_button import ToggleButton
@@ -120,9 +121,9 @@ class RecipeSelectionScreen(Screen):
             ),
             Static("3. 准备顺序（留空=默认顺序，如 '012'）：", classes="subtitle"),
             Input(
-                placeholder="输入数字索引，最多4位",
+                placeholder="如 0123(0基) 或 1234(1基) 均可",
                 id="rs-order-input",
-                restrict=r"[0-3]{0,4}",
+                restrict=r"[0-4]{0,4}",
             ),
             Static("4. 选择策略：", classes="subtitle"),
             Select(
@@ -195,14 +196,7 @@ class RecipeSelectionScreen(Screen):
                     if r.slug in selected_slugs and r.station == station
                 ]
                 order_input = self.query_one("#rs-order-input", Input).value.strip()
-                if order_input and all(c.isdigit() for c in order_input) and len(order_input) == len(selected_recipes):
-                    try:
-                        ordered = [selected_recipes[int(idx)] for idx in order_input]
-                        self.app.selected_recipes = ordered
-                    except IndexError:
-                        self.app.selected_recipes = selected_recipes
-                else:
-                    self.app.selected_recipes = selected_recipes
+                self.app.selected_recipes = parse_order_input(selected_recipes, order_input)
                 self.app.pop_screen()
         elif event.button.id == "back":
             self.app.pop_screen()

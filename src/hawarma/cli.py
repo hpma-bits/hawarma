@@ -15,6 +15,7 @@ from hawarma.patches import apply_patch
 from hawarma.log import setup_logging
 from hawarma.device import setup_device
 from hawarma.recipe import Station
+from hawarma.utils.order_parser import parse_order_input
 
 
 def get_recipe_selection(all_recipes):
@@ -32,18 +33,7 @@ def get_recipe_selection(all_recipes):
         f"Specify preparation order for {len(selected_recipes)} recipes (e.g., '012'):"
     ).ask()
 
-    ordered_recipes = selected_recipes
-    if (
-        order_input
-        and all(c.isdigit() for c in order_input)
-        and len(order_input) == len(selected_recipes)
-    ):
-        try:
-            ordered_recipes = [selected_recipes[int(idx)] for idx in list(order_input)]
-        except IndexError:
-            logger.error("Invalid order index. Using default order.")
-
-    return ordered_recipes
+    return parse_order_input(selected_recipes, order_input)
 
 
 async def run_game(config, ordered_recipes, strategy=None, station=Station.GASTRONOME):
