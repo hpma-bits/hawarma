@@ -84,7 +84,7 @@ class TestDessertDetection(unittest.TestCase):
                     return FakeMatch(0.3)
                 return None
             mock_match.side_effect = side_effect
-            result = self.scanner._resolve_by_second_ingredient(candidates, 0, MagicMock())
+            result = self.scanner._resolve_dessert_conflict(candidates, 0, MagicMock())
         self.assertIsNotNone(result)
         self.assertEqual(result.slug, "domeFigueMiel")
 
@@ -100,7 +100,7 @@ class TestDessertDetection(unittest.TestCase):
                     return FakeMatch(0.85)
                 return None
             mock_match.side_effect = side_effect
-            result = self.scanner._resolve_by_second_ingredient(candidates, 0, MagicMock())
+            result = self.scanner._resolve_dessert_conflict(candidates, 0, MagicMock())
         self.assertIsNotNone(result)
         self.assertEqual(result.slug, "wildbloomSalad")
 
@@ -116,7 +116,7 @@ class TestDessertDetection(unittest.TestCase):
                     return FakeMatch(0.85)
                 return FakeMatch(0.3)
             mock_match.side_effect = side_effect
-            result = self.scanner._resolve_by_second_ingredient(candidates, 0, MagicMock())
+            result = self.scanner._resolve_dessert_conflict(candidates, 0, MagicMock())
         self.assertIsNotNone(result)
         self.assertEqual(result.slug, "mooncakeThyme")
 
@@ -131,7 +131,7 @@ class TestDessertDetection(unittest.TestCase):
                     return FakeMatch(0.85)
                 return FakeMatch(0.3)
             mock_match.side_effect = side_effect
-            result = self.scanner._resolve_by_second_ingredient(candidates, 0, MagicMock())
+            result = self.scanner._resolve_dessert_conflict(candidates, 0, MagicMock())
         self.assertIsNotNone(result)
         self.assertEqual(result.slug, "snowSkinMooncakeBeef")
 
@@ -140,7 +140,7 @@ class TestDessertDetection(unittest.TestCase):
         candidates = self._candidates_for_first_ing("blanquette_fig")
         with patch("hawarma.game.scanner.local_match") as mock_match:
             mock_match.return_value = FakeMatch(0.3)
-            result = self.scanner._resolve_by_second_ingredient(candidates, 0, MagicMock())
+            result = self.scanner._resolve_dessert_conflict(candidates, 0, MagicMock())
         self.assertIsNone(result)
 
     # ========================================================================

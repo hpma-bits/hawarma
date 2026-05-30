@@ -23,7 +23,7 @@ from loguru import logger
 
 from hawarma.config import AppConfig
 from hawarma.paths import resolve_path
-from hawarma.recipe import Recipe
+from hawarma.recipe import Recipe, Station
 from hawarma.utils.image_utils import local_match
 
 
@@ -194,15 +194,9 @@ class Scanner:
             candidates = self._recipes_by_first_ingredient.get(first_ing, [])
 
             if len(candidates) > 1:
-                # 优先通过第二个食材区分（适用于甜点等双食材菜谱）
-                resolved = self._resolve_by_second_ingredient(candidates, slot, screen)
+                resolved = self._resolve_conflict(candidates, slot, screen)
                 if resolved:
                     best_match = resolved
-                else:
-                    # 回退到 cooker 图标区分（gastronome 模式）
-                    resolved = self._resolve_cooker_conflict(best_match, slot, screen)
-                    if resolved:
-                        best_match = resolved
 
             is_rush = self._detect_rush(slot, screen)
 
@@ -215,36 +209,74 @@ class Scanner:
 
         return None
 
-    def _resolve_cooker_conflict(
-        self, matched_recipe: Recipe, slot: int, screen
+    def _resolve_conflict(
+        self, candidates: list[Recipe], slot: int, screen
     ) -> Optional[Recipe]:
         """
-        当首个食材匹配多个菜谱时，通过 cooker 图标区分
+        根据站点类型选择冲突解决策略。
+
+        Gastronome: 通过 cooker 图标区分（同食材不同厨具 = 不同菜谱）
+        Dessert:    通过第二食材区分（甜点无 cooker 图标）
+        """
+        if all(r.station == Station.GASTRONOME for r in candidates):
+            return self._resolve_gastronome_conflict(candidates, slot, screen)
+        return self._resolve_dessert_conflict(candidates, slot, screen)
+
+    def _resolve_gastronome_conflict(
+        self, candidates: list[Recipe], slot: int, screen
+    ) -> Optional[Recipe]:
+        """
+        通过 cooker 图标区分共享首个食材的 gastronome 菜谱。
+
+        订单卡片中，每个食材旁边显示对应的 cooker 图标。
+        通过匹配第一个食材位置的 cooker 图标来确定正确的菜谱。
 
         Args:
-            matched_recipe: 食材已匹配成功的菜谱
+            candidates: 首个食材相同的候选菜谱列表
             slot: 槽位索引
             screen: 屏幕截图
 
         Returns:
-            区分后的正确菜谱，如果无法区分则返回原菜谱
+            区分后的正确菜谱，如果无法区分则返回 None
         """
         x1, y1, x2, y2 = self.config.screen.ingredients_regions[slot]
         cooker_roi = (x1, y1, x1 + (x2 - x1) // 4, y2)
 
-        first_ing = matched_recipe.raw_ingredients[0]
-        candidates = self._recipes_by_first_ingredient.get(first_ing, [])
-        if len(candidates) <= 1:
-            return matched_recipe
+        best_match = None
+        best_confidence = 0.0
 
-    def _resolve_by_second_ingredient(
+        for recipe in candidates:
+            cooker_type = recipe.cookers[0]
+            cooker_path = self.image_dir / f"cooker-{cooker_type}.jpg"
+            if not cooker_path.exists():
+                cooker_path = self.image_dir / f"icon-{cooker_type}.jpg"
+                if not cooker_path.exists():
+                    continue
+
+            match = local_match(Template(str(cooker_path)), cooker_roi, screen)
+            if match:
+                confidence = float(match.get("confidence", 0))
+                if confidence > best_confidence:
+                    best_confidence = confidence
+                    best_match = recipe
+
+        if best_match and best_confidence > 0.7:
+            logger.debug(
+                f"Resolved cooker conflict for {candidates[0].raw_ingredients[0]}: "
+                f"{best_match.slug} (cooker confidence: {best_confidence:.2f})"
+            )
+            return best_match
+
+        return None
+
+    def _resolve_dessert_conflict(
         self, candidates: list[Recipe], slot: int, screen
     ) -> Optional[Recipe]:
         """
-        当首个食材匹配多个菜谱时，通过检测第二个食材来区分。
+        通过第二食材区分共享首个食材的甜点菜谱。
 
-        第二个食材的 ROI 是订单 ingredients region 的第二个 quarter，
-        即第一个 quarter 向右平移同宽度的区域。
+        甜点无 cooker 图标，需匹配第二食材来区分。
+        第二个食材的 ROI 是订单 ingredients region 的第二个 quarter。
 
         Args:
             candidates: 首个食材相同的候选菜谱列表
