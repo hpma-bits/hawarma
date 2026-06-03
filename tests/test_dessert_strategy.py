@@ -76,7 +76,6 @@ class TestDessertStrategy(unittest.TestCase):
             "is_in_animation_window": False,
             "total_visibility": 0.0,
             "mixing_bowl": MixingBowlState(),
-            "station": Station.DESSERT,
         }
         defaults.update(overrides)
         return UnifiedState(**defaults)

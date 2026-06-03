@@ -16,7 +16,7 @@ from .models import (
     Order,
     StockpileSlot,
 )
-from hawarma.recipe import Recipe, Station
+from hawarma.recipe import Recipe
 
 
 @dataclass(frozen=True)
@@ -57,9 +57,6 @@ class UnifiedState:
 
     mixing_bowl: MixingBowlState = field(default_factory=MixingBowlState)
     """搅拌盆状态（dessert 专用）"""
-
-    station: Station = Station.GASTRONOME
-    """当前局站点类型"""
 
     @property
     def remaining_time(self) -> float:
