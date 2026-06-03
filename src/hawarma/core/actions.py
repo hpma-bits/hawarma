@@ -5,9 +5,13 @@ Strategy 产出 Action，Env 消费 Action。
 Action 是 Strategy 和 Env 之间的操作契约。
 
 按 station 分组：
-  - 基础动作：两种 station 共享
-  - Gastronome 专用
-  - Dessert 专用（预留）
+  - 共享：ClearCookerAction
+  - Gastronome 专用：AddCondimentAction, ClearAssemblyAction, CookAction,
+    MoveToAssemblyAction, MoveToStockpileAction, PullFromStockpileAction,
+    ServeOrderAction
+  - Dessert 专用：MoveToMixingBowlAction, AddCondimentToMixingBowlAction,
+    StirAction, MoveMixingBowlToCookerAction, ServeFromCookerAction,
+    ClearMixingBowlAction
 """
 
 from __future__ import annotations
@@ -20,13 +24,7 @@ class Action:
     """动作基类"""
 
 
-# ── 基础动作（两种 station 共享） ──
-
-@dataclass
-class AddCondimentAction(Action):
-    """调味"""
-    condiment: str
-
+# ── 共享（两种 station 都用） ──
 
 @dataclass
 class ClearCookerAction(Action):
@@ -34,12 +32,18 @@ class ClearCookerAction(Action):
     cooker: str
 
 
+# ── Gastronome 专用 ──
+
+@dataclass
+class AddCondimentAction(Action):
+    """调料区 → 组装站"""
+    condiment: str
+
+
 @dataclass
 class ClearAssemblyAction(Action):
     """清空组装站"""
 
-
-# ── Gastronome 专用 ──
 
 @dataclass
 class CookAction(Action):
