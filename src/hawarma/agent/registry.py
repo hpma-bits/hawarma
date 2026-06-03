@@ -1,20 +1,9 @@
 """
 策略注册表
 
-支持通过配置字符串动态加载策略类。
-
-使用方式：
-    strategy = get_strategy("gastronome")   # 推荐：用户界面使用
-    strategy = get_strategy("dessert")      # 甜点模式
-    strategy = get_strategy("cpm_cascade")  # 内部/benchmark 使用
-
-注册表分组：
-  - 用户级（推荐 CLI/TUI 使用）：gastronome, dessert
-  - 内部级（bench/playground 使用）：全部策略名
-
-架构说明：
-  所有 Gastronome 策略都基于 GreedyCascadeStrategy 的贪心瀑布框架。
-  最佳策略是 CPMEnhancedCascadeStrategy（benchmark: 3934 avg reward）。
+按 Station 分组的两个用户级策略：
+  - "gastronome": 美食站 — 10 级贪心瀑布 + CPM + visibility + 单食材 + 延迟感知
+  - "dessert":    甜点站 — 搅拌盆流水线
 """
 
 from __future__ import annotations
@@ -25,25 +14,8 @@ if TYPE_CHECKING:
     from hawarma.agent.strategy import Strategy
 
 _STRATEGY_REGISTRY: dict[str, str] = {
-    # ── 用户级（推荐 CLI/TUI 使用） ──
-    "gastronome": "hawarma.agent.strategies.cpm_enhanced:CPMEnhancedCascadeStrategy",
+    "gastronome": "hawarma.agent.strategies.gastronome:GastronomeStrategy",
     "dessert": "hawarma.agent.strategies.dessert:DessertStrategy",
-
-    # ── 内部级（bench/playground 精确指定） ──
-    "greedy_cascade": "hawarma.agent.strategies.default:GreedyCascadeStrategy",
-    "cpm_cascade": "hawarma.agent.strategies.cpm:CPMCascadeStrategy",
-    "visibility_cascade": "hawarma.agent.strategies.visibility_aware:VisibilityAwareCascadeStrategy",
-    "preempt_cascade": "hawarma.agent.strategies.preempt_score:PreemptScoreCascadeStrategy",
-    "cpm_enhanced_cascade": "hawarma.agent.strategies.cpm_enhanced:CPMEnhancedCascadeStrategy",
-    "delay_cascade": "hawarma.agent.strategies.delay_aware:DelayAwareCascadeStrategy",
-
-    # ── 向后兼容旧名 ──
-    "default": "hawarma.agent.strategies.default:GreedyCascadeStrategy",
-    "cpm": "hawarma.agent.strategies.cpm:CPMCascadeStrategy",
-    "visibility_aware": "hawarma.agent.strategies.visibility_aware:VisibilityAwareCascadeStrategy",
-    "preempt_score": "hawarma.agent.strategies.preempt_score:PreemptScoreCascadeStrategy",
-    "cpm_enhanced": "hawarma.agent.strategies.cpm_enhanced:CPMEnhancedCascadeStrategy",
-    "delay_aware": "hawarma.agent.strategies.delay_aware:DelayAwareCascadeStrategy",
 }
 
 
@@ -62,7 +34,7 @@ def get_strategy(name: str) -> Strategy:
     根据名称获取策略实例。
 
     Args:
-        name: 策略名称（如 "gastronome", "cpm_cascade"）
+        name: 策略名称（如 "gastronome", "dessert"）
 
     Returns:
         Strategy: 策略实例

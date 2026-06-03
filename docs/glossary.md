@@ -91,11 +91,7 @@
 
 | 术语 | 说明 |
 |------|------|
-| DefaultStrategy | 默认策略：主动预烹饪 + 决策优先级优化 |
-| CPMStrategy | 关键路径法策略：最短处理时间优先，高吞吐 |
-| CPMEnhancedStrategy | CPM 增强策略：单食材优先 + visibility 阈值，当前最佳 |
-| VisibilityAwareStrategy | Visibility 感知策略：CPM + visibility 阈值跨越加成 |
-| PreemptScoreStrategy | 分数抢占策略：分数/CP 效率排序 + 进度感知抢占 |
+| GastronomeStrategy | 美食站唯一策略：10 级贪心瀑布 + CPM + visibility 阈值跨越 + 单食材优先 + 延迟感知 |
 | DessertStrategy | 甜点策略：搅拌盆流水线决策 |
 
 ### 决策概念

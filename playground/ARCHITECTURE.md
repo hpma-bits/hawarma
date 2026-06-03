@@ -61,7 +61,7 @@ Hawarma 项目的 RL 风格游戏模拟与策略验证环境。
 |------|----------|
 | `test_interfaces.py` | Phase 0: UnifiedState, Strategy, Agent, GameEnv 接口验证 |
 | `test_game_env_impl.py` | Phase 1: SimEnv 集成测试 |
-| `test_end_to_end.py` | Phase 2-3: Runner + DefaultStrategy 端到端 |
+| `test_end_to_end.py` | Phase 2-3: Runner + GastronomeStrategy 端到端 |
 | `test_reward.py` | Reward 计算：GameDataReward (reward.csv 查表) |
 | `test_runner.py` | Phase 4: run_episode + run_benchmark |
 

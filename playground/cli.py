@@ -80,7 +80,7 @@ def cmd_bench(args):
         names = [s.strip() for s in args.strategies.split(",")]
     else:
         # 默认只比较 Tier 1 推荐策略
-        names = ["cpm", "delay_aware", "cpm_enhanced"]
+        names = ["gastronome"]
 
     strategies = {}
     for name in names:

@@ -67,13 +67,8 @@
 ### `agent/strategies/` 子目录
 - **地位**: 策略实现
 - **文件**:
-  - `default.py`: GreedyCascadeStrategy，主动预烹饪 + 决策优先级优化
-  - `cpm.py`: CPMCascadeStrategy，关键路径法（SPT） + assembly 抢占
-  - `cpm_enhanced.py`: CPMEnhancedCascadeStrategy，CPM + 单食材优先 + visibility 阈值（用户级：gastronome）
-  - `visibility_aware.py`: VisibilityAwareCascadeStrategy，CPM + visibility 阈值跨越加成
-  - `preempt_score.py`: PreemptScoreCascadeStrategy，分数/CP 效率排序 + 进度感知抢占
-  - `delay_aware.py`: DelayAwareCascadeStrategy，延迟感知 CPM 瀑布
-  - `dessert.py`: DessertStrategy，甜点策略，流水线决策逻辑
+  - `gastronome.py`: GastronomeStrategy，美食站唯一策略 — 10 级贪心瀑布 + CPM + visibility 阈值跨越 + 单食材优先 + 延迟感知（用户级：gastronome）
+  - `dessert.py`: DessertStrategy，甜点策略，搅拌盆流水线决策逻辑
 
 ### `game/` 子目录
 - **地位**: Agent 与真实游戏的桥接层
@@ -120,14 +115,9 @@ Runner (game/runner.py)
   ├─ Operator (game/operator.py)
   │     └─ swipe 坐标映射和执行
   │
-  └─ Strategy (agent/strategies/) — 贪心瀑布（Greedy Cascade）架构
-        ├─ GreedyCascadeStrategy   (基类：10 级贪心瀑布)
-        ├─ CPMCascadeStrategy       (CP 排序 + assembly 抢占)
-        ├─ CPMEnhancedCascadeStrategy (当前最优，用户级：gastronome)
-        ├─ VisibilityAwareCascadeStrategy
-        ├─ PreemptScoreCascadeStrategy
-        ├─ DelayAwareCascadeStrategy
-        └─ DessertStrategy          (Dessert 独立瀑布)
+  └─ Strategy (agent/strategies/)
+        ├─ GastronomeStrategy       (美食站：10 级贪心瀑布 + CPM + visibility + 单食材 + 延迟感知)
+        └─ DessertStrategy          (甜点站：搅拌盆流水线)
 ```
 
 ### Agent 决策优先级（Gastronome）

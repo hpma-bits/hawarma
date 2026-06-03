@@ -340,7 +340,7 @@ I suspect current strategies are too monolithic.
 For example:
 
 ```python
-VisibilityAwareStrategy
+GastronomeStrategy
 ```
 
 probably owns:

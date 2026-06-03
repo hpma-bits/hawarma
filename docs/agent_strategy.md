@@ -48,57 +48,60 @@ Actions 定义在 `src/hawarma/core/actions.py`，按 station 分组：
 | Gastronome | PullFromStockpileAction | 库存→组装站 |
 | Dessert | *(预留)* | 待开发 |
 
-## 3. 策略对比（100局基准测试）
+## 3. 策略
 
-| Rank | Strategy | Avg Reward | vs #1 | 完成订单 | 超时率 |
-|------|----------|-----------|-------|---------|--------|
-| 1 | **CPMEnhancedStrategy** | **3934** | — | 18.9 | 0% |
-| 2 | VisibilityAwareStrategy | 3923 | Δ -11 (n.s.) | 18.8 | 0% |
-| 3 | CPMStrategy | 3878 | Δ -56 | 18.5 | 0% |
-| 4 | PreemptScoreStrategy | 3793 | Δ -141 (p=0.01) | 18.1 | 0% |
-| 5 | DefaultStrategy | 3736 | Δ -198 (p=0.01) | 17.9 | 0% |
+每个 station 只有一个策略（合并后无变体）：
 
-### 3.1 可用策略
+| 注册名 | 类名 | Station | 特点 |
+|--------|------|---------|------|
+| `gastronome` | `GastronomeStrategy` | 美食站 | 10 级贪心瀑布 + CPM + visibility 阈值跨越 + 单食材优先 + 延迟感知 |
+| `dessert` | `DessertStrategy` | 甜点站 | 搅拌盆流水线决策 |
 
-| 注册名 | 类名 | 特点 |
-|--------|------|------|
-| `cpm_enhanced` | CPMEnhancedStrategy | **当前最佳**：CPM + 单食材优先 + visibility 阈值 |
-| `visibility_aware` | VisibilityAwareStrategy | CPM + visibility 阈值跨越加成 |
-| `cpm` | CPMStrategy | 关键路径法（SPT） + assembly 抢占 |
-| `preempt_score` | PreemptScoreStrategy | 分数/CP 效率排序 + 进度感知抢占 |
-| `default` | DefaultStrategy | 主动预烹饪 + 决策优先级优化，稳定保守 |
+### 3.1 性能基准
+
+`GastronomeStrategy` 是 6 个历史变体（`GreedyCascade` / `CPMCascade` / `VisibilityAwareCascade` / `CPMEnhancedCascade` / `PreemptScoreCascade` / `DelayAwareCascade`）的最优特性合并结果。合并前 100 局配对 benchmark（vs `GreedyCascadeStrategy` 基线 3736）：
+
+| 变体 | Avg Reward | vs baseline | 合并状态 |
+|------|-----------|------------|----------|
+| `CPMEnhancedCascadeStrategy` | 3934 | +5.3% ★ | 全部并入 |
+| `VisibilityAwareCascadeStrategy` | 3923 | +5.0% | 阈值跨越 `CROSSING_BONUS=5.0` |
+| `CPMCascadeStrategy` | 3878 | +3.8% | CPM 评分、assembly 抢占 |
+| `DelayAwareCascadeStrategy` | 4711（带 300+400ms 延迟） | +2.1% vs 同延迟基线 | 激进预烹饪/存储阈值 |
+| `PreemptScoreCascadeStrategy` | 3793 | +1.5% | 已被 CPM 涵盖，未并入 |
+| `GreedyCascadeStrategy` | 3736 | — | 10 级瀑布框架基类 |
 
 ### 3.2 策略切换
 
 ```bash
 # CLI
-python -m playground run --strategy cpm_enhanced
-python -m playground bench --strategies default,cpm,cpm_enhanced
+python -m playground run --strategy gastronome
+python -m playground bench --strategies gastronome
 
 # 代码
 from hawarma.agent.registry import get_strategy
-strategy = get_strategy("cpm_enhanced")
+strategy = get_strategy("gastronome")
 ```
 
-## 4. 核心优化总结
+## 4. 核心优化总结（GastronomeStrategy）
 
-| 优化 | 说明 | 效果 |
+| 优化 | 说明 | 来源 |
 |------|------|------|
-| SPT 排序 | 最短处理时间优先（关键路径法） | 提升吞吐 4-5% |
-| visibility 阈值 | 跨越阈值订单获得优先级加成 | Δ +38 (n.s.) |
-| 单食材优先 | 1-ingredient 订单 CP 减 0.3s | Δ +11 (n.s.) |
-| 调料优先 | 食材齐全时先加调料再烹饪 | 更快释放组装站 |
-| 最长烹饪优先 | 同订单内先煮最慢的食材 | 最大化并行重叠 |
-| 主动预烹饪 | 灶台空闲时预烹饪 | 减少空闲时间 |
-| 快速存储 | 不需要的食材 2s 后存储 | 更快释放灶台 |
-| 动画期间烹饪 | 送餐动画不阻塞烹饪 | +11.2%（旧基准） |
+| SPT 排序 | 最短处理时间优先（关键路径法） | `CPMCascadeStrategy` |
+| visibility 阈值 | 跨越阈值订单 CP -5s 加成 | `VisibilityAwareCascadeStrategy` |
+| 单食材优先 | 1-ingredient 订单 CP -0.3s | `CPMEnhancedCascadeStrategy` |
+| Rush tiebreaker | 同 CP 时 Rush 优先 | 修复后所有变体共有 |
+| 调料优先 | 食材齐全时先加调料再烹饪 | `GreedyCascadeStrategy` |
+| 最长烹饪优先 | 同订单内先煮最慢的食材 | `GreedyCascadeStrategy` |
+| 主动预烹饪 | 灶台空闲时预烹饪（仅 stop_time=15s 前） | `GreedyCascadeStrategy` + `DelayAwareCascadeStrategy` 阈值 |
+| 智能存储 | 紧急度排序（needed > near-expired > normal） | `DelayAwareCascadeStrategy` |
+| 动画期间烹饪 | 送餐动画不阻塞烹饪 | `GreedyCascadeStrategy` |
 
 ## 5. 效率指标说明
 
 Playground 基准测试输出以下效率指标：
 
-| 指标 | VisibilityAware | 说明 |
-|------|----------------|------|
+| 指标 | Gastronome（参考值） | 说明 |
+|------|---------------------|------|
 | Idle% | 60.1% | 灶台空闲时间比例 |
 | Expired | 1.2 | 每局食材过期数 |
 | ClrAsm | 1.4 | 清空组装站次数（抢占） |
@@ -111,13 +114,13 @@ Playground 基准测试输出以下效率指标：
 
 ```bash
 # 完整基准测试
-python -m playground bench --games 100 --strategies default,cpm,cpm_enhanced
+python -m playground bench --games 100 --strategies gastronome
 
 # 导出 CSV
 python -m playground bench --games 100 --csv results.csv
 
 # 单局
-python -m playground run --seed 42 --strategy cpm_enhanced
+python -m playground run --seed 42 --strategy gastronome
 ```
 
 ## 7. 甜点策略

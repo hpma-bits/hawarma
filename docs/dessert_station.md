@@ -304,7 +304,7 @@ class GameEnv:
 
 ### 5.1 策略概述
 
-DessertStrategy 是甜点专用策略，**不继承自 `GreedyCascadeStrategy`**——直接继承 `Strategy` ABC，采用独立的流水线决策逻辑：
+DessertStrategy 是甜点专用策略，**不继承自 `GastronomeStrategy`**——直接继承 `Strategy` ABC，采用独立的流水线决策逻辑：
 
 - 当当前订单在烹饪时，开始下一个订单的食材收集和搅拌
 - 优先处理 rush 订单，然后先进先出
@@ -411,9 +411,8 @@ class StationsConfig(BaseModel):
 | `src/hawarma/game/scanner.py` | 屏幕 → `DetectedOrder`（station 无关） |
 | `src/hawarma/game/verifier.py` | 送餐后验证组装站是否清空（仅 gastronome 用） |
 | `src/hawarma/agent/strategies/dessert.py` | `DessertStrategy` 独立实现 |
-| `src/hawarma/agent/strategies/default.py` | `GreedyCascadeStrategy` 基础（gastronome 链祖先） |
-| `src/hawarma/agent/strategies/cpm_enhanced.py` | `CPMEnhancedCascadeStrategy`（用户级 `gastronome`） |
-| `src/hawarma/agent/registry.py` | 策略注册表（`"gastronome"`, `"dessert"` 等） |
+| `src/hawarma/agent/strategies/gastronome.py` | `GastronomeStrategy`（用户级 `gastronome`，合并 6 个历史变体的最优特性） |
+| `src/hawarma/agent/registry.py` | 策略注册表（`"gastronome"`, `"dessert"`） |
 | `src/hawarma/config.py` | Pydantic 配置模型（自动生成 config.yaml） |
 
 ### 7.2 测试文件
@@ -421,7 +420,7 @@ class StationsConfig(BaseModel):
 | 文件 | 用途 |
 |------|------|
 | `tests/test_dessert_strategy.py` | DessertStrategy 单元测试（19 个 case） |
-| `tests/test_rush_tiebreaker.py` | Gastronome 优先级 tiebreaker 测试（7 个 case） |
+| `tests/test_rush_tiebreaker.py` | GastronomeStrategy 优先级 tiebreaker 测试（4 个 case） |
 | `tests/test_recipe_detection.py` | Recipe 扫描匹配测试 |
 
 ---
@@ -435,7 +434,7 @@ class StationsConfig(BaseModel):
 | 状态追踪 | 隐式（`is_stirred` 标志） | 不引入显式状态机，更简单 |
 | 搅拌盆 | 独立于组装站 | 不同物理位置 |
 | CookerState 字段 | `ingredient_name` → `item_name` | 甜点模式下存 recipe slug，原字段名语义不准确 |
-| DessertStrategy | 独立类（不继承 DefaultStrategy） | 不同的流水线逻辑 |
+| DessertStrategy | 独立类（不继承 GastronomeStrategy） | 不同的流水线逻辑 |
 | Action 命名 | `{Verb}{Object}Action` | 与现有约定一致 |
 | 出餐方式 | 直接从灶台 | 甜点跳过组装站，直接从灶台出餐 |
 | 调味 Action | 分离为 `AddCondimentToMixingBowlAction` | 甜点调味终点是搅拌盆，不是组装站，两个 Action 不可复用 |
