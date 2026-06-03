@@ -154,6 +154,21 @@ Verifier.is_assembly_empty() (仅送餐后)
 - 重试时重新扫描订单，处理订单槽位偏移问题
 - 最终失败时清理组装站，防止卡死
 
+### ⚠️ 订单同步动画窗口保护（2026-06-03 修复）
+
+**问题**：`_sync_orders_from_scan()` 在动画窗口期间可能捕获到送餐前的旧帧（视觉上 slot 0 还能看到刚送走的订单，slot 1 是 RUSH），导致 ghost 防护失效或订单被错位放置。
+
+**修复**：在 `_sync_orders_from_scan()` 开头和 `await scanner.scan_new_orders()` 之后双重检查 `is_in_animation_window()`，处于动画期则跳过本次 sync。
+
+**设计权衡**：
+- 动画期（1.5s）不 sync → env 保持 `_shift_orders_left` 后的内部状态
+- 策略在此期间看到 env 内部状态（可能与屏幕视觉差 1.5s）
+- 动画结束后下次 sync 重新对齐视觉与 env
+
+**影响范围**：
+- 动画期可能延迟发现 1 个新订单（最坏 1.5s 滞后）
+- 消除了视觉/env 错位导致的 strategy 误判
+
 ## 与模拟器的区别
 
 | 方面 | 模拟器 (GameSimulator) | 真实环境 (GameEnv) |

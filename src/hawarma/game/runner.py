@@ -161,9 +161,25 @@ class Runner:
         4. 未匹配的扫描结果创建新订单
         5. 1.5s 内刚 serve 过的订单类型，若 env 中已无该类型活跃订单，则跳过（防幽灵）
         6. 最终结果左对齐，保证 slot0 不为 None 时右侧有订单
+
+        动画窗口保护：若扫描过程中进入动画窗口（serve 后 1.5s），
+        扫描可能捕获到动画前的旧帧，导致 ghost 防护失效。
+        此时跳过本次 sync，避免视觉/env 错位。
         """
+        if self.env.is_in_animation_window():
+            logger.debug(
+                f"[t={self.env.time:.1f}s] Skipping order sync: in animation window"
+            )
+            return
+
         start_time = asyncio.get_event_loop().time()
         scanned = await self.scanner.scan_new_orders()
+        if self.env.is_in_animation_window():
+            logger.debug(
+                f"[t={self.env.time:.1f}s] Discarding scan result: "
+                f"animation started during scan (stale frame)"
+            )
+            return
         scan_duration = asyncio.get_event_loop().time() - start_time
 
         # 收集扫描到的订单类型，按扫描 slot 排序（扫描器通常从左到右）

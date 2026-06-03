@@ -51,16 +51,17 @@ class VisibilityAwareCascadeStrategy(CPMCascadeStrategy):
         return current_vis + order_vis >= next_threshold
 
     def _prioritized_orders(self, state: UnifiedState):
-        """CPM 排序，但跨越阈值的订单 CP 减少（优先级提升）"""
+        """CPM 排序 + 跨越阈值 CP 减少 + Rush tiebreaker"""
         active = [(i, o) for i, o in enumerate(state.orders) if o and not o.done]
         scored = []
         for slot_idx, order in active:
             cp = self._get_critical_path(state, order)
             if self._will_cross_threshold(state, order):
                 cp -= self.CROSSING_BONUS
-            scored.append((cp, slot_idx, order))
-        scored.sort(key=lambda x: x[0])
-        for _, slot_idx, order in scored:
+            rush_priority = 0 if order.is_rush else 1
+            scored.append((cp, rush_priority, slot_idx, order))
+        scored.sort(key=lambda x: (x[0], x[1]))
+        for _, _, slot_idx, order in scored:
             yield slot_idx, order
 
     def _get_order_id_for_ingredient(self, state: UnifiedState, ingredient: str) -> int | None:

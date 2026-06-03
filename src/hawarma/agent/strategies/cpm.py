@@ -153,14 +153,15 @@ class CPMCascadeStrategy(GreedyCascadeStrategy):
         return True
 
     def _prioritized_orders(self, state: UnifiedState):
-        """按关键路径长度排序（短的优先）"""
+        """按关键路径长度排序（短的优先），CP 相同时 Rush 优先"""
         active = [(i, o) for i, o in enumerate(state.orders) if o and not o.done]
         scored = []
         for slot_idx, order in active:
             cp = self._get_critical_path(state, order)
-            scored.append((cp, slot_idx, order))
-        scored.sort(key=lambda x: x[0])
-        for _, slot_idx, order in scored:
+            rush_priority = 0 if order.is_rush else 1
+            scored.append((cp, rush_priority, slot_idx, order))
+        scored.sort(key=lambda x: (x[0], x[1]))
+        for _, _, slot_idx, order in scored:
             yield slot_idx, order
 
     def _try_clear_assembly(self, state: UnifiedState, assembly_ings: list[str]) -> ClearAssemblyAction | None:

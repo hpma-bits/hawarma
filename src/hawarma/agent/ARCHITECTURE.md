@@ -24,6 +24,30 @@
 - **输入**: UnifiedState
 - **输出**: Action | None
 
+### ⚠️ Rush 优先级 Tiebreaker（2026-06-03 修复）
+
+**问题**：`CPMCascadeStrategy` / `VisibilityAwareCascadeStrategy` / `CPMEnhancedCascadeStrategy` 的 `_prioritized_orders` 仅按 CP 排序，当两个同 recipe 订单（同 CP）时退化为稳定排序保留原 slot 顺序，导致 Rush 未被优先。
+
+**修复**：在 sort key 中追加 `rush_priority`（0=Rush, 1=Normal）作为 tiebreaker：
+
+```python
+scored.append((cp, rush_priority, slot_idx, order))
+scored.sort(key=lambda x: (x[0], x[1]))
+```
+
+**未改动的策略**：
+- `GreedyCascadeStrategy` (default)：原本 sort key 第一项就是 `rush_priority`（`agent/strategies/default.py:534`）
+- `PreemptScoreCascadeStrategy`：用 `score/cp` 效率排序，rush multiplier 天然区分
+- `DessertStrategy`：已用 `(rush_priority, timeout_remaining)` 排序
+
+**影响范围**（仅 CP 相同时触发 tiebreaker）：
+- `_try_serve`：同 CP 时 Rush 优先送餐
+- `_get_order_id_for_ingredient`：同 CP 时为食材选 Rush 订单
+- `_try_parallel_cooking`：同 CP 时优先为 Rush 烹饪
+- `_try_clear_assembly` (CPM preempt)：Rush 优先考虑抢占
+
+**回归测试**：`tests/test_rush_tiebreaker.py`（7 个 case，覆盖三个策略的 `_prioritized_orders` 和 `decide` 路径）
+
 ---
 
 ## 🎯 Agent Shell 架构
