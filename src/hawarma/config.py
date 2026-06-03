@@ -103,16 +103,8 @@ class DessertStationConfig(BaseModel):
     cooker_retention: float = 5.0
 
 
-class GastronomeStationConfig(BaseModel):
-    """美食站点配置"""
-    enabled: bool = True
-    cooker_retention: float = 4.7
-    serve_verify_wait: float = 0.4
-
-
 class StationsConfig(BaseModel):
     """站点配置"""
-    gastronome: GastronomeStationConfig = Field(default_factory=GastronomeStationConfig)
     dessert: DessertStationConfig = Field(default_factory=DessertStationConfig)
 
 
