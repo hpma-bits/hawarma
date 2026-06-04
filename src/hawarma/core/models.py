@@ -170,7 +170,11 @@ class Order:
     订单信息
 
     共享订单数据结构，只包含真实环境和模拟器都需要的字段。
-    模拟器专有数据（recipe 对象、调料追踪、visibility）由模拟器内部维护。
+    模拟器专有数据（recipe 对象、调料追踪）由模拟器内部维护。
+
+    不可变字段（immutable since creation）：
+        - spawned_at_visibility: 订单生成瞬间锁定的局内总 visibility，
+          用于事后计算 serve 得分倍率。set 一次后禁止修改。
     """
 
     order_id: int
@@ -178,8 +182,19 @@ class Order:
     is_rush: bool
     created_at: float
     timeout_at: float
+    spawned_at_visibility: float = 0.0
     done: bool = False
     served_at: float | None = None
+
+    _IMMUTABLE_AFTER_INIT = frozenset({"spawned_at_visibility"})
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if name in self._IMMUTABLE_AFTER_INIT and name in self.__dict__:
+            raise AttributeError(
+                f"Order.{name} is immutable since creation "
+                f"(order_id={self.__dict__.get('order_id', '?')})"
+            )
+        super().__setattr__(name, value)
 
     @property
     def is_completed(self) -> bool:

@@ -23,6 +23,7 @@ from hawarma.core.models import (
     Order,
     StockpileSlot,
 )
+from hawarma.core.reward import RecipeRewardLookup
 from hawarma.recipe import Recipe, Station
 
 
@@ -67,8 +68,13 @@ class GameEnv:
         # 统计
         self._orders_served = 0
         self._total_score = 0
+        self._total_visibility: float = 0.0
         self._orders_timeout = 0
         self._actions_taken = 0
+
+        # 得分查表（lazy init 在 on_order_served 中需要时再创建，
+        # 避免 GameEnv 在 unit test 中加载 CSV）
+        self._reward_lookup: RecipeRewardLookup | None = None
 
         logger.info(
             f"GameEnv initialized: {len(cooker_names)} cookers, {stockpile_slots} stockpile slots"
@@ -475,9 +481,45 @@ class GameEnv:
             "actions_taken": self._actions_taken,
         }
 
-    def on_order_served(self, score: int = 1) -> None:
+    def on_order_served(self, order: Order, has_condiments: bool) -> None:
+        """
+        记录订单完成事件，按游戏规则计算实际得分。
+
+        与模拟器对齐（env_simulator.py:1170-1206）：
+            1. 按 serve 瞬间的 recipe + has_condiments + 订单生成时锁定的
+               spawned_at_visibility 计算该订单得分
+            2. 把该订单的 visibility 加到局内总 visibility
+               （影响后续订单的 spawned_at_visibility 与最终总分）
+
+        调用方（runner）需在调用本方法前：
+            - 从 env.orders[slot_idx] 拿到 order 引用
+            - 在 env.serve_order / serve_from_cooker 清空 assembly 之前
+              用 env.assembly.condiments 判断 has_condiments
+        """
+        if self._reward_lookup is None:
+            self._reward_lookup = RecipeRewardLookup()
+
+        score = self._reward_lookup.get_score(
+            order.recipe_slug,
+            has_condiments=has_condiments,
+            is_rush=order.is_rush,
+            total_visibility=order.spawned_at_visibility,
+        )
+        visibility = self._reward_lookup.get_visibility(
+            order.recipe_slug, has_condiments
+        )
+
         self._orders_served += 1
         self._total_score += score
+        self._total_visibility += visibility
+
+        logger.info(
+            f"[t={self.time:.1f}s] Scored order {order.order_id} ({order.recipe_slug}, "
+            f"{'RUSH' if order.is_rush else 'normal'}, cond={has_condiments}): "
+            f"+{score:.0f} score, +{visibility} visibility "
+            f"(spawned_at={order.spawned_at_visibility:.0f}, "
+            f"total_vis={self._total_visibility:.0f})"
+        )
 
     def on_order_timeout(self, order_id: int) -> None:
         self._orders_timeout += 1
@@ -613,6 +655,7 @@ class GameEnv:
             is_rush=is_rush,
             created_at=now,
             timeout_at=now + timeout,
+            spawned_at_visibility=self._total_visibility,
         )
 
         logger.info(

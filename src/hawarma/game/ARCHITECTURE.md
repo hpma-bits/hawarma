@@ -169,6 +169,36 @@ Verifier.is_assembly_empty() (仅送餐后)
 - 动画期可能延迟发现 1 个新订单（最坏 1.5s 滞后）
 - 消除了视觉/env 错位导致的 strategy 误判
 
+## 得分系统（与模拟器对齐）
+
+真实环境与模拟器使用**同一套** `RecipeRewardLookup` 计算得分，公式见 `docs/game_rules.md:194-226`：
+
+```
+order_score = (base_points + visibility) * multiplier(spawned_at_visibility, is_rush)
+```
+
+关键约束：**`spawned_at_visibility` 必须在订单生成瞬间锁定**（不是 serve 瞬间），因为倍率依赖该值，订单一旦生成其倍率就不再变化。
+
+### 实现机制
+
+1. **`Order.spawned_at_visibility`** (`core/models.py:Order`)：新增字段，`immutable since creation` —— 通过 `__setattr__` 重写阻止二次赋值，确保域语义「生成瞬间快照」不被破坏。
+2. **`GameEnv.add_order()`**：每次新增订单时，把当前 `_total_visibility` 写入 `order.spawned_at_visibility`。
+3. **`GameEnv._total_visibility`**：局内累计 visibility，每次 `on_order_served` 加上该订单的 visibility（来自 `get_visibility(recipe, has_condiments)`）。
+4. **`GameEnv.on_order_served(order, has_condiments)`**：
+   - `score = RecipeRewardLookup.get_score(order.recipe_slug, has_condiments, order.is_rush, total_visibility=order.spawned_at_visibility)`
+   - `_total_score += score`；`_total_visibility += get_visibility(...)`
+5. **`Runner._exec_serve_order()` / `_exec_serve_from_cooker()`**：在 `env.serve_order` 清空 assembly 之前用 `env.assembly.condiments` 读取 `has_condiments`，然后调用 `env.on_order_served(order, has_condiments)`。甜点单食材直送（`serve_from_cooker`）时 `has_condiments=False`。
+
+### 与模拟器的差异
+
+| 方面 | 模拟器 | 真实环境 |
+|------|--------|----------|
+| spawned_at_visibility 存储 | `sim._order_visibility: dict[int, float]` | `order.spawned_at_visibility`（域字段） |
+| total_visibility 累加 | `state.total_visibility` | `env._total_visibility` |
+| 终局 total_visibility 加分 | 暂未实现 | 暂未实现（与模拟器保持一致） |
+
+注意：当前**两端都不实现**「游戏结束时把 _total_visibility 加到 _total_score」这一步 —— 见 `docs/game_rules.md:226` 描述但 `env_simulator.py:1206` 也未加。保持一致以免破坏现有 benchmark 分数基准。
+
 ## 与模拟器的区别
 
 | 方面 | 模拟器 (GameSimulator) | 真实环境 (GameEnv) |

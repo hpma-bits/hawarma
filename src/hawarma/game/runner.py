@@ -430,8 +430,11 @@ class Runner:
         success_slot = await self._serve_with_verify(action.slot_idx)
 
         if success_slot is not None:
-            self.env.on_order_served()
             order = self.env.orders[success_slot] if success_slot < len(self.env.orders) else None
+            if order is not None:
+                # 必须在 env.serve_order 之前读取 condiments（serve_order 会清空 assembly）
+                has_condiments = bool(self.env.assembly.condiments)
+                self.env.on_order_served(order, has_condiments)
             if self.env.serve_order(success_slot):
                 if order:
                     # 记录刚 serve 的订单类型，用于扫描时识别幽灵订单
@@ -545,12 +548,12 @@ class Runner:
         logger.info(f"[t={self.env.time:.1f}s] Moved mixing bowl to {action.cooker}")
 
     async def _exec_serve_from_cooker(self, action) -> None:
-        """灶台 → 取餐台"""
+        """灶台 → 取餐台（甜点单食材直送，无调料）"""
         order = self.env.orders[action.slot_idx] if action.slot_idx < len(self.env.orders) else None
         await self.ui.serve_from_cooker(action.cooker, action.slot_idx)
         if self.env.serve_from_cooker(action.cooker, action.slot_idx):
-            self.env.on_order_served()
             if order:
+                self.env.on_order_served(order, has_condiments=False)
                 self._last_served[(order.recipe_slug, order.is_rush)] = time.time()
         logger.info(f"[t={self.env.time:.1f}s] Served from {action.cooker} to slot {action.slot_idx}")
 
