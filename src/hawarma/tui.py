@@ -40,7 +40,7 @@ from hawarma.services.recipe_manager import RecipeManager
 from hawarma.device import setup_device
 from hawarma.patches import apply_patch
 from hawarma.log import setup_logging
-from hawarma.utils.order_parser import parse_order_input
+from hawarma.utils.order_parser import parse_order_input, validate_order_input
 
 # 将 SelectionList 的选中标记从 "X" 改为 "✓"
 from textual.widgets._toggle_button import ToggleButton
@@ -119,11 +119,12 @@ class RecipeSelectionScreen(Screen):
                 *[Selection(r.name, r.slug) for r in filtered],
                 id="rs-recipe-list",
             ),
-            Static("3. 准备顺序（留空=默认顺序，如 '012'）：", classes="subtitle"),
+            Static("3. 准备顺序（留空=默认顺序）：", classes="subtitle"),
+            Static(id="rs-order-hint", classes="order-hint"),
             Input(
-                placeholder="如 0123(0基) 或 1234(1基) 均可",
+                placeholder="0 基或 1 基索引均可，长度需等于已选菜谱数",
                 id="rs-order-input",
-                restrict=r"[0-4]{0,4}",
+                restrict=r"[0-9]*",
             ),
             Static("4. 选择策略：", classes="subtitle"),
             Select(
@@ -140,8 +141,8 @@ class RecipeSelectionScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        """挂载后无需额外初始化（compose 已预填充）"""
-        pass
+        """挂载后初始化动态提示区"""
+        self._update_order_hint()
 
     def _strategy_options_for_station(self, station: Station) -> tuple[list[tuple[str, str]], list[str]]:
         """根据 station 返回可用的策略选项列表"""
@@ -156,6 +157,47 @@ class RecipeSelectionScreen(Screen):
         current = self.app.game_strategy or self.app.config.strategy
         return current if current in strategy_values else strategy_values[0]
 
+    def _selected_recipes(self) -> list[Recipe]:
+        """按全量菜谱顺序返回当前选中的菜谱（与 confirm 时使用的顺序一致）"""
+        station = self.app.station
+        sl = self.query_one("#rs-recipe-list", SelectionList)
+        selected_slugs = set(sl.selected)
+        return [
+            r for r in self._all_recipes
+            if r.slug in selected_slugs and r.station == station
+        ]
+
+    def _update_order_hint(self) -> None:
+        """根据当前选中的菜谱刷新提示区与输入约束"""
+        selected = self._selected_recipes()
+        n = len(selected)
+        hint = self.query_one("#rs-order-hint", Static)
+        order_input = self.query_one("#rs-order-input", Input)
+
+        order_input.max_length = n if n > 0 else 0
+        order_input.disabled = n < 2
+
+        if n == 0:
+            hint.update("请先在上方选择菜谱")
+        elif n == 1:
+            hint.update(
+                f"当前选择（按显示顺序）：\n"
+                f"  [0] {selected[0].name}\n\n"
+                f"无需指定顺序（只有 1 个菜谱）"
+            )
+        else:
+            names = "\n".join(f"  [{i}] {r.name}" for i, r in enumerate(selected))
+            seq0 = "".join(str(i) for i in range(n))
+            seq1 = "".join(str(i + 1) for i in range(n))
+            hint.update(
+                f"当前选择（按显示顺序，索引 = 输入数字的对应菜谱）：\n"
+                f"{names}\n\n"
+                f"请输入长度为 {n} 的数字串：\n"
+                f"  - 0 基：'{seq0}' = 按显示顺序\n"
+                f"  - 1 基：'{seq1}' = 按显示顺序\n"
+                f"留空则使用默认顺序"
+            )
+
     def _rebuild_recipe_list(self) -> None:
         """根据当前 station 重建菜谱列表"""
         station = self.app.station
@@ -164,6 +206,7 @@ class RecipeSelectionScreen(Screen):
         sl.clear_options()
         for r in filtered:
             sl.add_option(Selection(r.name, r.slug))
+        self._update_order_hint()
 
     def _rebuild_strategy_options(self) -> None:
         """根据当前 station 重建策略选项"""
@@ -183,23 +226,78 @@ class RecipeSelectionScreen(Screen):
             self._rebuild_recipe_list()
             self._rebuild_strategy_options()
 
+    def on_selection_list_selected_changed(
+        self, event: SelectionList.SelectedChanged
+    ) -> None:
+        """菜谱选中状态变化时刷新提示区"""
+        self._update_order_hint()
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "confirm":
             station = self.app.station
             self.app.station = station
             self.app.game_strategy = self.query_one("#rs-strategy-select", Select).value
-            sl = self.query_one("#rs-recipe-list", SelectionList)
-            selected_slugs = sl.selected
-            if selected_slugs:
-                selected_recipes = [
-                    r for r in self._all_recipes
-                    if r.slug in selected_slugs and r.station == station
-                ]
-                order_input = self.query_one("#rs-order-input", Input).value.strip()
-                self.app.selected_recipes = parse_order_input(selected_recipes, order_input)
-                self.app.pop_screen()
+            selected_recipes = self._selected_recipes()
+            if not selected_recipes:
+                return
+            order_input = self.query_one("#rs-order-input", Input).value.strip()
+            valid, error = validate_order_input(selected_recipes, order_input)
+            if not valid:
+                self._show_invalid_modal(error, selected_recipes)
+                return
+            self.app.selected_recipes = parse_order_input(selected_recipes, order_input)
+            self.app.pop_screen()
         elif event.button.id == "back":
             self.app.pop_screen()
+
+    def _show_invalid_modal(self, error: str, selected_recipes: list[Recipe]) -> None:
+        """弹出错误 modal，由用户决定返回修改还是忽略并使用默认顺序"""
+
+        def on_dismiss(ignore: bool | None) -> None:
+            if ignore:
+                self.app.selected_recipes = parse_order_input(selected_recipes, "")
+                self.app.pop_screen()
+
+        self.app.push_screen(
+            OrderInvalidModal(error, selected_recipes),
+            on_dismiss,
+        )
+
+
+class OrderInvalidModal(Screen):
+    """准备顺序输入非法时的提示 modal"""
+
+    BINDINGS = [Binding("escape", "dismiss_modal", "返回")]
+
+    def __init__(self, error: str, selected_recipes: list[Recipe]):
+        super().__init__()
+        self._error = error
+        self._selected_recipes = selected_recipes
+
+    def compose(self) -> ComposeResult:
+        names = "\n".join(
+            f"  [{i}] {r.name}" for i, r in enumerate(self._selected_recipes)
+        )
+        yield Container(
+            Static("⚠ 准备顺序输入有误", classes="title"),
+            Static(self._error, classes="modal-error"),
+            Static(f"已选菜谱（按显示顺序）：\n{names}", classes="modal-info"),
+            Horizontal(
+                Button("返回修改", id="back", variant="primary"),
+                Button("忽略并使用默认顺序", id="ignore", variant="warning"),
+                classes="button-row",
+            ),
+            classes="modal-container",
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "back":
+            self.dismiss(False)
+        elif event.button.id == "ignore":
+            self.dismiss(True)
+
+    def action_dismiss_modal(self) -> None:
+        self.dismiss(None)
 
 
 class ConfigScreen(Screen):
@@ -498,6 +596,32 @@ class HawarmaApp(App):
         width: 40%;
         max-width: 20;
         min-width: 10;
+        margin: 0 0 1 0;
+    }
+
+    .order-hint {
+        margin: 0 0 1 2;
+        color: $text-muted;
+    }
+
+    .modal-container {
+        align: center middle;
+        width: 70%;
+        max-width: 80;
+        height: auto;
+        padding: 1 2;
+        border: thick $warning;
+        background: $surface;
+    }
+
+    .modal-error {
+        color: $error;
+        text-style: bold;
+        margin: 1 0;
+    }
+
+    .modal-info {
+        color: $text-muted;
         margin: 0 0 1 0;
     }
 
