@@ -216,6 +216,7 @@ class ConfigScreen(Screen):
             with TabbedContent():
                 with TabPane("基本设置", id="basic"):
                     yield Static("基本设置", classes="tab-title")
+                    yield Input(value=self.config.adb_address, placeholder="ADB 地址 (如 127.0.0.1:16385)", id="adb-address")
                     yield Input(value=self.config.image_directory, placeholder="图片目录", id="image-directory")
                     yield Input(value=self.config.log_directory, placeholder="日志目录", id="log-directory")
                     yield Input(value=self.config.recipes_data_path, placeholder="配方数据路径", id="recipes-data-path")
@@ -250,6 +251,7 @@ class ConfigScreen(Screen):
 
     def save_config(self) -> None:
         # 基本设置
+        self.config.adb_address = self.query_one("#adb-address", Input).value
         self.config.image_directory = self.query_one("#image-directory", Input).value
         self.config.log_directory = self.query_one("#log-directory", Input).value
         self.config.recipes_data_path = self.query_one("#recipes-data-path", Input).value
