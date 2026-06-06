@@ -95,6 +95,7 @@ strategy = get_strategy("gastronome")
 | 主动预烹饪 | 灶台空闲时预烹饪（仅 stop_time=15s 前） | `GreedyCascadeStrategy` + `DelayAwareCascadeStrategy` 阈值 |
 | 智能存储 | 紧急度排序（needed > near-expired > normal） | `DelayAwareCascadeStrategy` |
 | 动画期间烹饪 | 送餐动画不阻塞烹饪 | `GreedyCascadeStrategy` |
+| 落地安全窗口 | `_try_move_to_assembly` / `_try_store_to_stockpile` 用 `MOVE_SAFETY_MARGIN=0.5s` 提前收紧过期判定，覆盖 dispatch + swipe + 落地动画的尾段延迟 | 真实游戏观测修复 |
 
 ## 5. 效率指标说明
 

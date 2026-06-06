@@ -17,6 +17,8 @@ GastronomeStrategy: 美食站点策略（贪心瀑布 + CPM + visibility 跨越 
 
 from __future__ import annotations
 
+from loguru import logger
+
 from hawarma.core.actions import (
     Action,
     CookAction,
@@ -51,6 +53,10 @@ class GastronomeStrategy(Strategy):
     MAX_PRECOOK_STOCKPILE = 4
     PRECOOK_STOP_TIME = 15.0
     MIN_PRECOOK_DURATION = 1.0
+
+    # 灶台动作总开销预算（dispatch + Maxtouch swipe + 落地动画 + 安全余量）
+    # 把 5s 过期窗口提前收紧，避免决策时"未过期"但落地时已糊掉
+    MOVE_SAFETY_MARGIN = 0.5
 
     # visibility 阈值跨越奖励
     VIS_THRESHOLDS = [40, 80, 160, 240, 360]
@@ -241,7 +247,11 @@ class GastronomeStrategy(Strategy):
                 continue
             if state.time < cooker.done_at:
                 continue
-            if cooker.is_expired(state.time):
+            if not self._is_arrival_safe(state.time, cooker.expired_at):
+                logger.debug(
+                    f"Skip move-to-assembly {cooker.item_name} on {cooker_name}: "
+                    f"remaining={cooker.expired_at - state.time:.2f}s < safety_margin"
+                )
                 continue
             ing_key = (cooker.item_name, cooker.cooker_type)
             if ing_key not in effective_needed:
@@ -462,7 +472,11 @@ class GastronomeStrategy(Strategy):
             cooker_type = cooker.cooker_type
             time_since_done = state.time - cooker.done_at
 
-            if cooker.is_expired(state.time):
+            if not self._is_arrival_safe(state.time, cooker.expired_at):
+                logger.debug(
+                    f"Skip store-to-stockpile {ing_name} on {cooker_name}: "
+                    f"remaining={cooker.expired_at - state.time:.2f}s < safety_margin"
+                )
                 continue
 
             if ing_name in needed:
@@ -833,3 +847,14 @@ class GastronomeStrategy(Strategy):
             if applied.get(condiment, 0) < count:
                 return False
         return True
+
+    def _is_arrival_safe(self, state_time: float, expired_at: float | None) -> bool:
+        """预测 move/stockpile 能否在游戏内过期前落地
+
+        游戏的 5s 窗口在食材"落地"瞬间判定，而模型只能在决策瞬间检查。
+        两者之间存在 dispatch + Maxtouch swipe + 落地动画的尾段延迟，
+        用 MOVE_SAFETY_MARGIN 把判定窗口提前收紧。
+        """
+        if expired_at is None:
+            return False
+        return state_time + self.MOVE_SAFETY_MARGIN < expired_at

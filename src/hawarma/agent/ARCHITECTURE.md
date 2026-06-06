@@ -37,6 +37,21 @@ scored.sort(key=lambda x: (x[0], x[1]))
 
 **回归测试**：`tests/test_rush_tiebreaker.py`（4 个 case，覆盖统一 `GastronomeStrategy` 的 `_prioritized_orders` 和 `decide` 路径）
 
+### ⚠️ 落地安全窗口（2026-06-04 修复）
+
+**问题**：游戏内 5s 过期窗口在食材"落地"瞬间判定，但 `decide()` 只能在决策瞬间检查 `CookerState.is_expired(state.time)`。两者之间存在 dispatch + Maxtouch swipe + 落地动画的尾段延迟（合计约 0.3-0.5s），导致决策时"未过期"但落地时已糊掉（< 1 次/局，assembly 居多）。
+
+**修复**：在 `_try_move_to_assembly` / `_try_store_to_stockpile` 的过期过滤处用 `_is_arrival_safe(state.time, cooker.expired_at)` 代替 `is_expired(state.time)`，提前 `MOVE_SAFETY_MARGIN = 0.5s` 收紧窗口：
+
+```python
+def _is_arrival_safe(self, state_time, expired_at):
+    if expired_at is None:
+        return False
+    return state_time + self.MOVE_SAFETY_MARGIN < expired_at
+```
+
+**未改**：`_try_clear_expired` 保持严格 `is_expired` 判定（语义不同：清的是已过期灶台）；`_try_serve` 等不受影响；dessert 策略不动。
+
 ---
 
 ## 🎯 Agent Shell 架构
