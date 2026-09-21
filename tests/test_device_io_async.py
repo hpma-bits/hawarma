@@ -156,7 +156,8 @@ class TestHeartbeatHarnessControl(unittest.TestCase):
             time.sleep(SLOW_IO)  # 反例：协程内同步阻塞
 
         during, window = asyncio.run(_run_with_heartbeat(target))
-        self.assertGreaterEqual(window, SLOW_IO)
+        # Windows sleep 粒度可能提前 ~1ms 返回，留 10ms 容差（窗口语义不变）
+        self.assertGreaterEqual(window, SLOW_IO - 0.01)
         self.assertLess(len(during), MIN_BEATS, "sync sleep must stall the heartbeat")
 
 
