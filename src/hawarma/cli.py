@@ -78,14 +78,23 @@ async def run_game(config, ordered_recipes, strategy=None, station=Station.GASTR
     verifier = Verifier(config)
     cooker_names = list(operator.cooker_positions.keys())
     stockpile_slots = 0 if station == Station.DESSERT else len(config.screen.stockpile_positions)
+    # 甜点站读 stations.dessert.cooker_retention，美食站读 game.cooker_retention（Issue #22 接线）
+    cooker_retention = (
+        config.stations.dessert.cooker_retention
+        if station == Station.DESSERT
+        else config.game.cooker_retention
+    )
     env = GameEnv(
         cooker_names=cooker_names,
         stockpile_slots=stockpile_slots,
         game_duration=config.episode_duration,
         recipes=recipes_dict,
-        cooker_retention=config.game.cooker_retention,
+        cooker_retention=cooker_retention,
     )
-    bridge = Runner(env, operator, scanner, verifier, strategy, recipes_dict)
+    bridge = Runner(
+        env, operator, scanner, verifier, strategy, recipes_dict,
+        serve_verify_wait=config.game.serve_verify_wait,
+    )
 
     logger.info("=" * 60)
     logger.info(t("cli.starting"))

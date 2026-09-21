@@ -212,6 +212,7 @@ def _compute_scan_interval(self) -> float:
 _serve_with_verify(slot_idx):
     1. 执行 UI 送餐操作 (Operator.serve_order，swipe 自身由 Operator 计时)
     2. 等待 0.2s 动画渲染            → serve_verify_wait 段计时
+       （等待时长读 config.game.serve_verify_wait，默认 0.2，Issue #22 接线）
     3. 多点 snapshot 验证             → serve_verify_snapshot 段计时
        验证通过 → 返回 slot_idx
     4. 验证失败 → 重试相邻左侧 slot (slot_idx - 1)   → serve_retry 段计时

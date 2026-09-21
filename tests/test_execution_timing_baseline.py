@@ -100,6 +100,7 @@ class TestRunnerServePathTimingBaseline(unittest.TestCase):
         runner.verifier = verifier
         runner._timing = ExecutionTiming()
         runner._last_served = {}
+        runner._serve_verify_wait = 0.2
         Runner._build_action_handlers(runner)
         return runner
 

@@ -60,9 +60,6 @@ class Scanner:
         self.recipes = recipes
         self.image_dir = resolve_path(config.image_directory)
 
-        # 配方 slug -> Recipe 映射
-        self._recipe_by_slug = {r.slug: r for r in recipes}
-
         # 首个食材 -> 菜谱列表映射（用于冲突检测）
         self._recipes_by_first_ingredient: dict[str, list[Recipe]] = {}
         for r in recipes:
@@ -80,7 +77,8 @@ class Scanner:
             f"Conflict groups (same first ingredient): {[(g[0].raw_ingredients[0], [r.slug for r in g]) for g in self._conflict_groups]}"
         )
 
-        # Rush 检测配置
+        # Rush 检测配置（config 单源：config.game.rush_detection_positions /
+        # rush_red_threshold 默认值即检测基准，空列表 = 关闭 rush 检测）
         self._rush_detection_positions = config.game.rush_detection_positions
         self._rush_red_threshold = config.game.rush_red_threshold
 
@@ -355,14 +353,6 @@ class Scanner:
 
         return None
 
-    RUSH_DETECTION_POSITIONS = [
-        (480, 195),
-        (860, 195),
-        (1230, 195),
-        (1600, 195),
-    ]
-    RUSH_RED_THRESHOLD = 180
-
     def _detect_rush(self, slot: int, screen) -> bool:
         """
         检测是否 rush 订单
@@ -376,17 +366,8 @@ class Scanner:
         Returns:
             是否 rush
         """
-        # 使用配置中的值，如果没有则使用默认值
-        positions = (
-            self._rush_detection_positions
-            if self._rush_detection_positions
-            else self.RUSH_DETECTION_POSITIONS
-        )
-        threshold = (
-            self._rush_red_threshold
-            if self._rush_red_threshold
-            else self.RUSH_RED_THRESHOLD
-        )
+        positions = self._rush_detection_positions
+        threshold = self._rush_red_threshold
 
         if slot >= len(positions):
             return False
@@ -399,10 +380,6 @@ class Scanner:
             return red_value < threshold
 
         return False
-
-    def get_recipe_by_slug(self, slug: str) -> Optional[Recipe]:
-        """根据 slug 获取配方"""
-        return self._recipe_by_slug.get(slug)
 
     def _save_screenshot(self, orders: list[DetectedOrder]) -> None:
         """保存调试截图"""

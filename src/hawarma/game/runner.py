@@ -14,6 +14,7 @@
   clock（默认 time.monotonic）——「游戏内时间」与「真实耗时」两个概念分离
 
 输入：Env, Operator, Scanner, Verifier, Strategy
+      serve_verify_wait 读 config.game.serve_verify_wait（默认 0.2，Issue #22 接线）
 输出：游戏统计结果
 
 ⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
@@ -56,6 +57,7 @@ class Runner:
         strategy: Strategy,
         recipes: dict[str, Recipe],
         clock: Callable[[], float] | None = None,
+        serve_verify_wait: float = 0.2,
     ):
         self.env = env
         self.ui = operator
@@ -63,6 +65,8 @@ class Runner:
         self.verifier = verifier
         self.strategy = strategy
         self._recipe_by_slug = recipes
+        # 送餐验证等待（秒）：serve swipe 后等动画渲染的时间，读 config.game.serve_verify_wait
+        self._serve_verify_wait = serve_verify_wait
 
         # 墙钟（#17）：ghost 窗口/扫描计时等真实耗时测量统一走注入 clock
         # （默认 time.monotonic）；订单时间戳不经此（用 env.time 局内相对秒数）
@@ -417,8 +421,6 @@ class Runner:
             )
             return
 
-        if not hasattr(self, '_is_game_over'):
-            self._is_game_over = self.env.is_game_over
         if self.env.is_game_over():
             logger.info(
                 f"[t={self.env.time:.1f}s] Game over, skipping action: {type(action).__name__}"
@@ -569,7 +571,7 @@ class Runner:
         await self.ui.serve_order(slot_idx)
 
         wait_timer = Timer(self._timing.serve_verify_wait)
-        await asyncio.sleep(0.2)  # 等待动画渲染
+        await asyncio.sleep(self._serve_verify_wait)  # 等待动画渲染
         wait_timer.record()
 
         snapshot_timer = Timer(self._timing.serve_verify_snapshot)
@@ -589,7 +591,7 @@ class Runner:
             retry_timer = Timer(self._timing.serve_retry)
             await asyncio.sleep(0.05)
             await self.ui.serve_order(retry_slot)
-            await asyncio.sleep(0.2)  # 等待动画渲染
+            await asyncio.sleep(self._serve_verify_wait)  # 等待动画渲染
             retry_result = await self._verify_with_multi_snapshot()
             retry_timer.record()
             if retry_result:

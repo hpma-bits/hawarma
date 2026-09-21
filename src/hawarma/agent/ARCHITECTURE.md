@@ -20,7 +20,7 @@
 - **功能**:
   - **Strategy ABC**：定义 `decide(state) -> Action` 纯决策接口
   - **策略注册**：通过 `strategy_registry` 按名称查找策略类
-  - **`on_game_start()`**：可选钩子，接收当前局 Recipe dict
+  - **`on_game_start()`**：可选钩子，接收当前局 Recipe dict；GastronomeStrategy 在此钩子里自建 `RecipeRewardLookup`（构造可注入共享实例，Issue #22；`decide()` 早于钩子调用时 `_get_order_visibility` 显式 raise 而非静默回退 30）
 - **输入**: UnifiedState
 - **输出**: Action | None
 

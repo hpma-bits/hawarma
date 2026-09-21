@@ -12,6 +12,7 @@
  | 文件名 | 状态 | 用例风格 | 功能 |
 |--------|------|------|------|
 | `__init__.py` | ✅ | - | 包初始化 |
+| `conftest.py` | ✅ | pytest | 共享夹具：autouse 保存/恢复 i18n 全局语言（Issue #22，防 test_i18n 直接 set_language 的跨文件泄漏） |
 | `test_action_dispatch.py` | ✅ | pytest | Action 调度表达与双端对齐测试（Ticket #11：类型/优先级/取消、共享调度、Runner 跳过取消、SimEnv 直调序列、双端回放终局一致） |
 | `test_assembly_verifier.py` | ✅ | unittest | 组装站验证器测试 |
 | `test_bench_stats.py` | ✅ | unittest | 基准统计单测（Issue #15：t 分布 CDF/分位数对照 t 表、配对检验 p/Cohen's d/CI、零方差退化、final_score 统一口径、MetricsCollector 首帧空闲） |

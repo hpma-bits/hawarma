@@ -64,8 +64,10 @@ class MatchingConfig(BaseModel):
 class GameConfig(BaseModel):
     cooker_retention: float = 5.0
     rush_red_threshold: int = 180
-    rush_detection_positions: list[tuple[int, int]] = Field(default_factory=list)
-    serve_verify_wait: float = 0.3
+    rush_detection_positions: list[tuple[int, int]] = Field(default_factory=lambda: [
+        (480, 195), (860, 195), (1230, 195), (1600, 195),
+    ])
+    serve_verify_wait: float = 0.2
     swipe_params: dict[int, tuple[float, int]] = Field(
         default_factory=lambda: {
             400: (0.2, 10),
@@ -84,17 +86,9 @@ class DebugConfig(BaseModel):
     timer_screenshot_directory: str = "logs/timer_screenshots"
 
 
-class StirConfig(BaseModel):
-    """搅拌操作配置（单次左滑）"""
-    distance: int = 400
-    duration: float = 1.5
-    steps: int = 10
-
-
 class DessertStationConfig(BaseModel):
-    """甜点站点配置"""
+    """甜点站点配置（搅拌参数使用 StirAction 默认值，Issue #22 移除死配置 StirConfig）"""
     enabled: bool = True
-    stir: StirConfig = Field(default_factory=StirConfig)
     mixing_bowl_position: tuple[int, int] = (1245, 870)
     cookers_positions: dict[str, tuple[int, int]] = Field(
         default_factory=lambda: {
