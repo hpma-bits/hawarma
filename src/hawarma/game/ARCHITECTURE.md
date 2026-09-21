@@ -58,12 +58,13 @@
   - 通过模板匹配检测组装站区域是否为空
   - 验证送餐操作是否成功提交菜品
   - **保持同步签名（Issue #19）**：`is_assembly_empty()` 内部的 snapshot+模板匹配由调用方（Runner `_verify_with_multi_snapshot`）经 `asyncio.to_thread` 线程化，函数签名不泄漏 async
+  - **fail-closed（Issue #20）**：模板缺失 / snapshot 返回 None / 匹配过程异常 → 返回 False + `logger.error`，不再 "assume empty" 当作 serve 成功；返回 False 触发 runner 现有的 serve 重试 → 清 assembly 安全路径。模板缺失额外打一次性熔断提示（类级 flag `_template_missing_hint_shown`，进程内首个请求后不再重复刷屏；单行 error 每次仍打）
   - ROI: `(1150, 720, 1600, 1030)`
   - 模板: `static/img/empty_assembly.jpg`
 - **输入**: 配置对象
-- **输出**: 验证结果（成功/失败）
+- **输出**: 验证结果（成功/失败；无法完成验证按失败处理）
 - **关键类**: `Verifier`
-- **关键方法**: `is_assembly_empty()` — 返回 True 表示提交成功
+- **关键方法**: `is_assembly_empty()` — 返回 True 表示提交成功；False 表示未提交成功**或无法完成验证**（fail-closed）
 
 ### `operator.py`
 - **地位**: UI操作执行器
@@ -113,6 +114,7 @@ Operator根据菜谱选择顺序动态确定各元素坐标：
   - **验证路径设备 IO 异步化（Issue #19）**：`_verify_with_multi_snapshot()` 的预热 snapshot ×3 与 `verifier.is_assembly_empty()`（snapshot+模板匹配）均经 `asyncio.to_thread` 执行，验证期间三循环照常推进。节拍收益待真机验证
   - **Action 调度**：`dispatch_batch()` 经共享 `schedule_actions` 排序/过滤后逐个 `_execute_action()`；
     已取消动作直接跳过（Ticket #11 / Spec #7 S3），与 SimEnv 回放语义一致
+  - **执行反馈闭环（Issue #20）**：全部 `_exec_*` handler 检查 env 状态更新返回值，被拒绝时 `_reject_env_update()` → warning（含 action repr）+ set `_agent_wakeup` 立即重决策（详见「执行反馈闭环」一节）；三个主循环与 `_execute_action` 的 except 带 `logger.exception` 堆栈 + 连续异常计数（`_ErrorStreak`，同一循环连续 ≥5 次打一条 error 摘要、成功一轮复位、不终止循环）
   - **时基（#17）**：构造函数接受 `clock`（默认 `time.monotonic`）透传墙钟测量；ghost 窗口/扫描计时走 monotonic clock，`asyncio.get_event_loop().time()` 已移除
   - **异步扫描**：`_sync_orders_from_scan()` 为 async 方法，await scanner 的异步截图
 - **输入**: 配置对象、配方列表
@@ -157,8 +159,11 @@ Runner._execute_action()（已取消直接跳过，无 UI 调用、无状态变�
 Operator.swipe()
     ↓
 GameEnv状态更新（serve 结算走 serve_order_by_id，按 serve 前锁定的 order_id）
+    ↓ 返回 False / None = env 拒绝
+Runner._reject_env_update()（warning 含 action repr + set _agent_wakeup
+                            → agent loop 下一轮立即重决策，Issue #20）
     ↓
-Verifier.is_assembly_empty() (仅送餐后)
+Verifier.is_assembly_empty() (仅送餐后；fail-closed：无法验证即 False)
 ```
 
 ### 送餐验证流程（Issue #18：按 order_id 结算）
@@ -248,6 +253,63 @@ Verifier.is_assembly_empty() (仅送餐后)
   窗口的代价一致；扫描间隔 0.4-0.5s，旧帧最多存活一个扫描周期，1.5s 保守）
 - 延迟删除使消失订单在 env 内多存活一个扫描周期（~0.5s），换取单次漏检
   不误删（timeout 循环仍即时删除真正超时的订单，不受影响）
+
+## 🔁 执行反馈闭环（Issue #20）
+
+所有动作「先 UI 后 env」：UI swipe 不会失败，但 env 可能拒绝状态更新
+（slot 空 / 配方校验失败 / 目标忙）。此前这些返回值大多被丢弃，画面与
+env 状态静默漂移；只有 serve 有验证闭环，且 Verifier 在模板缺失 /
+snapshot 失败时 fail-open（assume empty → True），验证器静默失效。
+Issue #20 把两处都闭环。
+
+### Runner：env 拒绝可见 + 立即重决策
+
+全部 14 个 `_exec_*` handler 检查 env 状态更新返回值，被拒绝时经
+`_reject_env_update(action, detail)`：
+- `logger.warning`（含 action repr 与拒绝原因摘要——env 方法本身不返回
+  原因，摘要为语义归类）
+- `set _agent_wakeup`：agent loop 下一轮基于 env 当前状态立即重决策
+  （不在 handler 内递归决策；`dispatch_batch` 批量分发路径同样生效）
+
+handler 与 env 返回值语义核对表（无返回 None 语义的 env 调用——
+全部为布尔或 `Order | None`）：
+
+| handler | env 调用 | 返回值语义（False/None 表示） | 拒绝处理 |
+|---------|----------|-------------------------------|----------|
+| `_exec_cook` | `start_cooking` | bool；灶台忙/未知 | warn + wakeup |
+| `_exec_move_to_assembly` | `add_to_assembly` | bool；配方校验失败/重复添加 | warn + wakeup，且**不 clear_cooker**（对齐 `env.move_to_assembly` 全有/全无语义）；灶台未知同样拒绝 |
+| `_exec_move_to_stockpile` | `move_to_stockpile` | bool；slot 满/不兼容/未知 | 原有 warning，#20 补 wakeup（「灶台不忙」前置检查也补） |
+| `_exec_pull_from_stockpile` | `pull_from_stockpile` | bool；slot 空/未知 | warn + wakeup |
+| `_exec_add_condiment` | `add_condiment` | bool；调料不在目标配方/超上限 | warn + wakeup |
+| `_exec_serve_order` | `serve_order_by_id` | `Order \| None`；订单验证窗口内消失 | 原有 warning，#20 补 wakeup（验证失败/无锚点订单路径同） |
+| `_exec_clear_cooker` | `clear_cooker` | bool；未知灶台 | warn + wakeup |
+| `_exec_clear_assembly` | `clear_assembly` | bool；**本来就空（幂等 no-op）** | 不视为拒绝——无漂移可能 |
+| `_exec_move_to_mixing_bowl` | `add_to_mixing_bowl` | bool；盆满/重复/不在甜点配方 | warn + wakeup |
+| `_exec_add_condiment_to_mixing_bowl` | `add_condiment_to_mixing_bowl` | bool；盆空/不在配方/超上限 | warn + wakeup |
+| `_exec_stir` | `stir_mixing_bowl` | bool；盆空/已搅拌 | warn + wakeup |
+| `_exec_move_mixing_bowl_to_cooker` | `move_mixing_bowl_to_cooker` | bool；未搅拌/灶台忙/配方不匹配 | warn + wakeup |
+| `_exec_serve_from_cooker` | `serve_from_cooker` | bool；灶台未完成/过期/订单不匹配/空槽 | warn + wakeup，不再打误导性的成功 info |
+| `_exec_clear_mixing_bowl` | `clear_mixing_bowl` | bool；**本来就空（幂等 no-op）** | 不视为拒绝——无漂移可能 |
+
+`_serve_with_verify` 内部的 `env.clear_assembly()`（两次尝试失败后的清理）
+同样属幂等语义，不检查。
+
+### Verifier：fail-closed
+
+模板缺失 / snapshot 返回 None / 匹配过程异常 → 返回 False + `logger.error`：
+- 语义从「无法验证 = 当作成功」反转为「无法验证 = 当作失败」，
+  触发 runner 现有的 serve 重试 → 清 assembly 安全路径
+- 模板缺失额外打一次性熔断提示：类级 flag `_template_missing_hint_shown`，
+  进程内首个请求打详细提示（说明所有 serve 验证都会失败闭、如何恢复），
+  之后不再重复刷屏；单行 error 每次仍打
+
+### 循环异常可观测性
+
+三个主循环与 `_execute_action` 的 except 均 `logger.exception`（带堆栈），
+handler 抛错被吞后也 `set _agent_wakeup`（不依赖 0.5s 兜底）。按循环维护
+连续异常计数（`_ErrorStreak`）：同一循环连续 ≥5 次异常时打一条 error 级
+摘要行（含计数与最近异常类型），此后同一轮连错不再重复；成功一轮即复位；
+循环不终止。
 
 ## 得分系统（与模拟器对齐）
 
@@ -716,16 +778,19 @@ class Operator:
 
 ### 异常处理
 
-每个循环都有独立的异常处理，确保单点故障不影响整体：
+每个循环都有独立的异常处理，确保单点故障不影响整体（Issue #20 起
+带堆栈 + 连续异常计数）：
 
 ```python
 while self._running and not self.env.is_game_over():
     try:
         # 主要逻辑
         ...
+        self._scan_error_streak.record_success()  # 成功一轮：复位计数
     except Exception as e:
-        logger.error(f"Loop error: {e}")
-        await asyncio.sleep(0.5)  # 错误后等待再重试
+        logger.exception(f"Scan loop error: {e}")  # 带堆栈
+        self._scan_error_streak.record_failure(e)  # 连续 ≥5 次打一条摘要，不重复
+        await asyncio.sleep(1.0)  # 错误后等待再重试（循环不终止）
 ```
 
 ---
