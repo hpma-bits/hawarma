@@ -45,6 +45,7 @@ class GameEnv:
         game_duration: float = 90.0,
         recipes: dict[str, Recipe] | None = None,
         cooker_retention: float = 5.0,
+        reward_lookup: RecipeRewardLookup | None = None,
     ):
         self._cooker_retention = cooker_retention
         self._cookers: dict[str, CookerState] = {
@@ -71,9 +72,9 @@ class GameEnv:
         # 度量上下文（统计查询、总分、终局结算唯一持有者；S1 抽离）
         self._scoring = ScoringContext()
 
-        # 得分查表（lazy init 在 on_order_served 中需要时再创建，
+        # 得分查表（可注入共享实例；未注入时首次 on_order_served 前懒加载，
         # 避免 GameEnv 在 unit test 中加载 CSV）
-        self._reward_lookup: RecipeRewardLookup | None = None
+        self._reward_lookup: RecipeRewardLookup | None = reward_lookup
 
         logger.info(
             f"GameEnv initialized: {len(cooker_names)} cookers, {stockpile_slots} stockpile slots"

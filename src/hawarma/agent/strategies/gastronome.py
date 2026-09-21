@@ -13,9 +13,14 @@ GastronomeStrategy: 美食站点策略（贪心瀑布 + CPM + visibility 跨越 
 
 输入: UnifiedState
 输出: Action | None
+
+得分查表 RecipeRewardLookup 支持构造注入共享实例；未注入时 on_game_start 自建
+（Issue #22 收敛重复实例化，消除 None 时静默回退 30 的魔法数）。
 """
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
@@ -33,6 +38,9 @@ from hawarma.core.actions import (
 from hawarma.core.state import UnifiedState
 from hawarma.agent.strategy import Strategy
 from hawarma.recipe import Recipe
+
+if TYPE_CHECKING:
+    from hawarma.core.reward import RecipeRewardLookup
 
 
 class GastronomeStrategy(Strategy):
@@ -62,12 +70,16 @@ class GastronomeStrategy(Strategy):
     # 单食材订单 CP 减少
     SINGLE_INGREDIENT_BONUS = 0.3
 
-    def __init__(self):
-        """Initialize cached recipe/ingredient lookups (populated by on_game_start)."""
+    def __init__(self, reward_lookup: RecipeRewardLookup | None = None):
+        """Initialize cached recipe/ingredient lookups (populated by on_game_start).
+
+        reward_lookup 可注入共享实例（Issue #22 收敛重复实例化）；
+        未注入时 on_game_start 会自建。
+        """
         self._recipe_by_slug: dict[str, Recipe] = {}
         self._recipe_condiments: dict[str, dict[str, int]] = {}
         self._recipe_ingredient_cooker: dict[str, list[tuple[str, str, float]]] = {}
-        self._reward_lookup = None
+        self._reward_lookup = reward_lookup
 
     def on_game_start(self, recipes: dict[str, Recipe]) -> None:
         """Cache recipe, ingredient, and condiment data; build reward lookup."""
@@ -82,8 +94,10 @@ class GastronomeStrategy(Strategy):
                 for ing in recipe.ingredients
             ]
 
-        from hawarma.core.reward import RecipeRewardLookup
-        self._reward_lookup = RecipeRewardLookup()
+        # 得分查表：未注入共享实例时自建（on_game_start 兜底，Issue #22）
+        if self._reward_lookup is None:
+            from hawarma.core.reward import RecipeRewardLookup
+            self._reward_lookup = RecipeRewardLookup()
 
     # ====================================================================
     # 主决策：10 级贪心瀑布
@@ -601,7 +615,12 @@ class GastronomeStrategy(Strategy):
     def _get_order_visibility(self, order) -> int:
         """Return order's visibility reward based on recipe and condiment status."""
         if self._reward_lookup is None:
-            return 30
+            # on_game_start 未被调用（decide 早于游戏开始）：显式报错，
+            # 不再静默回退魔法数 30（Issue #22）
+            raise RuntimeError(
+                "GastronomeStrategy._reward_lookup not initialized: "
+                "call on_game_start() (or inject reward_lookup) before decide()"
+            )
         return self._reward_lookup.get_visibility(order.recipe_slug, has_condiments=True)
 
     def _next_threshold(self, current_vis: float) -> float | None:

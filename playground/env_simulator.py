@@ -152,11 +152,17 @@ class GameSimulator:
     GAME_DURATION_MAX = 110.0  # 游戏最长时长（秒）
     DEFAULT_GAME_DURATION = 90.0  # 默认游戏时长
     
-    def __init__(self, game_duration: float | None = None):
+    def __init__(
+        self,
+        game_duration: float | None = None,
+        reward_lookup: RecipeRewardLookup | None = None,
+    ):
         """初始化模拟器
-        
+
         Args:
             game_duration: 游戏时长（秒），范围 90-110。None 表示使用默认值
+            reward_lookup: 得分查表（可注入共享实例；None 时首次使用前懒加载，
+                Issue #22 收敛重复实例化）
         """
         # 当前游戏状态（使用深拷贝确保不可变性）
         self._state = GameState()
@@ -206,8 +212,8 @@ class GameSimulator:
         # 订单超时查表
         self._timeout_lookup: RecipeTimeoutLookup | None = None
         
-        # 订单得分查表
-        self._reward_lookup: RecipeRewardLookup | None = None
+        # 订单得分查表（可注入共享实例；未注入时首次使用前懒加载）
+        self._reward_lookup: RecipeRewardLookup | None = reward_lookup
         
         # 模拟器专有数据（不属于共享 Order 模型）
         self._order_recipes: dict[int, Recipe] = {}
