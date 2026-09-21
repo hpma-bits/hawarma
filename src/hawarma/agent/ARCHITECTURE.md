@@ -24,6 +24,23 @@
 - **输入**: UnifiedState
 - **输出**: Action | None
 
+### `strategies/planner.py`（Issue #21）
+- **地位**: `PlannerStrategy`——deadline 感知的滚动时域调度（注册名 `planner`，opt-in）
+- **状态**: ✅ 完成（基准不显著，未晋升默认；见 docs/agent_strategy.md 3.1.2/8 与 experiments/planner_strategy/）
+- **决策结构**: 反应式安全层（serve/清过期/补调料，语义同 gastronome 顶层，独立实现）
+  → 排列枚举（≤24）+ 确定性前向仿真（纯 Python 世界模型）→ 首个原子动作；
+  空闲时回退 gastronome 同型启发式（紧急入库 → 预烹饪 → 非紧急入库）
+- **关键设计**:
+  - 评分 `Σ(unit+vis)·exp(-λΔt) − 违约损失 − 清站滞回罚`，unit 按
+    `spawned_at_visibility` 锁定倍率查 RecipeRewardLookup
+  - **target_recipe_slug 感知**：变体配方共享食材对时镜像环境 target 锁定规则
+    （首个入空站食材按 slot 序），避免 serve 被环境校验拒绝
+  - 深管道预烹饪 + 保护性入库（库存扩展 5s 过期窗口）、serve 禁令窗口 1.5s 建模
+  - GastronomeStrategy 类零改动（不继承、不提取公共基类）
+- **输入**: UnifiedState（只读，recipes 直读 `state.recipes`）
+- **输出**: core/actions.py 现有 Action 类型 | None
+- **测试**: `tests/test_planner_strategy.py`（灶台绑定/动画窗口/过期清理/deadline 差异点/性能 <100ms/状态纯净性）
+
 ### ⚠️ Rush 优先级 Tiebreaker（2026-06-03 修复）
 
 **问题**：旧 6 个 Gastronome 策略中的 3 个 CPM 变体（`CPMCascadeStrategy` / `VisibilityAwareCascadeStrategy` / `CPMEnhancedCascadeStrategy`）的 `_prioritized_orders` 仅按 CP 排序，当两个同 recipe 订单（同 CP）时退化为稳定排序保留原 slot 顺序，导致 Rush 未被优先。

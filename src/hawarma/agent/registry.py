@@ -1,8 +1,9 @@
 """
 策略注册表
 
-按 Station 分组的两个用户级策略：
+按 Station 分组的用户级策略：
   - "gastronome": 美食站 — 10 级贪心瀑布 + CPM + visibility + 单食材 + 延迟感知
+  - "planner":    美食站 — deadline 感知的滚动时域调度（排列枚举 + 前向仿真，Issue #21）
   - "dessert":    甜点站 — 搅拌盆流水线
 """
 
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
 
 _STRATEGY_REGISTRY: dict[str, str] = {
     "gastronome": "hawarma.agent.strategies.gastronome:GastronomeStrategy",
+    "planner": "hawarma.agent.strategies.planner:PlannerStrategy",
     "dessert": "hawarma.agent.strategies.dessert:DessertStrategy",
 }
 
