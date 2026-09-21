@@ -115,7 +115,8 @@ class AppConfig(BaseModel):
     game: GameConfig = Field(default_factory=GameConfig)
     debug: DebugConfig = Field(default_factory=DebugConfig)
     strategy: str = "gastronome"
-    """策略名称: gastronome (CPM enhanced cascade) 或 dessert"""
+    """策略名称: gastronome (CPM enhanced cascade, 默认) / planner
+    (deadline 感知滚动时域调度, opt-in, Issue #21) 或 dessert"""
     language: str = "zh-CN"
     """界面语言（zh-CN / en-US），作用于 TUI 与 CLI"""
     stations: StationsConfig = Field(default_factory=StationsConfig)

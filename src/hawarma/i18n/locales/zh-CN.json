@@ -87,7 +87,7 @@
   },
   "cli": {
     "arg_desc": "Hawarma - 烹饪游戏自动化 Agent",
-    "arg_strategy": "策略：gastronome（默认，CPM 增强级联）或 dessert",
+    "arg_strategy": "策略：gastronome（默认，CPM 增强级联）/ planner（deadline 感知调度）或 dessert",
     "arg_station": "站台模式（gastronome 或 dessert）",
     "starting": "开始游戏...",
     "station": "站点：{station}",
@@ -107,7 +107,8 @@
     },
     "strategy": {
       "gastronome": "美食策略",
-      "dessert": "甜点策略"
+      "dessert": "甜点策略",
+      "planner": "规划调度策略"
     },
     "recipe": {
       "gildedShoreRisotto": "海鱼黄金焗饭",

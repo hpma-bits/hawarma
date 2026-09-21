@@ -10,6 +10,11 @@ experiments/
 │   ├── design.md            # 实验设计
 │   ├── script.py            # 实验脚本
 │   └── report.md            # 实验报告
+├── planner_strategy/        # 实验：deadline 感知滚动时域调度（Issue #21）
+│   ├── design.md
+│   ├── script.py
+│   ├── report.md
+│   └── bench_v2.csv         # 100 局配对基准原始数据
 └── [其他实验]/              # 每个实验一个子目录
 ```
 
@@ -62,6 +67,7 @@ sim.move_to_assembly('pot')  # 失败：pot可能已空
 | 实验名称 | 状态 | 主要结论 |
 |----------|------|----------|
 | parallel_strategy | ✅完成 | parallel策略优于naive，提升7.6% |
+| planner_strategy | ✅完成 | planner vs gastronome 100 局配对：Δ=-92.9, p=0.33 不显著，不晋升、保持 opt-in（Issue #21） |
 
 ## 🔗 相关文档
 

@@ -67,7 +67,8 @@
 ### `agent/strategies/` 子目录
 - **地位**: 策略实现
 - **文件**:
-  - `gastronome.py`: GastronomeStrategy，美食站唯一策略 — 10 级贪心瀑布 + CPM + visibility 阈值跨越 + 单食材优先 + 延迟感知（用户级：gastronome）
+  - `gastronome.py`: GastronomeStrategy，美食站默认策略 — 10 级贪心瀑布 + CPM + visibility 阈值跨越 + 单食材优先 + 延迟感知（用户级：gastronome）
+  - `planner.py`: PlannerStrategy，美食站 opt-in 策略 — deadline 感知的滚动时域调度（排列枚举 + 前向仿真，Issue #21；基准不显著未晋升，详见 agent/ARCHITECTURE.md 与 experiments/planner_strategy/）
   - `dessert.py`: DessertStrategy，甜点策略，搅拌盆流水线决策逻辑
 
 ### `game/` 子目录

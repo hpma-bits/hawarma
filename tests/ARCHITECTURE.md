@@ -29,6 +29,7 @@
 | `test_i18n.py` | ✅ | unittest | i18n 测试（locale 键集合一致性、UI 静态键存在性、各 locale 下 TUI 全屏导航） |
 | `test_mixing_bowl.py` | ✅ | unittest | 搅拌盆相关测试 |
 | `test_order_lifecycle.py` | ✅ | unittest | 订单生命周期竞态回归（Issue #18：防复活/连续 2 次未扫到才删除/同名单多单不串单/serve 按 id 结算/create_order 超时查表与 fallback；假时钟确定性构造竞态场景） |
+| `test_planner_strategy.py` | ✅ | unittest | PlannerStrategy 测试（Issue #21：registry 注册、反应式安全层[清过期/动画窗口禁 serve/齐料即送]、灶台绑定[单点+整局 spying]、deadline 感知差异点[planner 选紧截止低分单，gastronome 同状态选错]、decide() 满负荷 <100ms、状态纯净性[含 #16 env 侧]、确定性、早于 on_game_start 显式报错） |
 | `test_recipe_detection.py` | ✅ | unittest | 配方检测测试 |
 | `test_real_env_scoring.py` | ✅ | pytest | 真实环境得分测试（on_order_served 精确计分、spawned_at_visibility 不可变） |
 | `test_rush_detection.py` | ✅ | unittest | 加急订单像素检测测试（基于红色通道阈值检测 rush 状态） |

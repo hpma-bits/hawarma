@@ -182,7 +182,10 @@ class RecipeSelectionScreen(Screen):
     def _strategy_options_for_station(self, station: Station) -> tuple[list[tuple[str, str]], list[str]]:
         """根据 station 返回可用的策略选项列表"""
         if station == Station.GASTRONOME:
-            options = [(_strategy_display("gastronome"), "gastronome")]
+            options = [
+                (_strategy_display("gastronome"), "gastronome"),
+                (_strategy_display("planner"), "planner"),
+            ]
         else:
             options = [(_strategy_display("dessert"), "dessert")]
         return options, [v for _, v in options]

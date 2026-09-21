@@ -87,7 +87,7 @@
   },
   "cli": {
     "arg_desc": "Hawarma - Cooking Game Agent",
-    "arg_strategy": "Strategy: gastronome (default, CPM enhanced cascade) or dessert",
+    "arg_strategy": "Strategy: gastronome (default, CPM enhanced cascade) / planner (deadline-aware scheduling) or dessert",
     "arg_station": "Station mode (gastronome or dessert)",
     "starting": "Starting game...",
     "station": "Station: {station}",
@@ -107,7 +107,8 @@
     },
     "strategy": {
       "gastronome": "Gastronome agent",
-      "dessert": "Dessert agent"
+      "dessert": "Dessert agent",
+      "planner": "Planner agent"
     },
     "recipe": {
       "gildedShoreRisotto": "Gilded Shore Risotto",
