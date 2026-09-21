@@ -19,6 +19,7 @@
 | `test_i18n.py` | ✅ | i18n 测试（locale 键集合一致性、UI 静态键存在性、各 locale 下 TUI 全屏导航） |
 | `test_execution_timing.py` | ✅ | 执行耗时观测 + SrvGap/Idle 分布直方图测试（Ticket #9：分段耗时聚合、动画窗口剩余、SrvGap/Idle 分桶守恒） |
 | `test_action_dispatch.py` | ✅ | Action 调度表达与双端对齐测试（Ticket #11：类型/优先级/取消、共享调度、Runner 跳过取消、SimEnv 直调序列、双端回放终局一致） |
+| `test_bench_stats.py` | ✅ | 基准统计单测（Issue #15：t 分布 CDF/分位数对照 t 表、配对检验 p/Cohen's d/CI 数量级、零方差与 identical 退化、final_score 统一口径、MetricsCollector 首帧空闲） |
 | `testset/` | ✅ | 测试图片集（包含 normal/rush 订单截图） |
 
 ## 测试覆盖

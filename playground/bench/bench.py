@@ -1,7 +1,12 @@
 """
 Playground Benchmark Runner
 
-多策略基准测试运行器。
+多策略基准测试运行器（run_benchmark 的唯一实现，Issue #15
+删除了 playground/core/episode.py 中的历史重复版本）。
+
+CRN（公共随机数）配对局限：同一 seed 只保证初始条件一致，
+各策略的不同动作会使其后的随机流发散，配对检验只降低方差、
+不构成严格的同随机流对照（结论见 compare.py 输出中的 CRN note）。
 """
 
 from __future__ import annotations

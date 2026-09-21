@@ -5,6 +5,13 @@ Playground Benchmark Comparison
 
 输入: {strategy_name: [EpisodeResult, ...]}
 输出: 打印表格 / 导出 CSV/JSON
+
+口径（Issue #15）：表格与配对检验统一使用 ``final_score``
+（v2 = 逐单 reward 之和 + 终局 visibility），与 CSV 导出的
+``final_score`` 列一致；配对检验为 df = n-1 的双侧 t 检验，
+输出真实 p 值、配对 Cohen's d 与 Δ 均值 95% CI（见 bench/stats.py）。
+
+⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
 """
 
 from __future__ import annotations
@@ -20,6 +27,7 @@ if TYPE_CHECKING:
     from playground.core.episode import EpisodeResult
 
 from hawarma.core.scoring import LEGACY_SCORING_VERSION
+from playground.bench.stats import PairedStats, paired_comparison
 
 
 def _result_version(r: EpisodeResult) -> str:
@@ -46,6 +54,12 @@ class StrategyStats:
     min_reward: float
     scoring_version: str = LEGACY_SCORING_VERSION
     """计分口径版本（新旧基准隔离展示）"""
+    # 统一口径（final_score，与 CSV 导出一致）
+    avg_score: float = 0.0
+    """final_score 均值（v2 口径：reward + 终局 visibility）"""
+    std_score: float = 0.0
+    max_score: float = 0.0
+    min_score: float = 0.0
     # 效率指标（有 metrics 的游戏才统计）
     avg_idle_ratio: float = 0.0
     avg_expired: float = 0.0
@@ -59,8 +73,9 @@ class StrategyStats:
 
 
 def compute_stats(results: list[EpisodeResult]) -> StrategyStats:
-    """计算单策略统计指标"""
+    """计算单策略统计指标（表格/检验统一用 final_score 口径，与 CSV 一致）"""
     rewards = [r.total_reward for r in results]
+    scores = [_result_final(r) for r in results]
     steps = [r.steps for r in results]
     actions = [r.actions_taken for r in results]
     versions = {_result_version(r) for r in results}
@@ -89,6 +104,10 @@ def compute_stats(results: list[EpisodeResult]) -> StrategyStats:
             max_reward=max(rewards),
             min_reward=min(rewards),
             scoring_version=scoring_version,
+            avg_score=mean(scores),
+            std_score=stdev(scores) if len(scores) > 1 else 0.0,
+            max_score=max(scores),
+            min_score=min(scores),
             avg_idle_ratio=mean(idle_ratios),
             avg_expired=mean(expireds),
             avg_clear_asm=mean(clear_asms),
@@ -110,48 +129,26 @@ def compute_stats(results: list[EpisodeResult]) -> StrategyStats:
         max_reward=max(rewards),
         min_reward=min(rewards),
         scoring_version=scoring_version,
+        avg_score=mean(scores),
+        std_score=stdev(scores) if len(scores) > 1 else 0.0,
+        max_score=max(scores),
+        min_score=min(scores),
     )
 
 
 def paired_t_test(a: list[float], b: list[float]) -> tuple[float, float]:
     """
-    配对 t-test。
+    配对 t 检验（向后兼容入口，实现在 bench/stats.py）。
+
+    p 值按 df = n-1 的 t 分布双侧真实计算（不再做正态近似分档）。
 
     Returns:
         (t_statistic, p_value)
     """
-    from math import sqrt
-
-    if len(a) != len(b) or len(a) < 2:
+    stats = paired_comparison(a, b)
+    if stats is None:
         return 0.0, 1.0
-
-    diffs = [x - y for x, y in zip(a, b)]
-    d_mean = mean(diffs)
-    d_std = stdev(diffs) if len(diffs) > 1 else 0.0
-
-    if d_std == 0:
-        return (9999.0, 0.0) if d_mean != 0 else (0.0, 1.0)
-
-    t = d_mean / (d_std / sqrt(len(diffs)))
-
-    # 简化 p-value 计算（使用正态近似）
-    # 实际应该用 scipy.stats.t.cdf，但为了不引入依赖，用简化版
-    # |t| > 2 对应 p < 0.05（约），|t| > 2.6 对应 p < 0.01（约）
-    import math
-    # 更精确的近似：使用 error function
-    p = 2 * (1 - 0.5 * (1 + math.erf(abs(t) / math.sqrt(2))))
-    # 但这不太对，让我用另一个方法
-    # 简单规则：
-    if abs(t) > 2.576:
-        p = 0.01
-    elif abs(t) > 1.96:
-        p = 0.05
-    elif abs(t) > 1.645:
-        p = 0.10
-    else:
-        p = 1.0
-
-    return t, p
+    return stats.t_stat, stats.p_value
 
 
 def histogram(values: list[float], bins: int = 10) -> list[int]:
@@ -228,6 +225,11 @@ def _print_histogram(values: list[float], bins: int = 10, unit: str = "") -> Non
         print(f"  {lo_edge:>6.2f}{unit} - {hi_edge:>6.2f}{unit}: {bar:<40} {count}")
 
 
+def _fmt_p(p: float) -> str:
+    """p 值格式化：常规保留 4 位小数，过小用科学计数法"""
+    return f"{p:.4f}" if p >= 1e-4 else f"{p:.1e}"
+
+
 def print_comparison(results: dict[str, list[EpisodeResult]]) -> None:
     """打印策略对比表格"""
     stats = {name: compute_stats(rs) for name, rs in results.items()}
@@ -238,41 +240,55 @@ def print_comparison(results: dict[str, list[EpisodeResult]]) -> None:
     versions = {s.scoring_version for s in stats.values()}
     print(f"Scoring version: {','.join(sorted(versions))} "
           f"(v1=sum only, v2=sum+final visibility)")
+    print("Score caliber: final_score (v2; same column as CSV export)")
     print("=" * 80)
 
     # 表头
-    print(f"\n{'Strategy':<20} {'Games':>6} {'Avg Reward':>12} {'Std':>8} {'Max':>8} {'Min':>8} {'Actions':>8}")
+    print(f"\n{'Strategy':<20} {'Games':>6} {'Avg Score':>12} {'Std':>8} {'Max':>8} {'Min':>8} {'Actions':>8}")
     print("-" * 80)
 
-    # 按平均 reward 排序
-    sorted_names = sorted(names, key=lambda n: stats[n].avg_reward, reverse=True)
+    # 按平均 score（final_score 口径）排序
+    sorted_names = sorted(names, key=lambda n: stats[n].avg_score, reverse=True)
     baseline_name = sorted_names[0]
 
     for name in sorted_names:
         s = stats[name]
         marker = " ★" if name == baseline_name else ""
         print(
-            f"{s.name:<20} {s.games:>6} {s.avg_reward:>12.1f} {s.std_reward:>8.1f} "
-            f"{s.max_reward:>8.0f} {s.min_reward:>8.0f} {s.avg_actions:>8.1f}{marker}"
+            f"{s.name:<20} {s.games:>6} {s.avg_score:>12.1f} {s.std_score:>8.1f} "
+            f"{s.max_score:>8.0f} {s.min_score:>8.0f} {s.avg_actions:>8.1f}{marker}"
         )
 
-    # 配对对比
+    # 配对对比（final_score 口径）
     if len(names) > 1:
         print("\n" + "-" * 80)
-        print(f"Paired comparison (vs {baseline_name}):")
-        print(f"{'Strategy':<20} {'Δ Reward':>10} {'t-stat':>8} {'p-value':>8} {'Significant'}")
+        print(f"Paired comparison (vs {baseline_name}) — score caliber: final_score")
+        print("CRN note: shared seeds pair initial conditions only; random streams")
+        print("diverge once strategies act differently — treat p-values as approximate.")
+        cohen_hdr = "Cohen's d"
+        print(f"{'Strategy':<20} {'Δ Score':>10} {'t-stat':>8} {'p-value':>10} {cohen_hdr:>9} {'95% CI':>22} {'Sig':>4}")
         print("-" * 80)
 
-        baseline_rewards = [r.total_reward for r in results[baseline_name]]
+        baseline_scores = [_result_final(r) for r in results[baseline_name]]
 
         for name in sorted_names[1:]:
-            rewards = [r.total_reward for r in results[name]]
-            t, p = paired_t_test(baseline_rewards, rewards)
-            delta = stats[name].avg_reward - stats[baseline_name].avg_reward
-            sig = "***" if p <= 0.01 else "**" if p <= 0.05 else "*" if p <= 0.10 else ""
+            scores = [_result_final(r) for r in results[name]]
+            # Δ = 本策略 - baseline（正数 = 优于 baseline，与旧版口径一致）；
+            # t / Cohen's d / CI 与 Δ 同号
+            ps = paired_comparison(scores, baseline_scores)
+            if ps is None:
+                print(f"{name:<20}  (n/a: paired comparison needs >= 2 games)")
+                continue
+            delta = ps.mean_diff
+            sig = "***" if ps.p_value <= 0.01 else "**" if ps.p_value <= 0.05 else "*" if ps.p_value <= 0.10 else ""
             print(
-                f"{name:<20} {delta:>+10.1f} {t:>8.2f} {p:>8.2f} {sig}"
+                f"{name:<20} {delta:>+10.1f} {ps.t_stat:>8.2f} {_fmt_p(ps.p_value):>10} "
+                f"{ps.cohen_d:>9.2f} [{ps.ci_low:>9.1f}, {ps.ci_high:>9.1f}] {sig:>4}"
             )
+            if ps.degenerate == "zero-variance":
+                print(f"{'':<20} (degenerate: zero variance, p floored at 1e-12)")
+            elif ps.degenerate == "identical":
+                print(f"{'':<20} (degenerate: identical runs, p meaningless)")
 
     # 效率指标表
     if any(s.has_metrics for s in stats.values()):
@@ -346,6 +362,8 @@ def export_json(results: dict[str, list[EpisodeResult]], filepath: str) -> None:
                 "games": stats.games,
                 "avg_reward": stats.avg_reward,
                 "std_reward": stats.std_reward,
+                "avg_score": stats.avg_score,
+                "std_score": stats.std_score,
                 "max_reward": stats.max_reward,
                 "min_reward": stats.min_reward,
                 "avg_steps": stats.avg_steps,
