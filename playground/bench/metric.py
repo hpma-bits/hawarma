@@ -7,6 +7,8 @@
 - 非侵入式：不修改 SimEnv 或 GameSimulator
 - 增量计算：按 tick 累计，避免存储完整历史
 - 零影响：指标收集不影响游戏确定性
+- 首帧计入：灶台名称在首次 update() 开头初始化（Issue #15 修复：
+  此前初始化晚于空闲遍历，第一步的空闲时间被漏计）
 
 指标分类：
   A) 灶台利用率: idle_ratio — 灶台空闲时间占总游戏时间的比例
@@ -24,6 +26,8 @@
         result = env.step(action)
         collector.update(obs, action, result)
     metrics = collector.summarize()
+
+⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
 """
 
 from __future__ import annotations
@@ -148,6 +152,11 @@ class MetricsCollector:
 
         current_time = obs.time
 
+        # 首次更新时初始化灶台名称（先于空闲遍历，确保首帧间隔计入空闲统计）
+        if not self._cooker_idle_time:
+            for name in obs.cookers:
+                self._cooker_idle_time[name] = 0.0
+
         # ── 灶台空闲率: 增量计算 ──
         # 检查当前帧各灶台是否空闲
         idle_now = 0
@@ -163,11 +172,6 @@ class MetricsCollector:
                 # done but not moved (holding ingredient) — counts as idle
                 self._cooker_idle_time[name] += current_time - self._prev_time
                 idle_now += 1
-
-        # 首次更新时初始化灶台名称
-        if not self._cooker_idle_time:
-            for name in obs.cookers:
-                self._cooker_idle_time[name] = 0.0
 
         # ── 事件统计 ──
         for event in step_result.info.get("events", []):
