@@ -9,6 +9,9 @@ SimEnv 集成测试
 - step(action) 执行动作 + 推进时间
 - get_unified_state() 状态转换正确性
 - 完整一局游戏
+
+#14 口径：新订单在 max(detection_delay, 1s 新单动画) 可见性窗口内对 agent 不可见
+（规则 3.4.2），订单一致性只对窗口外的订单断言可见。
 """
 
 import pytest
@@ -228,11 +231,18 @@ class TestConsistencyWithSimulator:
         for _ in range(50):
             env.step(None)
 
+        # #14：可见性窗口内的订单对 agent 不可见，窗口外的订单与 sim 状态一致
+        from playground.env_simulator import GameSimulator
+
+        hidden_window = max(env._detection_delay, GameSimulator.NEW_ORDER_ANIMATION)
+
         unified = env.get_unified_state()
         for i in range(4):
             sim_order = sim._state.orders[i]
             uni_order = unified.orders[i]
             if sim_order is None:
+                assert uni_order is None
+            elif sim.time < sim_order.created_at + hidden_window:
                 assert uni_order is None
             else:
                 assert uni_order is not None

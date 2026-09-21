@@ -13,6 +13,7 @@
 |--------|------|------|
 | `__init__.py` | ✅ | 包初始化 |
 | `test_env_simulator.py` | ✅ | 环境模拟器测试（基础结构、时间限制、订单生成、并行烹饪、积分系统） |
+| `test_sim_fidelity.py` | ✅ | 模拟器保真度测试（Issue #14：serve 食材集合校验、过期占灶、1s 新单可见性、serve 禁令/立即刷新双窗口） |
 | `test_timer_detection.py` | ✅ | Timer 图标模板匹配测试（验证 icon-timer.jpg 在截图中的检测） |
 | `test_rush_detection.py` | ✅ | 加急订单像素检测测试（基于红色通道阈值检测 rush 状态） |
 | `test_assembly_verifier.py` | ✅ | 组装站验证器测试 |
@@ -31,6 +32,8 @@
 6. **错误处理测试** — 无效输入、资源冲突
 7. **图像检测测试** — Timer 图标匹配、Rush 订单检测
 8. **组装站验证测试** — Verifier 图像检测
+9. **模拟器保真度测试**（#14）— serve 食材集合校验、过期食材占灶直到显式清理、
+   新单 1s 可见性（与 detection_delay 取 max）、serve 禁令窗口与立即刷新独立
 
 ## 运行测试
 
