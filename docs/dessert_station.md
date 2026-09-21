@@ -347,10 +347,7 @@ DessertStrategy 是甜点专用策略，**不继承自 `GastronomeStrategy`**—
 stations:
   dessert:
     enabled: true
-    stir:
-      distance: 400
-      duration: 1.5
-      steps: 10
+    # 搅拌参数使用 StirAction 默认值（400/1.5/10），死配置 StirConfig 已于 Issue #22 移除
     mixing_bowl_position:
       - 1245
       - 870
@@ -364,22 +361,17 @@ game:
   # ... 其他 game 配置
 ```
 
+dessert 组装 GameEnv 时读 `stations.dessert.cooker_retention`，gastronome 读
+`game.cooker_retention`（Issue #22 接线，两者默认值同为 5.0）。
+
 **注**：旧的 `stations.gastronome` 子节（`enabled`, `cooker_retention`, `serve_verify_wait`）于 2026-06-03 commit 中删除——这些字段自引入后从未被任何代码消费。gastronome 实际使用 `game.cooker_retention`（顶层）和 `screen.cookers_positions`（坐标）。
 
 **文件**：`src/hawarma/config.py`
 
 ```python
-class StirConfig(BaseModel):
-    """搅拌操作配置（单次左滑）"""
-    distance: int = 400
-    duration: float = 1.5
-    steps: int = 10
-
-
 class DessertStationConfig(BaseModel):
-    """甜点站点配置（仅 dessert）"""
+    """甜点站点配置（仅 dessert；搅拌参数用 StirAction 默认值，Issue #22 移除 StirConfig）"""
     enabled: bool = True
-    stir: StirConfig = Field(default_factory=StirConfig)
     mixing_bowl_position: tuple[int, int] = (1245, 870)
     cookers_positions: dict[str, tuple[int, int]] = {
         "dessert_oven": (715, 615),

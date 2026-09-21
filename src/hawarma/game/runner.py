@@ -9,6 +9,7 @@
       节拍收益待真机验证。
 
 输入：Env, Operator, Scanner, Verifier, Strategy
+      serve_verify_wait 读 config.game.serve_verify_wait（默认 0.2，Issue #22 接线）
 输出：游戏统计结果
 
 ⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
@@ -49,6 +50,7 @@ class Runner:
         verifier: Verifier,
         strategy: Strategy,
         recipes: dict[str, Recipe],
+        serve_verify_wait: float = 0.2,
     ):
         self.env = env
         self.ui = operator
@@ -56,6 +58,8 @@ class Runner:
         self.verifier = verifier
         self.strategy = strategy
         self._recipe_by_slug = recipes
+        # 送餐验证等待（秒）：serve swipe 后等动画渲染的时间，读 config.game.serve_verify_wait
+        self._serve_verify_wait = serve_verify_wait
 
         self.strategy.on_game_start(self._recipe_by_slug)
 
@@ -553,7 +557,7 @@ class Runner:
         await self.ui.serve_order(slot_idx)
 
         wait_timer = Timer(self._timing.serve_verify_wait)
-        await asyncio.sleep(0.2)  # 等待动画渲染
+        await asyncio.sleep(self._serve_verify_wait)  # 等待动画渲染
         wait_timer.record()
 
         snapshot_timer = Timer(self._timing.serve_verify_snapshot)
@@ -573,7 +577,7 @@ class Runner:
             retry_timer = Timer(self._timing.serve_retry)
             await asyncio.sleep(0.05)
             await self.ui.serve_order(retry_slot)
-            await asyncio.sleep(0.2)  # 等待动画渲染
+            await asyncio.sleep(self._serve_verify_wait)  # 等待动画渲染
             retry_result = await self._verify_with_multi_snapshot()
             retry_timer.record()
             if retry_result:

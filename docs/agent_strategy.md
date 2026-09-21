@@ -221,10 +221,8 @@ python -m playground run --seed 42 --strategy gastronome
 stations:
   dessert:
     enabled: true
-    stir:
-      distance: 400        # 滑动距离（像素）
-      duration: 1.5        # 滑动持续时间（秒）
-      steps: 10            # Airtest 插值步数
+    # 搅拌参数（distance/duration/steps）使用 StirAction 默认值（400/1.5/10），
+    # Issue #22 移除从未被消费的死配置 StirConfig
     mixing_bowl_position:  # 搅拌盆屏幕坐标
       - 1245
       - 870

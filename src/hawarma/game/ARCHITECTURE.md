@@ -39,6 +39,7 @@
   - 检测游戏开始（timer图标）
   - **异步截图**：`detect_timer()`, `scan_orders()`, `scan_new_orders()` 均为 async 方法，使用 `asyncio.to_thread()` 避免阻塞事件循环
   - **调试保存异步化（Issue #19）**：`_save_screenshot`（二次截图 + `cv2.imwrite` 磁盘 IO）由 `scan_orders` 经 `asyncio.to_thread` 放入 worker 线程，不阻塞扫描关键路径；方法本身保持同步签名
+  - **Rush 检测 config 单源（Issue #22）**：`_detect_rush` 的检测点位/红色阈值只读 `config.game.rush_detection_positions` / `rush_red_threshold`（默认值即原类常量值），空列表 = 关闭 rush 检测，不再静默回落硬编码；配方 slug 查询统一走 `RecipeManager`（Scanner 不再自带 `get_recipe_by_slug`）
 - **输入**: 屏幕截图、配置对象
 - **输出**: 检测到的订单信息
 - **关键类**: `Scanner`, `DetectedOrder`
@@ -99,7 +100,7 @@ Operator根据菜谱选择顺序动态确定各元素坐标：
   - 管理游戏生命周期
   - 运行三个并行循环（scan / timeout / agent）并执行 Agent 动作
   - **事件驱动决策**：`_agent_loop()` 由 `_agent_wakeup` 事件唤醒，空闲时 0.5s 兜底
-  - **送餐验证重试**：`_serve_with_verify()` 带分段耗时打点（验证等待 / 截图 / 重试 / 清理）
+  - **送餐验证重试**：`_serve_with_verify()` 带分段耗时打点（验证等待 / 截图 / 重试 / 清理）；动画渲染等待时长读 `config.game.serve_verify_wait`（构造参数注入，默认 0.2，Issue #22 接线）
   - **验证路径设备 IO 异步化（Issue #19）**：`_verify_with_multi_snapshot()` 的预热 snapshot ×3 与 `verifier.is_assembly_empty()`（snapshot+模板匹配）均经 `asyncio.to_thread` 执行，验证期间三循环照常推进。节拍收益待真机验证
   - **Action 调度**：`dispatch_batch()` 经共享 `schedule_actions` 排序/过滤后逐个 `_execute_action()`；
     已取消动作直接跳过（Ticket #11 / Spec #7 S3），与 SimEnv 回放语义一致
