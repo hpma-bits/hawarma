@@ -22,7 +22,7 @@ from unittest import mock
 from hawarma.config import AppConfig
 from hawarma.core.actions import CookAction, ServeOrderAction
 from hawarma.game.game_env import GameEnv
-from hawarma.game.runner import Runner
+from hawarma.game.runner import Runner, _ErrorStreak
 from hawarma.game.timing import ExecutionTiming
 from hawarma.game.operator import Operator
 from hawarma.recipe import Recipe, Station
@@ -101,6 +101,11 @@ class TestRunnerServePathTimingBaseline(unittest.TestCase):
         runner._timing = ExecutionTiming()
         runner._last_served = {}
         runner._serve_verify_wait = 0.2
+        # Issue #20：serve 结算/验证失败路径引用 _clock 与 _agent_wakeup；
+        # _execute_action 成功/异常路径引用连续异常计数
+        runner._clock = lambda: 0.0
+        runner._agent_wakeup = asyncio.Event()
+        runner._action_error_streak = _ErrorStreak("Action execution")
         Runner._build_action_handlers(runner)
         return runner
 

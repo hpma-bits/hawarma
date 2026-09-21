@@ -19,6 +19,7 @@
 | `test_dessert_detection.py` | ✅ | unittest | 甜点订单检测测试 |
 | `test_dessert_strategy.py` | ✅ | unittest | Dessert 策略测试（决策优先级） |
 | `test_device_io_async.py` | ✅ | unittest | 设备 IO 异步化并发性测试（Issue #19：慢 swipe/慢 snapshot 假设备 + 心跳协程并发，断言 IO 窗口内心跳 ≥2 次；含锁串行化与计时覆盖断言） |
+| `test_env_feedback.py` | ✅ | unittest | 环境反馈闭环测试（Issue #20：env 拒绝 pull/add_condiment/add_to_assembly → warning + _agent_wakeup、add_to_assembly 拒绝后不 clear_cooker、Verifier fail-closed（模板缺失/snapshot None/异常 → False + 一次性熔断提示）、serve 验证失败重试→清理路径、连续 5 次异常摘要一次 + 第 6 次不重复 + 成功复位） |
 | `test_env_simulator.py` | ✅ | pytest | 环境模拟器测试（基础结构、时间限制、订单生成、并行烹饪、错误处理；fixture 已对齐统一 Recipe 模型，Refs #10） |
 | `test_execution_timing.py` | ✅ | pytest | 执行耗时观测 + SrvGap/Idle 分布直方图测试（Ticket #9） |
 | `test_execution_timing_baseline.py` | ✅ | unittest | 送餐与滑动耗时基线回归（Ticket #12） |
