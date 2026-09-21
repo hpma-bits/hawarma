@@ -1,21 +1,23 @@
 """
 Playground Core Runner
 
-游戏循环和基准测试运行器。
+单局游戏循环（run_episode → EpisodeResult）。
+
+多策略基准测试（run_benchmark）统一在 playground/bench/bench.py
+实现（Issue #15：删除本模块的历史重复实现）。
 
 输入: GameEnv, Agent/Strategy, 配置
-输出: EpisodeResult / BenchmarkResult
+输出: EpisodeResult
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from hawarma.core.actions import Action
     from playground.env.game_env import GameEnv
-    from hawarma.agent.strategy import Strategy
 
 from playground.bench.metric import EfficiencyMetrics, MetricsCollector
 from hawarma.core.scoring import SCORING_VERSION, finalize_score
@@ -139,39 +141,3 @@ def run_episode(
         final_score=finalize_score(total_reward, total_visibility),
         scoring_version=SCORING_VERSION,
     )
-
-
-def run_benchmark(
-    env_factory: Callable[[], GameEnv],
-    strategies: dict[str, Strategy],
-    num_games: int = 50,
-    seeds: list[int] | None = None,
-    recipe_slugs: list[str] | None = None,
-) -> dict[str, list[EpisodeResult]]:
-    """
-    运行多策略基准测试。
-
-    Args:
-        env_factory: 创建 GameEnv 的工厂函数
-        strategies: {策略名: Strategy 实例}
-        num_games: 每策略测试局数
-        seeds: 自定义种子列表，None 则使用 0..num_games-1
-
-    Returns:
-        {策略名: [EpisodeResult, ...]}
-    """
-    from playground.agents.base import Agent
-
-    if seeds is None:
-        seeds = list(range(num_games))
-
-    results = {name: [] for name in strategies}
-
-    for seed in seeds:
-        for name, strategy in strategies.items():
-            env = env_factory()
-            agent = Agent(strategy)
-            result = run_episode(env, agent, seed=seed, recipe_slugs=recipe_slugs, collect_metrics=True)
-            results[name].append(result)
-
-    return results

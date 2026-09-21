@@ -4,7 +4,7 @@ Playground CLI
 统一入口：python -m playground ...
 
 命令：
-    run     运行单局游戏
+    run     运行单局游戏（--strategy 默认 gastronome）
     bench   运行基准测试
     replay  回放游戏记录
 
@@ -90,7 +90,14 @@ def cmd_bench(args):
             print(f"Unknown strategy: {name}")
             print(f"Available: {', '.join(all_strategies)}")
             sys.exit(1)
-        strategies[name] = _load_strategy(name)
+        # 同名策略重复出现时加 #2/#3 后缀区分，
+        # 使 `--strategies a,a` 可以做同策略自身配对（Δ=0 的退化对照）
+        key = name
+        dup = 2
+        while key in strategies:
+            key = f"{name}#{dup}"
+            dup += 1
+        strategies[key] = _load_strategy(name)
 
     def env_factory():
         return SimEnv()
@@ -103,6 +110,9 @@ def cmd_bench(args):
     )
 
     print_comparison(results)
+
+    if len(strategies) < 2:
+        print("\nNote: 配对比较需 ≥2 策略（--strategies a,b）")
 
     if args.csv:
         export_csv(results, args.csv)
@@ -136,7 +146,7 @@ def main():
     run_parser.add_argument(
         "--strategy",
         type=str,
-        default="default",
+        default="gastronome",
         help=f"Strategy name ({available_strategies})",
     )
     run_parser.add_argument("--record", action="store_true", help="Record replay")

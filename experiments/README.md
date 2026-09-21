@@ -51,7 +51,8 @@ sim.move_to_assembly('pot')  # 失败：pot可能已空
 ## 🔧 可复用模块
 
 使用 `playground/` 下的模块：
-- `playground.core.runner`: `run_episode`, `run_benchmark`
+- `playground.core.episode`: `run_episode`
+- `playground.bench.bench`: `run_benchmark`
 - `playground.env.game_env_impl`: `SimEnv`
 - `playground.strategies.default`: `DefaultStrategy`
 - `playground.bench.compare`: `print_comparison`, `export_csv`

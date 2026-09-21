@@ -7,7 +7,7 @@ import pytest
 from playground.env.sim import SimEnv
 from playground.agents.base import Agent
 from hawarma.agent.strategies.default import DefaultStrategy
-from playground.core.episode import run_episode, run_benchmark
+from playground.bench.bench import run_benchmark
 
 
 class TestRunner:
