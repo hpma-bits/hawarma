@@ -1,0 +1,126 @@
+{
+  "scenarios": [
+    {
+      "decision": {
+        "action": {
+          "cancelled": false,
+          "priority": 0,
+          "slot_idx": 0
+        },
+        "type": "ServeOrderAction"
+      },
+      "description": "assembly complete for braisedNewYearFish -> serve slot 0",
+      "name": "serve_complete_order"
+    },
+    {
+      "decision": {
+        "action": {
+          "cancelled": false,
+          "cooker": "skillet",
+          "priority": 0
+        },
+        "type": "ClearCookerAction"
+      },
+      "description": "expired ingredient on skillet -> clear cooker",
+      "name": "clear_expired_cooker"
+    },
+    {
+      "decision": {
+        "action": {
+          "cancelled": false,
+          "priority": 0
+        },
+        "type": "ClearAssemblyAction"
+      },
+      "description": "assembly targets long-CP jiaozi while ready fish order waits -> preempt",
+      "name": "assembly_preemption"
+    },
+    {
+      "decision": {
+        "action": {
+          "cancelled": false,
+          "cooker": "skillet",
+          "order_id": 1,
+          "priority": 0
+        },
+        "type": "MoveToAssemblyAction"
+      },
+      "description": "done clearwater_fish on skillet needed by order -> move to assembly",
+      "name": "move_done_to_assembly"
+    },
+    {
+      "decision": {
+        "action": {
+          "cancelled": false,
+          "cooker": "oven",
+          "duration": 3.0,
+          "ingredient": "clearwater_fish",
+          "order_id": 1,
+          "priority": 0
+        },
+        "type": "CookAction"
+      },
+      "description": "risotto order, free oven+pot -> cook highest-scored combo first",
+      "name": "parallel_cooking_cpm"
+    },
+    {
+      "decision": {
+        "action": {
+          "cancelled": false,
+          "condiment": "hearthspice",
+          "priority": 0
+        },
+        "type": "AddCondimentAction"
+      },
+      "description": "assembly has fish, condiments missing -> add first condiment",
+      "name": "add_condiment"
+    },
+    {
+      "decision": {
+        "action": {
+          "cancelled": false,
+          "ingredient": "creamfield_rice",
+          "priority": 0,
+          "slot": "slot0"
+        },
+        "type": "PullFromStockpileAction"
+      },
+      "description": "risotto in progress missing rice, stockpile has it -> pull slot0",
+      "name": "pull_from_stockpile"
+    },
+    {
+      "decision": {
+        "action": {
+          "cancelled": false,
+          "cooker": "skillet",
+          "priority": 0,
+          "slot": "slot0"
+        },
+        "type": "MoveToStockpileAction"
+      },
+      "description": "done-but-unneeded rice on skillet, no free cooker -> store slot0",
+      "name": "store_to_stockpile"
+    },
+    {
+      "decision": {
+        "action": {
+          "cancelled": false,
+          "cooker": "pot",
+          "duration": 3.0,
+          "ingredient": "dough_wrappers",
+          "order_id": null,
+          "priority": 0
+        },
+        "type": "CookAction"
+      },
+      "description": "no orders, only pot free, early game -> precook dough_wrappers",
+      "name": "precook_without_orders"
+    },
+    {
+      "decision": null,
+      "description": "fish cooking, all cookers busy, nothing to do -> decide None",
+      "name": "idle_returns_none"
+    }
+  ],
+  "strategy": "gastronome"
+}
