@@ -20,10 +20,15 @@
 - **功能**: 说明真实环境和模拟环境通过 UnifiedState + Action 共享数据契约，不定义行为接口
 
 ### `game_env.py`
-- **地位**: 真实游戏状态追踪器
+- **地位**: 真实游戏状态追踪器 + 订单生命周期唯一入口（Issue #18）
 - **功能**:
   - 独立类（不继承 ABC），追踪灶台、组装站、搅拌盆、库存、订单、调料
   - 时钟注入（#17）：构造函数接受 `clock: Callable[[], float]`（默认 `time.monotonic`）；env.time/订单时间戳为局内相对秒数，动画窗口等墙钟测量同走此 clock，不再使用 epoch `time.time()`
+  - 订单生命周期原子公共 API（Issue #18）：
+    - `create_order(recipe_slug, is_rush) -> Order`：订单创建唯一入口。timeout 从 `RecipeTimeoutLookup` 查表（构造注入 `timeout_lookup` 或懒加载，与 #22 reward_lookup 模式一致），查不到 fallback 类常量 `DEFAULT_NORMAL_TIMEOUT/DEFAULT_RUSH_TIMEOUT`（原 70/40 行为）；锁定 `spawned_at_visibility`；`_next_order_id` 自增；只构造对象不落槽位
+    - `apply_scan_result(scanned, recently_served, now_wall)`：扫描结果的原子同步方法（同步、无 await）——匹配（同位优先 + 位移）/serve ghost 过滤/防复活校验/新建/延迟删除全部在 env 内完成（详见「订单生命周期与竞态防护」一节）
+    - `serve_order_by_id(order_id) -> Order | None`：按 serve 前锁定的 order_id 结算；找不到（验证窗口内被 timeout 删）warning + 不计分，绝不结算到错单
+    - `add_order` 保留为 `create_order` 的薄别名（最左空槽落位，旧返回契约），供既有调用方兼容
   - 通过 `get_unified_state()` 产出 `UnifiedState` 供 Strategy 决策
   - `get_unified_state()` 返回全量深快照（#16）：orders/cookers/assembly/stockpile/mixing_bowl 均为各模型 `snapshot()` 字段级拷贝，与内部状态无共享可变对象；recipes 只读共享
   - 得分查表 `RecipeRewardLookup` 支持构造注入共享实例；未注入时首次 `on_order_served` 前懒加载（Issue #22）
@@ -102,11 +107,13 @@ Operator根据菜谱选择顺序动态确定各元素坐标：
   - 管理游戏生命周期
   - 运行三个并行循环（scan / timeout / agent）并执行 Agent 动作
   - **事件驱动决策**：`_agent_loop()` 由 `_agent_wakeup` 事件唤醒，空闲时 0.5s 兜底
+  - **订单生命周期零越权（Issue #18）**：Runner 不再读写 `env._orders` / `env._next_order_id` / `env._scoring`——`_sync_orders_from_scan()` 只做扫描 + 动画窗口防护，然后把扫描条目交给 `env.apply_scan_result`（原子同步）并透传 `_last_served` 幽灵窗口记录；订单创建/超时查表全部走 `env.create_order`
+  - **送餐按 id 结算（Issue #18）**：`_serve_with_verify()` 在每次尝试 swipe 前锁定该槽当前 order_id，验证成功后经 `env.serve_order_by_id` 结算——验证窗口内订单被 timeout 移位/删除时绝不结算到错单
   - **送餐验证重试**：`_serve_with_verify()` 带分段耗时打点（验证等待 / 截图 / 重试 / 清理）；动画渲染等待时长读 `config.game.serve_verify_wait`（构造参数注入，默认 0.2，Issue #22 接线）
   - **验证路径设备 IO 异步化（Issue #19）**：`_verify_with_multi_snapshot()` 的预热 snapshot ×3 与 `verifier.is_assembly_empty()`（snapshot+模板匹配）均经 `asyncio.to_thread` 执行，验证期间三循环照常推进。节拍收益待真机验证
   - **Action 调度**：`dispatch_batch()` 经共享 `schedule_actions` 排序/过滤后逐个 `_execute_action()`；
     已取消动作直接跳过（Ticket #11 / Spec #7 S3），与 SimEnv 回放语义一致
-  - **时基（#17）**：构造函数接受 `clock`（默认 `time.monotonic`）透传墙钟测量；扫描同步新建订单的时间戳取 `env.time`（局内相对秒数），ghost 窗口/扫描计时走 monotonic clock，`asyncio.get_event_loop().time()` 已移除
+  - **时基（#17）**：构造函数接受 `clock`（默认 `time.monotonic`）透传墙钟测量；ghost 窗口/扫描计时走 monotonic clock，`asyncio.get_event_loop().time()` 已移除
   - **异步扫描**：`_sync_orders_from_scan()` 为 async 方法，await scanner 的异步截图
 - **输入**: 配置对象、配方列表
 - **输出**: 游戏统计结果（含 scoring 统计与 execution timing）
@@ -136,7 +143,10 @@ Scanner.scan_orders()
     ↓
 DetectedOrder
     ↓
-GameEnv.add_order()
+Runner._sync_orders_from_scan()（收集条目 + 动画窗口防护）
+    ↓
+GameEnv.apply_scan_result()（原子同步：匹配/ghost 过滤/防复活/新建/延迟删除，
+                            新建走 create_order —— timeout 查表 + visibility 锁定）
     ↓
 Runner.step()
     ↓
@@ -146,30 +156,31 @@ Runner._execute_action()（已取消直接跳过，无 UI 调用、无状态变�
     ↓
 Operator.swipe()
     ↓
-GameEnv状态更新
+GameEnv状态更新（serve 结算走 serve_order_by_id，按 serve 前锁定的 order_id）
     ↓
 Verifier.is_assembly_empty() (仅送餐后)
 ```
 
-### 送餐验证流程
+### 送餐验证流程（Issue #18：按 order_id 结算）
 
 `_exec_serve_order()` 使用 `_serve_with_verify()` 执行带验证的送餐：
 
 ```
-1. 执行 UI 送餐操作
-2. 等待 0.5s（动画窗口）
-3. Verifier.is_assembly_empty() 验证
-   ├── 为空 → 成功 → env.serve_order() 更新状态
-   └── 不为空 → 警告 → 重新扫描订单找匹配槽位
-       ├── 找到匹配槽位 → 重试送餐（最多 2 次重试）
-       └── 无匹配 → 重试原槽位
-           └── 全部失败 → 清理组装站，继续游戏
+1. 锁定目标槽位当前 order_id（swipe 前的安全锚点）
+2. 执行 UI 送餐操作（await —— 验证窗口从此开始，timeout 循环可能移位/删除订单）
+3. 等待动画 + 多点 snapshot 验证
+   ├── 为空 → 成功 → env.serve_order_by_id(order_id)
+   │     ├── 订单仍活跃（可能已移位）→ 正确结算该订单，调用方按返回值计分
+   │     └── 订单已被 timeout 删 → warning + 不计分（绝不结算到错单）
+   └── 不为空 → 警告 → 重新锁定相邻左侧 slot 的 order_id 并重试（最多 2 次）
+       └── 全部失败 → 清理组装站，继续游戏
 ```
 
 **设计原则**：
-- `env.serve_order()` 只在验证成功后调用，保证环境状态一致性
-- 最多重试 2 次，避免无限循环
-- 重试时重新扫描订单，处理订单槽位偏移问题
+- 结算以 serve 前（该次尝试 swipe 前）锁定的 order_id 为准：验证窗口 ≥0.25s，
+  期间 timeout 移位/删除不会导致按旧 slot 结算到错单
+- 最多重试 2 次，避免无限循环；重试前重新锁定该槽当前订单 id
+- `env.serve_order_by_id()` 只在验证成功后调用，保证环境状态一致性
 - 最终失败时清理组装站，防止卡死
 
 ### ⚠️ 订单同步动画窗口保护（2026-06-03 修复）
@@ -187,6 +198,57 @@ Verifier.is_assembly_empty() (仅送餐后)
 - 动画期可能延迟发现 1 个新订单（最坏 1.5s 滞后）
 - 消除了视觉/env 错位导致的 strategy 误判
 
+## 🔄 订单生命周期与竞态防护（Issue #18）
+
+订单的创建/同步/结算收敛为 GameEnv 的原子公共 API；Runner 只做扫描/执行，
+不再触碰 env 私有状态（`env._orders` / `env._next_order_id` / `env._scoring`）。
+
+### 竞态根源与修复
+
+单线程事件循环下每个 env 变更点本身是原子的，竞态源于 **await 点之间的
+"旧快照数据"**——扫描/验证协程挂起期间，timeout/serve 循环推进了 env 状态。
+修复方式：把「外部观测结果 → 变更决策」整体放进 env 的同步方法（无 await）。
+
+| 竞态 | 旧实现 | Issue #18 修复 |
+|------|--------|----------------|
+| 扫描旧帧覆盖 | `_sync_orders_from_scan` 在 await 扫描后用旧帧 `[None]*4` 全量覆盖 `env._orders`，serve/timeout 已发生的删除被复活 | `apply_scan_result` 增量同步 + 防复活记忆窗口 |
+| serve 验证窗口错单 | `_serve_with_verify` ≥0.25s 后按 serve 前 slot_idx 取 `env.orders[slot]` 结算，timeout 移位后给错单打分 | swipe 前锁定 order_id，`serve_order_by_id` 按 id 结算，找不到则不计分 |
+| 订单创建双实现 | runner sync 复制 `add_order` 语义（硬编码 40/70 + visibility 锁定），`add_order` 生产路径无人调用 | `create_order` 唯一入口，runner 经 `apply_scan_result` 间接调用 |
+| 超时口径分裂 | 模拟器走 `recipe_timeout.csv`，真实 env 硬编码 40/70 | 两端统一走 `RecipeTimeoutLookup`（真实端 fallback 类常量） |
+
+### GameEnv 公共 API
+
+| API | 职责 |
+|-----|------|
+| `create_order(recipe_slug, is_rush) -> Order` | 订单创建唯一入口：timeout 查表（`RecipeTimeoutLookup` 构造注入或懒加载，与 #22 reward_lookup 模式一致）+ fallback `DEFAULT_NORMAL_TIMEOUT/DEFAULT_RUSH_TIMEOUT`；锁定 `spawned_at_visibility`；`_next_order_id` 自增；不落槽位 |
+| `apply_scan_result(scanned, recently_served, now_wall) -> dict` | 原子同步（无 await）：匹配/ghost 过滤/防复活/新建/延迟删除，返回同步统计 |
+| `serve_order_by_id(order_id) -> Order \| None` | 按 serve 前锁定的 id 结算；找不到（被 timeout 删）warning + 不计分 |
+| `add_order` | `create_order` 薄别名（最左空槽落位），保留旧调用兼容 |
+
+### apply_scan_result 增量语义
+
+1. **匹配**：扫描条目按 `(recipe_slug, is_rush)` 匹配现有**活跃**订单（同位
+   优先，再其他位——订单位移），复用 order_id/created_at/timeout_at，
+   放置到扫描位置（反映屏幕真实布局）
+2. **serve ghost 过滤**：`recently_served`（Runner `_last_served`，墙钟）内
+   `SERVE_GHOST_WINDOW`(1.5s) 刚 serve 过该类型且 env 无活跃同名单 → 跳过
+   （防扫描图像延迟，与防复活互补）
+3. **防复活**：无匹配但命中已删除订单记忆（`_recently_removed`，
+   `REMOVED_ORDER_MEMORY_WINDOW`(1.5s) 墙钟窗口内 serve/timeout 删除的同名单）
+   → 视为旧扫描帧幽灵，不重建订单
+4. **新建**：其余未匹配条目经 `create_order` 创建
+5. **延迟删除**：现有订单连续 `SCAN_MISS_DELETE_THRESHOLD`(2) 次扫描未出现才
+   删除；未达阈值的存活单追加到尾部空位（miss 计数扫到即清零）
+
+`serve_order` / `serve_from_cooker` / `check_and_remove_timed_out_orders`
+移除订单时自动写入 `_recently_removed` 记忆。
+
+**设计权衡**：
+- 记忆窗口内同名单的合法新单最多被延迟 ~1.5s 发现（与既有 serve ghost
+  窗口的代价一致；扫描间隔 0.4-0.5s，旧帧最多存活一个扫描周期，1.5s 保守）
+- 延迟删除使消失订单在 env 内多存活一个扫描周期（~0.5s），换取单次漏检
+  不误删（timeout 循环仍即时删除真正超时的订单，不受影响）
+
 ## 得分系统（与模拟器对齐）
 
 真实环境与模拟器使用**同一套** `RecipeRewardLookup` 计算得分，公式见 `docs/game_rules.md:194-226`：
@@ -200,14 +262,14 @@ order_score = (base_points + visibility) * multiplier(spawned_at_visibility, is_
 ### 实现机制
 
 1. **`Order.spawned_at_visibility`** (`core/models.py:Order`)：新增字段，`immutable since creation` —— 通过 `__setattr__` 重写阻止二次赋值，确保域语义「生成瞬间快照」不被破坏。
-2. **`GameEnv.add_order()`**：每次新增订单时，把当前 `_scoring.total_visibility` 写入 `order.spawned_at_visibility`。
+2. **`GameEnv.create_order()`**（Issue #18 唯一创建入口；`add_order` 为其薄别名）：每次新增订单时，把当前 `_scoring.total_visibility` 写入 `order.spawned_at_visibility`。
 3. **`ScoringContext`** (`core/scoring.py`，S1 抽离)：统计查询、总分、终局结算的唯一持有者。`GameEnv` 直接读写 `_scoring`（Issue #22 已删除过渡期兼容 property），改计分只碰此处。
 4. **`GameEnv.on_order_served(order, has_condiments)`**：
    - `score = RecipeRewardLookup.get_score(order.recipe_slug, has_condiments, order.is_rush, total_visibility=order.spawned_at_visibility)`
    - `_scoring.record_serve(score, get_visibility(...))`
 5. **`GameEnv.finalize()`**（幂等）：`final_score = total_score + total_visibility`；`get_stats()` 同时返回 `total_score`（逐单和）、`total_visibility`、`final_score`、`scoring_version`。
-6. **`Runner._exec_serve_order()` / `_exec_serve_from_cooker()`**：在 `env.serve_order` 清空 assembly 之前用 `env.assembly.condiments` 读取 `has_condiments`，然后调用 `env.on_order_served(order, has_condiments)`。甜点单食材直送（`serve_from_cooker`）时 `has_condiments=False`。
-7. **`Runner._sync_orders_from_scan()`**：扫描新建订单时同样锁定 `spawned_at_visibility=_scoring.total_visibility`（与 `add_order` 同语义）；`run()` 返回前先 `finalize()`。
+6. **`Runner._exec_serve_order()` / `_exec_serve_from_cooker()`**：在结算清空 assembly 之前用 `env.assembly.condiments` 读取 `has_condiments`，然后调用 `env.on_order_served(order, has_condiments)`（Issue #18：`_exec_serve_order` 经 `env.serve_order_by_id` 拿到被结算订单后再计分）。甜点单食材直送（`serve_from_cooker`）时 `has_condiments=False`。
+7. **`Runner._sync_orders_from_scan()`**：扫描新建订单走 `env.apply_scan_result` → `env.create_order`，同样锁定 `spawned_at_visibility=_scoring.total_visibility`（与 `create_order` 同语义）；`run()` 返回前先 `finalize()`。
 
 ### 与模拟器的差异
 
@@ -227,6 +289,7 @@ order_score = (base_points + visibility) * multiplier(spawned_at_visibility, is_
 | 时间推进 | tick()方法 | 真实时间 |
 | 操作执行 | 符号操作 | UI swipe操作 |
 | 订单生成 | 随机生成 | 屏幕检测 |
+| 订单超时口径 | `RecipeTimeoutLookup` 查 `recipe_timeout.csv` | 同左（Issue #18 收敛单源；查不到 fallback `DEFAULT_*_TIMEOUT` 类常量） |
 | 食材过期 | expired_at 字段，强制阻止 | expired_at 字段，move_to_assembly/stockpile 拒绝过期 |
 | 配方校验 | 模拟器内部校验 | add_to_assembly/add_condiment 校验目标配方 |
 | 用途 | 测试、算法优化 | 实际游戏 |
@@ -266,7 +329,9 @@ async def run(self) -> dict:
 
 ### 扫描循环 (_scan_loop)
 
-**职责**：检测屏幕上新出现的订单，更新环境状态
+**职责**：检测屏幕上的订单，把扫描条目交给 env 原子同步（Issue #18：
+匹配/ghost 过滤/防复活/新建/延迟删除在 `GameEnv.apply_scan_result` 内完成，
+详见「订单生命周期与竞态防护」一节）
 
 **频率**：自适应（0.4s / 0.5s），动画窗口期间暂停
 
@@ -444,10 +509,11 @@ def is_game_over(self) -> bool:
     return self.time >= self._game_duration  # 默认90秒
 ```
 
-订单生命周期同基：`add_order` 用 `now = self.time` 写 `created_at/timeout_at`；
+订单生命周期同基：`create_order`（Issue #18 唯一创建入口）用 `now = self.time`
+写 `created_at/timeout_at`（timeout 走 `RecipeTimeoutLookup` 查表 + fallback）；
 `check_and_remove_timed_out_orders` 用 `now = self.time` 判超时；
-Runner `_sync_orders_from_scan` 新建订单同样取 `env.time`（相对秒数），
-ghost 窗口与扫描计时则走注入的墙钟 clock。
+`apply_scan_result` 在 env 内同步应用扫描结果（新建走 `create_order`，同样取
+`env.time` 相对秒数）；Runner 的 ghost 窗口与扫描计时走注入的墙钟 clock。
 
 ### 与模拟器 tick 的对比
 
@@ -681,7 +747,7 @@ while self._running and not self.env.is_game_over():
    ├── 扫描循环 (0.4s/0.5s 自适应)
    │   ├── 检查动画窗口（暂停到窗口结束）
    │   ├── Scanner.scan_new_orders()
-   │   └── GameEnv 订单同步 / add_order()
+   │   └── GameEnv.apply_scan_result()（原子同步，新建走 create_order）
    │
    ├── 超时循环 (0.3s)
    │   └── GameEnv.check_and_remove_timed_out_orders()
