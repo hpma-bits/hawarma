@@ -21,6 +21,8 @@ Hawarma 项目的 RL 风格游戏模拟与策略验证环境。
 | `cli.py` | CLI 实现 | `run` / `bench` / `replay` 子命令 |
 | `README.md` | 快速上手 | 面向用户的使用指南 |
 | `ARCHITECTURE.md` | 本文件 | 面向开发者的架构文档 |
+| `env_simulator.py` | 游戏状态机 | 规则"真理之源"（#14 后含 serve 校验/过期占灶/双窗口语义） |
+| `env_simulator_types.py` | 模拟器类型 | Event/EventType/GameState/GameConfig（复用 hawarma.core 模型） |
 
 ### `env/` — 环境模块
 
@@ -29,6 +31,9 @@ Hawarma 项目的 RL 风格游戏模拟与策略验证环境。
 | `game_env.py` | GameEnv ABC (RL interface) | Action | StepResult |
 | `sim.py` | SimEnv implementation | Action | RL-style StepResult via GameSimulator |
 | `reward.py` | Reward calculation | events + state | float reward |
+
+SimEnv 观测口径（#14）：新订单在 `max(detection_delay, GameSimulator.NEW_ORDER_ANIMATION=1s)`
+窗口内对 agent 不可见（规则 3.4.2 检测盲区），与 `GameSimulator.get_order` 单一口径。
 
 ### `agents/` — Agent shell module
 
@@ -115,6 +120,20 @@ Strategy 不直接接触环境，不访问 `sim._state`。这保证了：
 ### 4. 配对 Benchmark
 
 `run_benchmark()` 在同一 seed 下所有策略各跑一局，确保公平对比。
+
+### 5. 模拟器保真度（#14，2026-09-22）
+
+`env_simulator.py` 对齐 `docs/game_rules.md` 第 3/4/9 节的 4 项机制：
+
+- **serve 校验**：`serve_order` 比对组装站食材 (name, cooker_type) 集合与 recipe
+  完全一致，不一致失败且菜品留在组装站（规则 3.5 "被退回"）
+- **过期占灶**：过期食材留在灶台直到显式 `clear_cooker` / `move_to_trash`
+  （清理动作经 SimEnv 一次 action_delay=0.3s）；INGREDIENT_EXPIRED 按过期时刻发一次
+- **新单可见性**：1s 出现动画（`NEW_ORDER_ANIMATION`）独立于 serve 禁令窗口
+  （`_serve_ban_until`，slot 位移 1.5s），观测路径取 `max(detection_delay, 1s)`
+- **立即刷新**：提交/超时后场上无单，下一 tick 立即创建新订单（不被禁令窗口推迟）
+
+基准口径 v2（含 #14 修复）的对照数据见 `docs/agent_strategy.md` §3.1.1。
 
 ## 📝 待办
 

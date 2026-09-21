@@ -12,6 +12,8 @@ SimEnv: RL 风格的游戏环境实现
 延迟模拟（DDD 领域建模）：
 - action_delay: 每次操作消耗的游戏时间（对应真实 swipe 物理耗时，默认 300ms）
 - detection_delay: 新订单被扫描感知的滞后时间（对应真实模板匹配耗时，默认 400ms）
+- 新订单可见性：观测路径统一叠加 1s 新单出现动画（GameSimulator.NEW_ORDER_ANIMATION，
+  规则 3.4.2 检测盲区），与 detection_delay 取 max，消除 get_order / get_unified_state 双口径（#14）
 
 ⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
 """
@@ -229,9 +231,11 @@ class SimEnv(GameEnv):
         sim_state = self._sim._state
 
         orders = self._convert_orders(sim_state.orders)
-        # 检测延迟：新订单在 detection_delay 内对 agent 不可见
-        if self._detection_delay > 0:
-            orders = self._apply_detection_delay(orders, sim_state.time)
+        # 新订单可见性窗口：detection_delay（扫描周期语义）与 1s 新单出现动画
+        # （游戏动画语义）叠加取 max，与 GameSimulator.get_order 单一口径（#14）
+        hidden_window = max(self._detection_delay, GameSimulator.NEW_ORDER_ANIMATION)
+        if hidden_window > 0:
+            orders = self._apply_detection_delay(orders, sim_state.time, hidden_window)
 
         return UnifiedState(
             time=sim_state.time,
@@ -316,14 +320,17 @@ class SimEnv(GameEnv):
     # ------------------------------------------------------------------
 
     def _apply_detection_delay(
-        self, orders: tuple[Order | None, ...], current_time: float
+        self,
+        orders: tuple[Order | None, ...],
+        current_time: float,
+        hidden_window: float,
     ) -> tuple[Order | None, ...]:
-        """过滤 detection_delay 内出现的新订单（模拟扫描滞后）"""
+        """过滤可见性窗口内出现的新订单（扫描滞后 + 1s 新单动画，取 max）"""
         result: list[Order | None] = []
         for order in orders:
             if order is None:
                 result.append(None)
-            elif current_time < order.created_at + self._detection_delay:
+            elif current_time < order.created_at + hidden_window:
                 result.append(None)
             else:
                 result.append(order)

@@ -9,38 +9,6 @@
 
 ## 📄 文件清单
 
- | 文件名 | 状态 | 跑器 | 功能 |
-|--------|------|------|------|
-| `__init__.py` | ✅ | - | 包初始化 |
-| `test_action_dispatch.py` | ✅ | pytest | Action 调度表达与双端对齐测试（Ticket #11：类型/优先级/取消、共享调度、Runner 跳过取消、SimEnv 直调序列、双端回放终局一致） |
-| `test_assembly_verifier.py` | ✅ | unittest | 组装站验证器测试 |
-| `test_dessert_detection.py` | ✅ | unittest | 甜点订单检测测试 |
-| `test_dessert_strategy.py` | ✅ | unittest | Dessert 策略测试（决策优先级） |
-| `test_env_simulator.py` | ✅ | pytest | 环境模拟器测试（基础结构、时间限制、订单生成、并行烹饪、积分系统） |
-| `test_execution_timing.py` | ✅ | pytest | 执行耗时观测 + SrvGap/Idle 分布直方图测试（Ticket #9：分段耗时聚合、动画窗口剩余、SrvGap/Idle 分桶守恒） |
-| `test_execution_timing_baseline.py` | ✅ | unittest | 送餐与滑动耗时基线回归（Ticket #12：真实 Operator/Runner 路径打桩驱动，断言各分段有记录且在宽松合理区间，不设阈值） |
-| `test_final_scoring.py` | ✅ | pytest | 终局计分与度量抽离测试（Ticket #8：终局含 visibility、finalize 幂等、scoring_version 隔离） |
-| `test_final_scoring_regression.py` | ✅ | unittest | 终局结算回归护栏（Ticket #12：一次加总且幂等、同种子确定性、双端同一账本终局一致） |
-| `test_gastronome_golden.py` | ✅ | unittest | Gastronome 金决策快照回归（Ticket #12：10 个固定场景决策与 `golden/gastronome_decisions.json` 快照相等） |
-| `test_i18n.py` | ✅ | unittest | i18n 测试（locale 键集合一致性、UI 静态键存在性、各 locale 下 TUI 全屏导航） |
-| `test_mixing_bowl.py` | ✅ | unittest | 搅拌盆相关测试 |
-| `test_recipe_detection.py` | ✅ | unittest | 配方检测测试 |
-| `test_real_env_scoring.py` | ✅ | pytest | 真实环境得分测试（on_order_served 精确计分、spawned_at_visibility 不可变） |
-| `test_rush_detection.py` | ✅ | unittest | 加急订单像素检测测试（基于红色通道阈值检测 rush 状态） |
-| `test_rush_tiebreaker.py` | ✅ | unittest | Rush/visibility 跨越对订单排序影响的测试 |
-| `test_timer_detection.py` | ✅ | unittest | Timer 图标模板匹配测试（验证 icon-timer.jpg 在截图中的检测） |
-| `test_tui.py` | ✅ | unittest | TUI 测试 |
-| `test_tui_order_input.py` | ✅ | unittest | TUI 订单输入测试 |
-| `test_tui_vs_cli_order.py` | ✅ | unittest | TUI 与 CLI 订单构建一致性测试 |
-| `test_validate_order_input.py` | ✅ | unittest | 订单输入校验测试 |
-| `golden/` | ✅ | 数据 | 金决策快照数据（`gastronome_decisions.json`；再生成方式见 `test_gastronome_golden.py` 文件头注释） |
-| `testset/` | ✅ | 数据 | 测试图片集（包含 normal/rush 订单截图） |
-
-> **跑器说明**：`python -m unittest discover tests` 只收集 unittest.TestCase 风格用例；
-> 标注 `pytest` 的文件为纯类风格，需用 `pytest tests/` 运行（跑器统一见 Ticket #10）。
-> Ticket #12 的三项回归护栏（`test_final_scoring_regression.py`、
-> `test_execution_timing_baseline.py`、`test_gastronome_golden.py`）均为
-> unittest.TestCase，一条命令即可全绿。
 
 ## 测试覆盖
 
@@ -55,6 +23,8 @@
 9. **终局结算回归** — 一次加总、幂等、同种子双端一致（#12）
 10. **耗时基线回归** — swipe 往返与送餐各分段有记录且在合理区间（#12）
 11. **金决策快照回归** — Gastronome 给定状态决策与快照相等（#12）
+9. **模拟器保真度测试**（#14）— serve 食材集合校验、过期食材占灶直到显式清理、
+   新单 1s 可见性（与 detection_delay 取 max）、serve 禁令窗口与立即刷新独立
 
 ## 运行测试
 
