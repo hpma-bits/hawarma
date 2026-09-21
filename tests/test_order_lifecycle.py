@@ -340,6 +340,8 @@ class TestServeSettlesById(unittest.TestCase):
         runner._last_served = {}
         runner._serve_verify_wait = 0.0
         runner._clock = clock
+        # Issue #20：serve 结算失败路径（serve_order_by_id 返回 None）set wakeup
+        runner._agent_wakeup = asyncio.Event()
         Runner._build_action_handlers(runner)
         return runner
 

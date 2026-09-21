@@ -21,6 +21,18 @@
   当前 order_id，验证成功后经 env.serve_order_by_id 结算——验证窗口内订单
   被 timeout 移位/删除时绝不结算到错单（找不到则 warning + 不计分）
 
+执行反馈闭环（Issue #20）：
+- 全部 _exec_* handler 检查 env 状态更新返回值（bool / Order|None）：
+  被拒绝时 logger.warning（含 action repr 与拒绝原因摘要）并 set
+  _agent_wakeup 触发 agent loop 下一轮立即重决策——UI swipe 不会失败，
+  env 拒绝意味着画面与 env 状态已漂移，必须可见且触发恢复决策
+- clear_assembly / clear_mixing_bowl 的 False 语义是「本来就空」的幂等
+  no-op（无漂移可能），不视为拒绝、不打 warning（见 _reject_env_update）
+- 三个主循环与 _execute_action 的 except 改 logger.exception（带堆栈），
+  并按循环维护连续异常计数（_ErrorStreak）：同一循环连续 ≥5 次异常时
+  打一条 error 级摘要行（含计数与最近异常类型），此后不再重复刷屏；
+  成功一轮即复位。循环不终止，handler 抛错被吞后也 set _agent_wakeup
+
 输入：Env, Operator, Scanner, Verifier, Strategy
       serve_verify_wait 读 config.game.serve_verify_wait（默认 0.2，Issue #22 接线）
 输出：游戏统计结果
@@ -46,6 +58,34 @@ from .scanner import Scanner
 from .operator import Operator
 from .verifier import Verifier
 from .timing import ExecutionTiming, Timer
+
+
+class _ErrorStreak:
+    """连续异常计数（Issue #20）：同一循环连续异常达到阈值时打一条 error 级
+    摘要行（含计数与最近异常类型），此后同一轮连错不再重复；成功一轮即复位。
+    只观测不终止——循环照常运行，摘要用于暴露持续性故障。
+    """
+
+    __slots__ = ("label", "threshold", "count")
+
+    def __init__(self, label: str, threshold: int = 5) -> None:
+        self.label = label
+        self.threshold = threshold
+        self.count = 0
+
+    def record_success(self) -> None:
+        """一轮成功：复位计数（下一轮连错重新累计）"""
+        self.count = 0
+
+    def record_failure(self, exc: BaseException) -> None:
+        """一次异常：计数 +1，恰好达到阈值时打一次摘要（不重复刷屏）"""
+        self.count += 1
+        if self.count == self.threshold:
+            logger.error(
+                f"{self.label}: {self.count} consecutive errors "
+                f"(last: {type(exc).__name__}); loop continues, "
+                f"see tracebacks above"
+            )
 
 
 class Runner:
@@ -89,6 +129,12 @@ class Runner:
 
         # 执行耗时观测（只观测不改行为）：送餐验证路径分段计时
         self._timing = ExecutionTiming()
+
+        # 连续异常计数（Issue #20）：三个主循环 + 动作执行各自独立计量
+        self._scan_error_streak = _ErrorStreak("Scan loop")
+        self._timeout_error_streak = _ErrorStreak("Timeout loop")
+        self._agent_error_streak = _ErrorStreak("Agent loop")
+        self._action_error_streak = _ErrorStreak("Action execution")
 
         self._build_action_handlers()
 
@@ -204,6 +250,7 @@ class Runner:
                         await asyncio.sleep(remaining + 0.1)
                     # 动画结束后唤醒 agent
                     self._agent_wakeup.set()
+                    self._scan_error_streak.record_success()
                     continue
 
                 await self._sync_orders_from_scan()
@@ -212,8 +259,10 @@ class Runner:
 
                 interval = self._compute_scan_interval()
                 await asyncio.sleep(interval)
+                self._scan_error_streak.record_success()
             except Exception as e:
-                logger.error(f"Scan loop error: {e}")
+                logger.exception(f"Scan loop error: {e}")
+                self._scan_error_streak.record_failure(e)
                 await asyncio.sleep(1.0)
 
     def _compute_scan_interval(self) -> float:
@@ -304,8 +353,10 @@ class Runner:
                     # 订单超时后唤醒 agent（状态变化）
                     self._agent_wakeup.set()
                 await asyncio.sleep(0.3)
+                self._timeout_error_streak.record_success()
             except Exception as e:
-                logger.error(f"Timeout loop error: {e}")
+                logger.exception(f"Timeout loop error: {e}")
+                self._timeout_error_streak.record_failure(e)
                 await asyncio.sleep(0.3)
 
     # ========================================================================
@@ -322,6 +373,7 @@ class Runner:
                         self._agent_wakeup.wait(), timeout=2.0
                     )
                     self._agent_wakeup.clear()
+                    self._agent_error_streak.record_success()
                     continue
 
                 # 等待被唤醒（扫描完成 / 操作完成 / 动画结束 / 超时 / 定时器）
@@ -341,6 +393,7 @@ class Runner:
                     action_type = type(action).__name__
                     if in_animation and action_type in ("ServeOrderAction", "ServeFromCookerAction"):
                         # serve 在动画窗口期间被跳过，等待动画结束
+                        self._agent_error_streak.record_success()
                         continue
 
                     self.env.on_action_taken()
@@ -349,8 +402,10 @@ class Runner:
                     self._executing_action = False
                     # 操作完成后立即触发下一次决策（状态已变化）
                     self._agent_wakeup.set()
+                self._agent_error_streak.record_success()
             except Exception as e:
-                logger.error(f"Agent loop error: {e}")
+                logger.exception(f"Agent loop error: {e}")
+                self._agent_error_streak.record_failure(e)
                 self._executing_action = False
                 # 错误后也唤醒一次，避免永久阻塞
                 self._agent_wakeup.set()
@@ -364,6 +419,8 @@ class Runner:
 
         已取消的动作直接跳过：无 UI 调用、无状态变化（Ticket #11）。
         默认 cancelled=False，既有策略行为不变。
+        handler 抛错不向上传播（Issue #20）：logger.exception 带堆栈 +
+        连续异常计数 + set _agent_wakeup（batch 分发路径同样立即重决策）。
         """
         if action.cancelled:
             logger.info(
@@ -384,9 +441,30 @@ class Runner:
             try:
                 await getattr(self, handler_name)(action)
             except Exception as e:
-                logger.error(f"Failed to execute {action_type}: {e}")
+                logger.exception(f"Failed to execute {action_type}: {e}")
+                self._action_error_streak.record_failure(e)
+                self._agent_wakeup.set()
+            else:
+                self._action_error_streak.record_success()
         else:
             logger.warning(f"Unknown action: {action_type}")
+
+    def _reject_env_update(self, action: Action, detail: str) -> None:
+        """env 拒绝状态更新（Issue #20）：warning + 立即唤醒 agent 重决策。
+
+        UI swipe 不会失败，env 返回 False 意味着画面与 env 状态已漂移
+        （slot 空 / 配方校验失败 / 目标忙等）。日志含 action repr 与
+        拒绝原因摘要（env 方法本身不返回原因时为语义归类）；
+        set _agent_wakeup 让 agent loop 下一轮基于 env 当前状态重新决策
+        （不在 handler 内递归决策）。
+
+        注意：clear_assembly / clear_mixing_bowl 的 False 是「本来就空」的
+        幂等 no-op（无漂移可能），不经过本方法。
+        """
+        logger.warning(
+            f"[t={self.env.time:.1f}s] Env rejected {action!r}: {detail}"
+        )
+        self._agent_wakeup.set()
 
     def _build_action_handlers(self) -> None:
         """构建 action type → exec 方法的映射表"""
@@ -421,7 +499,11 @@ class Runner:
     async def _exec_cook(self, action) -> None:
         """烹饪"""
         await self.ui.cook(action.ingredient, action.cooker)
-        self.env.start_cooking(action.ingredient, action.cooker, action.duration)
+        if not self.env.start_cooking(action.ingredient, action.cooker, action.duration):
+            self._reject_env_update(
+                action, "start_cooking rejected (cooker busy or unknown)"
+            )
+            return
         logger.info(
             f"[t={self.env.time:.1f}s] Cooking {action.ingredient} on {action.cooker} ({action.duration}s)"
         )
@@ -430,19 +512,27 @@ class Runner:
         """移到组装站"""
         await self.ui.move_to_assembly(action.cooker)
         cooker_state = self.env.cookers.get(action.cooker)
-        if cooker_state:
-            ingredient = cooker_state.item_name
-            order_id = getattr(action, "order_id", None)
-            recipe_slug = None
-            if order_id:
-                order = self.env.get_order_by_id(order_id)
-                if order:
-                    recipe_slug = order.recipe_slug
-            self.env.add_to_assembly(ingredient, action.cooker, order_id, recipe_slug)
-            self.env.clear_cooker(action.cooker)
-            logger.info(
-                f"[t={self.env.time:.1f}s] Moved {ingredient} from {action.cooker} -> assembly"
+        if cooker_state is None:
+            self._reject_env_update(action, f"cooker {action.cooker} unknown to env")
+            return
+        ingredient = cooker_state.item_name
+        order_id = getattr(action, "order_id", None)
+        recipe_slug = None
+        if order_id:
+            order = self.env.get_order_by_id(order_id)
+            if order:
+                recipe_slug = order.recipe_slug
+        if not self.env.add_to_assembly(ingredient, action.cooker, order_id, recipe_slug):
+            # 被拒绝：env 组装站未收下食材，也不 clear_cooker（保持食材在灶台，
+            # 与 env.move_to_assembly 的全有/全无语义一致），交给 agent 重决策
+            self._reject_env_update(
+                action, "add_to_assembly rejected (recipe validation or duplicate)"
             )
+            return
+        self.env.clear_cooker(action.cooker)
+        logger.info(
+            f"[t={self.env.time:.1f}s] Moved {ingredient} from {action.cooker} -> assembly"
+        )
 
     async def _exec_move_to_stockpile(self, action) -> None:
         """移到库存"""
@@ -451,6 +541,7 @@ class Runner:
             logger.warning(
                 f"[t={self.env.time:.1f}s] Cooker {action.cooker} not busy, skipping stockpile move"
             )
+            self._agent_wakeup.set()
             return
         await self.ui.move_to_stockpile(action.cooker, action.slot)
         ingredient = cooker.item_name
@@ -459,14 +550,18 @@ class Runner:
                 f"[t={self.env.time:.1f}s] Stored {ingredient} from {action.cooker} -> {action.slot}"
             )
         else:
-            logger.warning(
-                f"[t={self.env.time:.1f}s] Failed to update stockpile state for {ingredient} on {action.cooker} -> {action.slot} (slot may be full or incompatible)"
+            self._reject_env_update(
+                action, "move_to_stockpile rejected (slot full, incompatible, or unknown)"
             )
 
     async def _exec_pull_from_stockpile(self, action) -> None:
         """从库存取用"""
         await self.ui.pull_from_stockpile(action.slot)
-        self.env.pull_from_stockpile(action.slot)
+        if not self.env.pull_from_stockpile(action.slot):
+            self._reject_env_update(
+                action, "pull_from_stockpile rejected (slot empty or unknown)"
+            )
+            return
         logger.info(
             f"[t={self.env.time:.1f}s] Pulled {action.ingredient} from {action.slot} -> assembly"
         )
@@ -474,7 +569,11 @@ class Runner:
     async def _exec_add_condiment(self, action) -> None:
         """添加调料"""
         await self.ui.add_condiment(action.condiment)
-        self.env.add_condiment(action.condiment)
+        if not self.env.add_condiment(action.condiment):
+            self._reject_env_update(
+                action, "add_condiment rejected (not in target recipe or already at max)"
+            )
+            return
         logger.info(f"[t={self.env.time:.1f}s] Added condiment {action.condiment}")
 
     async def _exec_serve_order(self, action) -> None:
@@ -491,6 +590,7 @@ class Runner:
                 f"[t={self.env.time:.1f}s] Serve verification failed, assembly discarded."
             )
             # 不再自动清空 assembly，让 agent 的 _try_clear_assembly 决策是否清理
+            self._agent_wakeup.set()
             return
 
         success_slot, target_order_id = result
@@ -501,6 +601,7 @@ class Runner:
                 f"no active order was there when the swipe started "
                 f"(timed out during verification?); no settlement"
             )
+            self._agent_wakeup.set()
             return
 
         # 必须在结算清空 assembly 之前读取 condiments（serve_order_by_id 会 reset）
@@ -515,6 +616,7 @@ class Runner:
                 f"[t={self.env.time:.1f}s] Order {target_order_id} disappeared before "
                 f"settlement (timed out during serve verification); not scored"
             )
+            self._agent_wakeup.set()
 
     async def _serve_with_verify(self, slot_idx: int) -> tuple[int, int | None] | None:
         """
@@ -605,11 +707,19 @@ class Runner:
     async def _exec_clear_cooker(self, action) -> None:
         """清理灶台"""
         await self.ui.clear_cooker(action.cooker)
-        self.env.clear_cooker(action.cooker)
+        if not self.env.clear_cooker(action.cooker):
+            self._reject_env_update(
+                action, f"clear_cooker rejected (unknown cooker {action.cooker})"
+            )
+            return
         logger.info(f"[t={self.env.time:.1f}s] Cleared cooker {action.cooker}")
 
     async def _exec_clear_assembly(self, action) -> None:
-        """清空组装站"""
+        """清空组装站
+
+        env.clear_assembly 返回 False 表示「本来就空」的幂等 no-op——
+        UI 清空一个 env 认为已空的组装站不产生漂移，不视为拒绝（Issue #20）。
+        """
         discarded = self.env.assembly.ingredients_cookers.copy()
         await self.ui.clear_assembly()
         self.env.clear_assembly()
@@ -624,39 +734,67 @@ class Runner:
     async def _exec_move_to_mixing_bowl(self, action) -> None:
         """食材 → 搅拌盆"""
         await self.ui.move_to_mixing_bowl(action.ingredient)
-        self.env.add_to_mixing_bowl(action.ingredient)
+        if not self.env.add_to_mixing_bowl(action.ingredient):
+            self._reject_env_update(
+                action,
+                "add_to_mixing_bowl rejected (bowl full, duplicate, or not in dessert recipe)",
+            )
+            return
         logger.info(f"[t={self.env.time:.1f}s] Moved {action.ingredient} to mixing bowl")
 
     async def _exec_add_condiment_to_mixing_bowl(self, action) -> None:
         """调料 → 搅拌盆"""
         await self.ui.add_condiment_to_mixing_bowl(action.condiment)
-        self.env.add_condiment_to_mixing_bowl(action.condiment)
+        if not self.env.add_condiment_to_mixing_bowl(action.condiment):
+            self._reject_env_update(
+                action,
+                "add_condiment_to_mixing_bowl rejected (bowl empty, not in recipe, or at max)",
+            )
+            return
         logger.info(f"[t={self.env.time:.1f}s] Added condiment {action.condiment} to mixing bowl")
 
     async def _exec_stir(self, action) -> None:
         """搅拌"""
         await self.ui.stir(action.distance, action.duration, action.steps)
-        self.env.stir_mixing_bowl()
+        if not self.env.stir_mixing_bowl():
+            self._reject_env_update(
+                action, "stir_mixing_bowl rejected (bowl empty or already stirred)"
+            )
+            return
         logger.info(f"[t={self.env.time:.1f}s] Stirred mixing bowl")
 
     async def _exec_move_mixing_bowl_to_cooker(self, action) -> None:
         """搅拌盆 → 灶台"""
         await self.ui.move_mixing_bowl_to_cooker(action.cooker)
-        self.env.move_mixing_bowl_to_cooker(action.cooker)
+        if not self.env.move_mixing_bowl_to_cooker(action.cooker):
+            self._reject_env_update(
+                action,
+                "move_mixing_bowl_to_cooker rejected (not stirred, cooker busy/unknown, or recipe mismatch)",
+            )
+            return
         logger.info(f"[t={self.env.time:.1f}s] Moved mixing bowl to {action.cooker}")
 
     async def _exec_serve_from_cooker(self, action) -> None:
         """灶台 → 取餐台（甜点单食材直送，无调料）"""
         order = self.env.orders[action.slot_idx] if action.slot_idx < len(self.env.orders) else None
         await self.ui.serve_from_cooker(action.cooker, action.slot_idx)
-        if self.env.serve_from_cooker(action.cooker, action.slot_idx):
-            if order:
-                self.env.on_order_served(order, has_condiments=False)
-                self._last_served[(order.recipe_slug, order.is_rush)] = self._clock()
+        if not self.env.serve_from_cooker(action.cooker, action.slot_idx):
+            self._reject_env_update(
+                action,
+                "serve_from_cooker rejected (cooker not done/expired, order mismatch, or empty slot)",
+            )
+            return
+        if order:
+            self.env.on_order_served(order, has_condiments=False)
+            self._last_served[(order.recipe_slug, order.is_rush)] = self._clock()
         logger.info(f"[t={self.env.time:.1f}s] Served from {action.cooker} to slot {action.slot_idx}")
 
     async def _exec_clear_mixing_bowl(self, action) -> None:
-        """清空搅拌盆"""
+        """清空搅拌盆
+
+        env.clear_mixing_bowl 返回 False 表示「本来就空」的幂等 no-op——
+        不产生漂移，不视为拒绝（Issue #20）。
+        """
         await self.ui.clear_mixing_bowl()
         self.env.clear_mixing_bowl()
         logger.info(f"[t={self.env.time:.1f}s] Cleared mixing bowl")

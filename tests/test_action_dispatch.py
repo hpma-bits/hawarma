@@ -31,7 +31,7 @@ from hawarma.core.actions import (
     StirAction,
     schedule_actions,
 )
-from hawarma.game.runner import Runner
+from hawarma.game.runner import Runner, _ErrorStreak
 from playground.env.sim import SimEnv
 
 RECIPE = "braisedNewYearFish"
@@ -147,6 +147,9 @@ def _make_runner() -> tuple[object, _StubEnv, _StubUI]:
     runner = Runner.__new__(Runner)
     runner.env = _StubEnv()
     runner.ui = _StubUI()
+    # Issue #20：_execute_action 成功/异常路径引用连续异常计数与唤醒事件
+    runner._agent_wakeup = asyncio.Event()
+    runner._action_error_streak = _ErrorStreak("Action execution")
     Runner._build_action_handlers(runner)
     return runner, runner.env, runner.ui
 
