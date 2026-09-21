@@ -54,7 +54,8 @@ Actions 定义在 `src/hawarma/core/actions.py`，按 station 分组：
 
 | 注册名 | 类名 | Station | 特点 |
 |--------|------|---------|------|
-| `gastronome` | `GastronomeStrategy` | 美食站 | 10 级贪心瀑布 + CPM + visibility 阈值跨越 + 单食材优先 + 延迟感知 |
+| `gastronome` | `GastronomeStrategy` | 美食站 | 10 级贪心瀑布 + CPM + visibility 阈值跨越 + 单食材优先 + 延迟感知（**默认**） |
+| `planner` | `PlannerStrategy` | 美食站 | deadline 感知的滚动时域调度：排列枚举 + 确定性前向仿真（opt-in，Issue #21） |
 | `dessert` | `DessertStrategy` | 甜点站 | 搅拌盆流水线决策 |
 
 ### 3.1 性能基准
@@ -94,12 +95,40 @@ Actions 定义在 `src/hawarma/core/actions.py`，按 station 分组：
 - Actions +8.4/局：清理过期灶台成为真实操作成本（每清 0.3s）
 - 10 局抽查 192 次 serve、0 次被新校验拒绝——策略组装流程本身产出完整食材集合，serve 校验不损伤有效路径
 
+### 3.1.2 planner vs gastronome（Issue #21，2026-09-22，不晋升）
+
+`PlannerStrategy`（deadline 感知滚动时域调度，决策逻辑见第 8 节）100 局配对基准
+（seeds 0-99，v2 口径，`PYTHONHASHSEED=0`；完整分析见
+`experiments/planner_strategy/report.md`）：
+
+| 策略 | Avg Score±Std | served/局 | rush/局 | timeout/局 |
+|------|---------------|-----------|---------|-----------|
+| gastronome | 7165.2 ± 1572.9 | 17.77 | 1.77 | 0.00 |
+| planner    | 7072.4 ± 1610.7 | 17.72 | 1.83 | 0.00 |
+
+配对统计（planner − gastronome）：**Δ = −92.9，t = −0.98，p = 0.3279，
+Cohen's d = −0.10，95% CI [−280.2, +94.5]**——统计不可区分，点估计为负。
+
+**结论：未达晋升门槛（需 p<0.05 且 Δ>0），保持 gastronome 默认，planner 为
+opt-in**（CLI `--strategy planner` / TUI 配置面板 / config `strategy: planner`）。
+
+要点：
+- 当前模拟器参数下（normal 54-105s / rush 32-63s 超时 + 10% rush 率）订单
+  deadline 从不约束任一策略（双方 100 局 0 超时），planner 的差异化能力
+  （读 `order.timeout_at`、排列级可行性推理）无从体现；差异全部落在吞吐上，
+  而吞吐由 0.3s 动作串行 + 1.5s serve 禁令 + 组装站单菜物理决定。
+- planner 的 rush 单命中略高（1.83 vs 1.77），单测证明紧截止场景下 planner
+  先做低分临期单而 gastronome 选错（tests/test_planner_strategy.py）。
+- 实现过程中修正的三个关键点：变体配方共享食材对时环境 `target_recipe_slug`
+  锁定规则的镜像（否则 serve 死循环）、深管道预烹饪 + 保护性入库、
+  serve 禁令窗口建模——对后续策略开发有复用价值。
+
 ### 3.2 策略切换
 
 ```bash
 # CLI
 python -m playground run --strategy gastronome
-python -m playground bench --strategies gastronome
+python -m playground bench --strategies gastronome,planner
 
 # 代码
 from hawarma.agent.registry import get_strategy
@@ -257,3 +286,77 @@ strategy = get_strategy("dessert")
 - 支持更多甜点类型：只需在 `recipes.json` 中添加新的甜点菜谱
 - 可配置参数：搅拌参数、位置参数、超时参数都可配置
 - 架构易于扩展：策略设计支持未来添加新的决策逻辑
+
+## 8. Planner 策略（deadline 感知的滚动时域调度，Issue #21）
+
+### 8.1 概述
+
+`PlannerStrategy`（注册名 `planner`，`src/hawarma/agent/strategies/planner.py`）
+与 gastronome 的单动作贪心瀑布互补：每个决策周期对当前活跃订单（≤4）枚举完成
+顺序（排列 ≤24），对每个排列做**确定性前向仿真**，输出最优排列的首个原子动作，
+下周期滚动重规划。GastronomeStrategy 类零改动（独立实现同型辅助）。
+
+### 8.2 决策流程
+
+```
+decide(state)
+  1. 反应式安全层（语义与 gastronome 顶层一致）
+     a. 组装站齐料齐调料 → ServeOrderAction（动画窗口内禁；同配方多单选 unit 最高）
+     b. 灶台过期 → ClearCookerAction
+     c. 组装站食材齐 + 目标配方有活跃订单 → 补第一味缺失调料
+  2. 规划层：排列枚举 + 前向仿真（纯 Python 世界模型，非 GameSimulator）
+  3. 空闲回退（trace 无立即动作时，gastronome 同型启发式）
+     a. 紧急入库（剩余窗口 < 2.5s 的无主 done 食材）
+     b. 预烹饪（先活跃配方后全部配方，最长 duration 优先；终局可行性已由规划层处理）
+     c. 非紧急入库
+```
+
+### 8.3 前向仿真（执行器规则）
+
+时间口径沿用 gastronome 的 0.3s/动作（与模拟器 action_delay=0.3 一致）；
+cook 落地 p+0.3 起算 done/expired（5s 窗口）；move/pull 落地需 0.5s 安全余量；
+serve 落地需 0.45s 余量且在 min(timeout_at, game_duration-0.3) 前；
+serve 落地后 1.5s 禁令窗口禁下一次 serve（期间可做其他动作）。
+
+对排列中第 k 个订单按序取第一个可用动作：
+
+| 优先级 | 动作 | 条件 |
+|--------|------|------|
+| 0 | clear assembly | 组装站食材对本单非子集，或 target_recipe_slug 锁定其他配方 |
+| 剪枝 | 跳过记违约 | 最早完成时间下界 ≥ 截止（deadline 已过的不进排列） |
+| 1 | move（EDF） | 缺失对在绑定灶上已 done 且落地安全 |
+| 2 | cook / evict | 缺失对需新烹饪（duration 降序）；绑定灶被占：过期→clear、可收→store、否则等过期 |
+| 3 | pull | 缺失对在库存 |
+| 4 | 深管道 cook | 为排列中后续订单开火（绑定灶空闲 + 该单截止可达）；过期窗口不限制深度，由规则 5 入库接力 |
+| 5 | 保护性 store | 后续订单需要、撑不到其估计使用时刻的 done 食材 → 入库 |
+| 6 | wait | 推进到最近烹饪完成/过期事件 |
+| 尾 | 调料→serve | 齐料后按配方补调料，serve（前 ≤1 次为后续订单开火） |
+
+**target_recipe_slug 感知**（关键正确性点）：变体配方共享食材对
+（如 snowSkinMooncakeCocoa/Rice）时，环境的 target 由首个入空站食材按 slot 序
+锁定，可能与排列头单不同而使 serve 被拒。仿真镜像该规则并在不一致时切换服务
+对象，保证与真实 serve 校验一致。
+
+### 8.4 排列评分
+
+```
+score = Σ_served (unit + vis) · exp(-0.01 · (t_serve - t_now))   # 早送贴现（vis 同贴现：早跨阈值）
+      - Σ_lost   unit                                            # deadline 违约按超时损失计
+      - 30 · [需先清空当前非空组装站]                              # 滚动重规划滞回
+```
+
+unit = (base_with_cond + vis_with_cond) × multiplier(订单生成时锁定的
+spawned_at_visibility, is_rush)，由 RecipeRewardLookup 查表。同分取枚举序首个，
+确定性。
+
+### 8.5 复杂度与契约
+
+24 排列 × ≤4 订单 × ≤8 食材 × O(灶数) 集合运算，实测单次 decide() ~1-3ms
+（< 100ms 预算，tests/test_planner_strategy.py 断言）。只读 UnifiedState
+（recipes 直读 `state.recipes`），产出 core/actions.py 现有 Action 类型；
+decide() 不修改 state（含嵌套对象，#16）。
+
+### 8.6 基准结果
+
+见 3.1.2：与 gastronome 统计不可区分（p = 0.33），不晋升、保持 opt-in；
+设计文档与完整失败案例分析见 `experiments/planner_strategy/`。
