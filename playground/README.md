@@ -37,9 +37,9 @@ SimEnv  →  UnifiedState  →  Strategy.decide()  →  Action  →  SimEnv.step
 |------|------|
 | `env/` | SimEnv, GameSimulator, Reward |
 | `agents/` | Agent 壳（透传 Strategy） |
-| `core/` | run_episode, run_benchmark |
+| `core/` | run_episode |
 | `replay/` | 回放记录与 CLI 播放器 |
-| `bench/` | 统计对比（t-test）+ CSV/JSON 导出 |
+| `bench/` | run_benchmark + 统计对比（配对 t 检验）+ CSV/JSON 导出 |
 | `tests/` | 53 个测试 |
 
 ## 运行测试
