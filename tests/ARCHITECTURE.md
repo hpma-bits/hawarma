@@ -9,7 +9,7 @@
 
 ## 📄 文件清单
 
- | 文件名 | 状态 | 跑器 | 功能 |
+ | 文件名 | 状态 | 用例风格 | 功能 |
 |--------|------|------|------|
 | `__init__.py` | ✅ | - | 包初始化 |
 | `test_action_dispatch.py` | ✅ | pytest | Action 调度表达与双端对齐测试（Ticket #11：类型/优先级/取消、共享调度、Runner 跳过取消、SimEnv 直调序列、双端回放终局一致） |
@@ -17,7 +17,7 @@
 | `test_bench_stats.py` | ✅ | unittest | 基准统计单测（Issue #15：t 分布 CDF/分位数对照 t 表、配对检验 p/Cohen's d/CI、零方差退化、final_score 统一口径、MetricsCollector 首帧空闲） |
 | `test_dessert_detection.py` | ✅ | unittest | 甜点订单检测测试 |
 | `test_dessert_strategy.py` | ✅ | unittest | Dessert 策略测试（决策优先级） |
-| `test_env_simulator.py` | ⚠️ | pytest | 环境模拟器测试（基础结构、时间限制、订单生成、并行烹饪、积分系统；pytest-only，与当前 Recipe 字段有漂移，修复归 #10） |
+| `test_env_simulator.py` | ✅ | pytest | 环境模拟器测试（基础结构、时间限制、订单生成、并行烹饪、错误处理；fixture 已对齐统一 Recipe 模型，Refs #10） |
 | `test_execution_timing.py` | ✅ | pytest | 执行耗时观测 + SrvGap/Idle 分布直方图测试（Ticket #9） |
 | `test_execution_timing_baseline.py` | ✅ | unittest | 送餐与滑动耗时基线回归（Ticket #12） |
 | `test_final_scoring.py` | ✅ | pytest | 终局计分与度量抽离测试（Ticket #8） |
@@ -38,8 +38,8 @@
 | `golden/` | ✅ | 数据 | 金决策快照数据（`gastronome_decisions.json`；再生成方式见 `test_gastronome_golden.py` 文件头注释） |
 | `testset/` | ✅ | 数据 | 测试图片集（包含 normal/rush 订单截图） |
 
-> **跑器说明**：`python -m unittest discover tests` 只收集 unittest.TestCase 风格用例；
-> 标注 `pytest` 的文件为纯类风格，需用 `pytest tests/` 运行（跑器统一见 Ticket #10）。
+> **跑器说明（Issue #10 起统一）**：统一跑器为 **pytest**，一条命令同时收集上表两种风格的用例；
+> "用例风格"列仅表示写法（unittest.TestCase 子类 / 纯 pytest 类），不代表需要分跑器运行。
 
 ## 测试覆盖
 
@@ -59,13 +59,25 @@
 
 ## 运行测试
 
+统一跑器为 **pytest**（Issue #10）：pyproject.toml 已配置 `testpaths = ["tests"]` 与 `pythonpath = ["src"]`，在仓库根目录直接运行。
+
 ```bash
-# 全部测试
-python -m unittest discover tests
+# 全部测试（统一跑器，含 unittest 风格与纯 pytest 风格用例）
+pytest tests
 
 # 单个文件
-python -m unittest tests.test_capture_speed
+pytest tests/test_sim_fidelity.py
 
 # 详细输出
-python -m unittest discover -v tests
+pytest tests -v
+
+# 兼容备注：unittest 风格用例仍可用 `python -m unittest discover tests` 运行
+# （仅收集 TestCase 子类，不含纯 pytest 风格文件）
+```
+
+### 风格门禁（Issue #10）
+
+```bash
+ruff check src tests playground     # 语法错误/未定义名等低级问题，合入前必须通过
+mypy                                # 类型检查，告警模式（输出现状报告，暂不卡合入）
 ```
