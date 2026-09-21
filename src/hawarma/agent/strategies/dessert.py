@@ -17,6 +17,10 @@ DessertStrategy: 甜点策略
 5. 添加调料（食材齐全 + 未调味）
 6. 添加食材到搅拌盆
 7. 清理搅拌盆（无匹配订单）
+
+时基（#17）：Order.created_at/timeout_at 为局内相对秒数（与 state.time 同基），
+订单排序用 order.time_remaining(state.time) 计算剩余时间——两种时基混减的
+旧 bug（epoch timeout_at 减相对 state.time）已随统一时基修复。
 """
 
 from __future__ import annotations
@@ -288,7 +292,9 @@ class DessertStrategy(Strategy):
         def sort_key(item):
             _, order = item
             rush_priority = 0 if order.is_rush else 1
-            timeout_remaining = order.timeout_at - state.time
+            # 统一时基（#17）：timeout_at 与 state.time 同为局内相对秒数，
+            # time_remaining 直接可得（旧代码 epoch 减相对，排序语义错误）
+            timeout_remaining = order.time_remaining(state.time)
             return (rush_priority, timeout_remaining)
 
         orders_with_idx.sort(key=sort_key)

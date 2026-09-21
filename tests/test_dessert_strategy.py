@@ -414,6 +414,36 @@ class TestDessertStrategy(unittest.TestCase):
         # Rush order (domeFigueMiel) has ingredient "flour"
         self.assertEqual(action.ingredient, "flour")
 
+    def test_deadline_ordering_within_same_rush_class(self):
+        """同 rush 类内按剩余时间（EDF）排序：快超时的订单优先（#17 时基回归）。
+
+        timeout_at 为局内相对秒数（与 state.time 同基）。剩余 15s 的订单
+        必须排在剩余 70s 之前取食材；若时基回退为 epoch 混减，排序键将被
+        墙钟量级支配，此断言失败。
+        """
+        state_time = 10.0
+        urgent = Order(order_id=1, recipe_slug="domeFigueMiel", is_rush=False,
+                       created_at=5.0, timeout_at=25.0, done=False)  # 剩 15s
+        relaxed = Order(order_id=2, recipe_slug="velvetTiramisu", is_rush=False,
+                        created_at=0.0, timeout_at=80.0, done=False)  # 剩 70s
+        state = self._make_state(
+            orders=(relaxed, urgent, None, None),
+            mixing_bowl=MixingBowlState(),
+        )
+
+        # 排序语义：_prioritized_dessert_orders 直接断言优先序
+        prioritized = self.strategy._prioritized_dessert_orders(state)
+        self.assertEqual(
+            [o.order_id for _, o in prioritized],
+            [urgent.order_id, relaxed.order_id],
+        )
+
+        # 端到端：决策取的是快超时订单（domeFigueMiel）的第一食材 flour
+        self.assertAlmostEqual(urgent.time_remaining(state_time), 15.0)
+        action = self.strategy.decide(state)
+        self.assertIsInstance(action, MoveToMixingBowlAction)
+        self.assertEqual(action.ingredient, "flour")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,6 +6,12 @@ GameEnv 追踪真实游戏的状态，通过程序逻辑维护灶台、组装站
 get_unified_state() 返回全量深快照（各模型 snapshot() 字段级拷贝），
 观测与内部状态无共享可变对象（#16）。
 
+时基（#17）：
+- 注入 clock: Callable[[], float]（默认 time.monotonic），env.time / 订单时间戳 /
+  动画窗口全部基于该时钟的**局内相对秒数**（clock() - game_start），与模拟器同基，
+  不受 NTP 校时/系统睡眠影响
+- Order.created_at/timeout_at 用 env.time（相对），真实耗时测量（墙钟）也走同一 clock
+
 输入：UI操作结果、订单检测结果
 输出：游戏状态供Agent决策
 
@@ -15,6 +21,7 @@ get_unified_state() 返回全量深快照（各模型 snapshot() 字段级拷贝
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 
 from loguru import logger
 
@@ -45,8 +52,13 @@ class GameEnv:
         game_duration: float = 90.0,
         recipes: dict[str, Recipe] | None = None,
         cooker_retention: float = 5.0,
+        clock: Callable[[], float] | None = None,
     ):
         self._cooker_retention = cooker_retention
+        # 时钟注入（#17）：默认 monotonic，测试可注入假时钟确定性驱动
+        # 订单超时/动画窗口；所有时间测量（env.time、订单时间戳、墙钟观测）
+        # 统一经此 clock，不再直接调 time.time()
+        self._clock = clock if clock is not None else time.monotonic
         self._cookers: dict[str, CookerState] = {
             name: CookerState(cooker_type=name) for name in cooker_names
         }
@@ -132,10 +144,10 @@ class GameEnv:
 
     @property
     def time(self) -> float:
-        """当前游戏时间（秒）"""
+        """当前游戏时间（秒，局内相对：clock() - game_start 起点时刻）"""
         if self._game_start_time is None:
             return 0.0
-        return time.time() - self._game_start_time
+        return self._clock() - self._game_start_time
 
     @property
     def orders(self) -> list[Order | None]:
@@ -164,7 +176,7 @@ class GameEnv:
 
     def is_in_animation_window(self) -> bool:
         """是否在动画窗口期间"""
-        return time.time() < self._animation_until
+        return self._clock() < self._animation_until
 
     def animation_window_remaining(self) -> float:
         """动画窗口剩余时长（秒）。
@@ -172,7 +184,7 @@ class GameEnv:
         只观测不改行为：供扫描循环/日志判断「新单发现滞后里动画占几成」。
         不在动画窗口内返回 0.0。
         """
-        return max(0.0, self._animation_until - time.time())
+        return max(0.0, self._animation_until - self._clock())
 
     def start_cooking(self, ingredient: str, cooker: str, duration: float) -> bool:
         """开始烹饪"""
@@ -589,8 +601,8 @@ class GameEnv:
     # ========================================================================
 
     def start_game(self) -> None:
-        """开始游戏计时"""
-        self._game_start_time = time.time()
+        """开始游戏计时（记录 clock 起点，env.time 从 0 起算）"""
+        self._game_start_time = self._clock()
 
     def is_game_over(self) -> bool:
         """游戏是否结束"""
@@ -600,7 +612,7 @@ class GameEnv:
 
     def set_animation_window(self, duration: float = 1.5) -> None:
         """设置动画窗口"""
-        self._animation_until = time.time() + duration
+        self._animation_until = self._clock() + duration
 
     def add_to_assembly(
         self,
@@ -702,7 +714,8 @@ class GameEnv:
         order_id = self._next_order_id
         self._next_order_id += 1
 
-        now = time.time()
+        # 局内相对秒数（#17）：与 env.time 同基，Order 时间戳不再是 epoch 墙钟
+        now = self.time
         timeout = 40.0 if is_rush else 70.0
 
         self._orders[target_slot] = Order(
@@ -723,7 +736,7 @@ class GameEnv:
     def check_and_remove_timed_out_orders(self) -> list[int]:
         """检查并移除超时订单，返回超时订单ID列表"""
         timed_out = []
-        now = time.time()
+        now = self.time
         for i, order in enumerate(self._orders):
             if order is not None and not order.done and now >= order.timeout_at:
                 timed_out.append(order.order_id)

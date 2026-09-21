@@ -8,6 +8,11 @@
       匹配均经 asyncio.to_thread 执行，验证期间三循环节拍不被打断。
       节拍收益待真机验证。
 
+时基（#17）：
+- 订单时间戳（created_at/timeout_at）取 env.time（局内相对秒数），与 GameEnv/模拟器同基
+- 真实耗时测量（ghost 窗口、扫描计时、serve 验证等待打点）统一走注入的
+  clock（默认 time.monotonic）——「游戏内时间」与「真实耗时」两个概念分离
+
 输入：Env, Operator, Scanner, Verifier, Strategy
 输出：游戏统计结果
 
@@ -18,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 
 from airtest.core.api import G
 from loguru import logger
@@ -49,6 +55,7 @@ class Runner:
         verifier: Verifier,
         strategy: Strategy,
         recipes: dict[str, Recipe],
+        clock: Callable[[], float] | None = None,
     ):
         self.env = env
         self.ui = operator
@@ -56,6 +63,10 @@ class Runner:
         self.verifier = verifier
         self.strategy = strategy
         self._recipe_by_slug = recipes
+
+        # 墙钟（#17）：ghost 窗口/扫描计时等真实耗时测量统一走注入 clock
+        # （默认 time.monotonic）；订单时间戳不经此（用 env.time 局内相对秒数）
+        self._clock = clock if clock is not None else time.monotonic
 
         self.strategy.on_game_start(self._recipe_by_slug)
 
@@ -236,7 +247,7 @@ class Runner:
             )
             return
 
-        start_time = asyncio.get_event_loop().time()
+        start_time = self._clock()
         scanned = await self.scanner.scan_new_orders()
         if self.env.is_in_animation_window():
             logger.debug(
@@ -244,14 +255,17 @@ class Runner:
                 f"animation started during scan (stale frame)"
             )
             return
-        scan_duration = asyncio.get_event_loop().time() - start_time
+        scan_duration = self._clock() - start_time
 
         # 收集扫描到的订单类型，按扫描 slot 排序（扫描器通常从左到右）
         scanned_types: list[tuple[str, bool]] = []
         for d in sorted(scanned, key=lambda x: x.slot_idx):
             scanned_types.append((d.recipe_slug, d.is_rush))
 
-        now = time.time()
+        # 订单时间戳：局内相对秒数（与 env.time 同基，#17）
+        now = self.env.time
+        # ghost 窗口判定：真实耗时（墙钟，monotonic）
+        now_wall = self._clock()
         new_orders: list[Order | None] = [None] * 4
         reused_ids: set[int] = set()
 
@@ -261,7 +275,7 @@ class Runner:
 
             # 幽灵订单保护：1.5s 内刚 serve 过该类型，且 env 中已无活跃同类型订单
             last_served_at = self._last_served.get((recipe_slug, is_rush), 0)
-            if now - last_served_at < 1.5:
+            if now_wall - last_served_at < 1.5:
                 has_active = any(
                     o and not o.done and o.recipe_slug == recipe_slug and o.is_rush == is_rush
                     for o in self.env._orders
@@ -523,8 +537,8 @@ class Runner:
                 self.env.on_order_served(order, has_condiments)
             if self.env.serve_order(success_slot):
                 if order:
-                    # 记录刚 serve 的订单类型，用于扫描时识别幽灵订单
-                    self._last_served[(order.recipe_slug, order.is_rush)] = time.time()
+                    # 记录刚 serve 的订单类型（墙钟时刻），用于扫描时识别幽灵订单
+                    self._last_served[(order.recipe_slug, order.is_rush)] = self._clock()
             else:
                 logger.warning(
                     f"[t={self.env.time:.1f}s] env.serve_order({success_slot}) failed, "
@@ -660,7 +674,7 @@ class Runner:
         if self.env.serve_from_cooker(action.cooker, action.slot_idx):
             if order:
                 self.env.on_order_served(order, has_condiments=False)
-                self._last_served[(order.recipe_slug, order.is_rush)] = time.time()
+                self._last_served[(order.recipe_slug, order.is_rush)] = self._clock()
         logger.info(f"[t={self.env.time:.1f}s] Served from {action.cooker} to slot {action.slot_idx}")
 
     async def _exec_clear_mixing_bowl(self, action) -> None:
