@@ -162,7 +162,8 @@ class TestDualEndSameLedger(unittest.TestCase):
             sim_scores.append(result.score_earned)
             # serve 后模拟器进入动画窗口；tick 会引入随机订单生成，
             # 故直接关闭窗口以保持账本确定性（与既有测试直接操作 _state 同风格）
-            sim._animation_until = 0.0
+            # #14 将单一动画窗口拆分为 serve 禁令窗口，此处重置以保持账本确定性
+            sim._serve_ban_until = 0.0
 
         # ── 真实端：构造同 spawn visibility 的订单逐单送出 ──
         real = GameEnv(cooker_names=["skillet", "pot", "oven"], stockpile_slots=3)
