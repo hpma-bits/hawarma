@@ -14,6 +14,15 @@
 - 动画窗口限制：因 UI 变化导致扫描不稳定，非游戏本身限制
 - Visibility 加成：已完成订单的总 visibility 决定后续订单的得分倍率（详见 docs/game_rules.md）
 
+保真度修复（#14，2026-09-22）：
+- serve_order：校验组装站食材 (name, cooker_type) 集合与 recipe 完全一致，
+  不一致返回失败且菜品留在组装站（规则 3.5 "被退回"语义）
+- 过期食材不再自动清理：糊掉的食材留在灶台，直到显式 clear_cooker /
+  move_to_trash 才释放（规则 4.2/9.1）；INGREDIENT_EXPIRED 事件按过期时刻触发一次
+- _animation_until 双语义拆分：serve 禁令窗口（slot 位移 1.5s，_serve_ban_until）
+  与新单可见性窗口（1s，order.created_at + NEW_ORDER_ANIMATION）各自独立；
+  提交后场上无单时新订单立即创建，不被 serve 禁令窗口推迟（规则 3.4.1）
+
 ⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新
 """
 
@@ -130,7 +139,8 @@ class GameSimulator:
     MAX_SLOTS = 4
     MAX_STOCKPILE = 5
     COOKER_RETENTION = 5.0  # 灶台食材保留时间（秒）
-    ANIMATION_DURATION = 1.5  # slot 位移动画时间（秒）
+    ANIMATION_DURATION = 1.5  # slot 位移动画时间（秒，serve 禁令窗口）
+    NEW_ORDER_ANIMATION = 1.0  # 新订单出现动画时间（秒，可见性窗口）
     ORDER_INTERVAL_MIN = 3.0   # 订单生成间隔最小值（秒）
     ORDER_INTERVAL_MAX = 5.0   # 订单生成间隔最大值（秒）
     RUSH_TIMEOUT_MIN = 30.0    # Rush 订单超时最小值（秒）
@@ -157,8 +167,14 @@ class GameSimulator:
         # 事件历史（完整记录，用于调试和重放）
         self._event_history: list[Event] = []
         
-        # 动画窗口结束时间
-        self._animation_until: float = 0.0
+        # serve 禁令窗口结束时间（slot 位移 1.5s 动画期间禁扫描/禁送餐；
+        # 新单可见性窗口独立，见 NEW_ORDER_ANIMATION）
+        self._serve_ban_until: float = 0.0
+
+        # 自动事件去重：cooker 名 -> 已发射事件的烹饪会话 started_at
+        # （过期食材不再自动清理后，busy 灶台会长期存在，完成/过期事件需按会话只发一次）
+        self._completion_emitted_sessions: dict[str, float] = {}
+        self._expiry_emitted_sessions: dict[str, float] = {}
         
         # 待处理订单（用于延迟生成）
         self._pending_orders: list[tuple[Order, float]] = []  # (order, appear_at)
@@ -464,8 +480,8 @@ class GameSimulator:
         return list(self._event_history)
     
     def is_in_animation_window(self) -> bool:
-        """检查是否在动画窗口期"""
-        return self._state.time < self._animation_until
+        """检查是否在 serve 禁令窗口期（slot 位移 1.5s 动画）"""
+        return self._state.time < self._serve_ban_until
     
     def is_game_over(self) -> bool:
         """检查游戏是否已结束"""
@@ -475,13 +491,13 @@ class GameSimulator:
         """
         获取指定槽位的订单
         
-        注意：如果订单还在动画期间（1秒），返回None
+        注意：如果订单还在出现动画期间（1 秒），返回None
         动画期间订单已存在但agent还无法"看到"
         """
         if 0 <= slot_idx < self.MAX_SLOTS:
             order = self._state.orders[slot_idx]
-            # 检查订单是否在动画期间（创建后1秒内）
-            if order is not None and self._state.time < order.created_at + 1.0:
+            # 检查订单是否在出现动画期间（创建后 NEW_ORDER_ANIMATION 秒内）
+            if order is not None and self._state.time < order.created_at + self.NEW_ORDER_ANIMATION:
                 return None
             return order
         return None
@@ -1169,7 +1185,7 @@ class GameSimulator:
         # 检查动画窗口
         if self.is_in_animation_window():
             return ActionResult.failure_result(
-                f"Cannot serve during animation window (until {self._animation_until:.1f}s)"
+                f"Cannot serve during animation window (until {self._serve_ban_until:.1f}s)"
             )
         
         # 检查槽位索引
@@ -1190,6 +1206,17 @@ class GameSimulator:
         if self._state.assembly.target_recipe_slug != recipe.slug:
             return ActionResult.failure_result(
                 f"Assembly recipe does not match order recipe"
+            )
+        
+        # 校验组装站食材集合与 recipe 完全一致（规则 3.5：只有符合 recipe 要求的
+        # 食材组合才能成功提交，否则被退回 assembly station）。
+        # 食材唯一性（规则 3.2）保证集合比较即覆盖数量+组合。
+        assembly_pairs = {(ing[0], ing[1]) for ing in self._state.assembly.ingredients}
+        recipe_pairs = {(ing.name, ing.cooker_type) for ing in recipe.ingredients}
+        if assembly_pairs != recipe_pairs:
+            return ActionResult.failure_result(
+                f"Assembly ingredients {sorted(assembly_pairs)} do not match "
+                f"recipe '{recipe.slug}' requirements {sorted(recipe_pairs)}"
             )
         
         # 检查调料是否满足要求
@@ -1303,8 +1330,9 @@ class GameSimulator:
         
         self._state.orders = new_orders
         
-        # 设置动画窗口（1.5秒）
-        self._animation_until = current_time + self.ANIMATION_DURATION
+        # 设置 serve 禁令窗口（slot 位移 1.5 秒动画；期间禁扫描订单区、禁送餐提交。
+        # 注意：新订单可见性窗口独立于此，见 NEW_ORDER_ANIMATION）
+        self._serve_ban_until = current_time + self.ANIMATION_DURATION
         
         # 检查剩余订单数量，设置刷新计时
         active_orders = sum(1 for o in self._state.orders if o is not None)
@@ -1321,14 +1349,14 @@ class GameSimulator:
             timestamp=current_time,
             event_type=EventType.SLOTS_ADVANCED,
             details={
-                'animation_until': self._animation_until
+                'serve_ban_until': self._serve_ban_until
             }
         )
         
         self._event_history.append(event)
         
         if self._debug:
-            print(f"Slots advanced, animation until {self._animation_until}")
+            print(f"Slots advanced, serve ban until {self._serve_ban_until}")
     
     # 其余操作将在后续实现...
     # start_cooking, move_to_assembly, serve_order, tick, etc.
@@ -1412,17 +1440,23 @@ class GameSimulator:
         return events
     
     def _check_cooking_progress(self, current_time: float) -> list[Event]:
-        """检查烹饪完成和食材过期"""
+        """检查烹饪完成和食材过期
+
+        规则 4.2/9.1（#14 保真度修复）：过期食材不再自动清理——糊掉的食材
+        留在灶台上占用灶位，直到显式 clear_cooker / move_to_trash 才释放。
+        完成与过期事件按烹饪会话（started_at）各只发射一次，避免 busy 灶台
+        长期存在导致的事件重复。
+        """
         events = []
         
         for cooker_name, cooker in self._state.cookers.items():
             if not cooker.busy:
                 continue
             
-            # 检查烹饪完成
+            # 检查烹饪完成（每个烹饪会话只发射一次）
             if cooker.done_at and current_time >= cooker.done_at:
-                if not any(e.event_type == EventType.COOKING_COMPLETED 
-                          for e in self._event_history[-10:]):
+                if self._completion_emitted_sessions.get(cooker_name) != cooker.started_at:
+                    self._completion_emitted_sessions[cooker_name] = cooker.started_at
                     events.append(Event(
                         timestamp=current_time,
                         event_type=EventType.COOKING_COMPLETED,
@@ -1432,19 +1466,18 @@ class GameSimulator:
                         }
                     ))
             
-            # 检查食材过期
+            # 检查食材过期（按过期时刻触发一次；食材留在灶台，不自动清理）
             if cooker.expired_at and current_time >= cooker.expired_at:
-                events.append(Event(
-                    timestamp=current_time,
-                    event_type=EventType.INGREDIENT_EXPIRED,
-                    details={
-                        'cooker': cooker_name,
-                        'ingredient': cooker.item_name
-                    }
-                ))
-                
-                # 清理过期食材
-                cooker.clear()
+                if self._expiry_emitted_sessions.get(cooker_name) != cooker.started_at:
+                    self._expiry_emitted_sessions[cooker_name] = cooker.started_at
+                    events.append(Event(
+                        timestamp=current_time,
+                        event_type=EventType.INGREDIENT_EXPIRED,
+                        details={
+                            'cooker': cooker_name,
+                            'ingredient': cooker.item_name
+                        }
+                    ))
         
         return events
     
@@ -1452,10 +1485,11 @@ class GameSimulator:
         """生成新订单
         
         刷新规则：
-        1. 立即刷新：如果所有槽位为空（提交或超时后），在动画窗口结束后立即生成
+        1. 立即刷新：如果所有槽位为空（提交或超时后），立即生成新订单
+           （规则 3.4.1：不被 serve 禁令窗口推迟；新单自身受 1s 可见性约束）
         2. 定时刷新：达到 _next_order_refresh_time 时生成新订单
-           - 游戏开始后第 4 秒生成第一个订单
-           - 订单提交/超时后有剩余订单时，从该时刻开始计时 4 秒
+           - 游戏开始后 3-5 秒生成第一个订单
+           - 订单提交/超时后有剩余订单时，从该时刻开始计时随机 3-5 秒
         
         注意：当 tick 时间跳过刷新点时，订单应在刷新时刻创建（而非当前时刻）
         注意：使用容差处理浮点精度问题（如 7.9 + 0.1 可能 ≠ 8.0）
@@ -1467,13 +1501,12 @@ class GameSimulator:
         
         # 检查是否需要立即刷新（提交或超时后所有槽位为空）
         if self._needs_immediate_refresh:
-            if current_time >= self._animation_until:
-                event = self._create_new_order(current_time)
-                if event:
-                    events.append(event)
-                    self._needs_immediate_refresh = False
-                    # 更新下一次刷新时间（随机3-5秒）
-                    self._next_order_refresh_time = current_time + self._random_order_interval()
+            event = self._create_new_order(current_time)
+            if event:
+                events.append(event)
+                self._needs_immediate_refresh = False
+                # 更新下一次刷新时间（随机3-5秒）
+                self._next_order_refresh_time = current_time + self._random_order_interval()
             return events
         
         # 检查是否到达刷新时间（使用容差处理浮点精度）
@@ -1553,8 +1586,10 @@ class GameSimulator:
         # 放置订单
         self._state.orders[empty_slot] = order
         
-        # 设置动画窗口（1秒）
-        self._animation_until = created_at + 1.0
+        # 新订单可见性窗口（1s 出现动画）独立于 serve 禁令窗口：
+        # 可见性由 get_order / SimEnv 观测按 created_at + NEW_ORDER_ANIMATION 判定，
+        # 不再写 _serve_ban_until（避免覆盖 serve 禁令窗口，#14 双语义拆分）
+        visible_at = created_at + self.NEW_ORDER_ANIMATION
         
         # 创建事件
         event = Event(
@@ -1566,7 +1601,7 @@ class GameSimulator:
                 'slot': empty_slot,
                 'rush': is_rush,
                 'timeout_at': order.timeout_at,
-                'animation_until': self._animation_until
+                'visible_at': visible_at
             }
         )
         
@@ -1574,7 +1609,7 @@ class GameSimulator:
         
         if self._debug:
             print(f"Order {order.order_id} appeared at slot {empty_slot} "
-                  f"(rush={is_rush}, animation until {self._animation_until})")
+                  f"(rush={is_rush}, visible at {visible_at})")
         
         return event
     
