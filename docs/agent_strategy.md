@@ -70,6 +70,30 @@ Actions 定义在 `src/hawarma/core/actions.py`，按 station 分组：
 | `PreemptScoreCascadeStrategy` | 3793 | +1.5% | 已被 CPM 涵盖，未并入 |
 | `GreedyCascadeStrategy` | 3736 | — | 10 级瀑布框架基类 |
 
+> ⚠️ 上表为**口径 v1**（#14 保真度修复前）的历史数据，与当前口径的绝对值不可直接比较。
+
+### 3.1.1 口径 v2（含 #14 保真度修复，2026-09-22）
+
+模拟器修复 4 项与 `docs/game_rules.md` 的机制偏差后，基准绝对值发生变化（**口径 v2**）：
+
+1. `serve_order` 校验组装站食材 (name, cooker_type) 集合与 recipe 完全一致（规则 3.5）
+2. 过期食材留在灶台直到显式 `ClearCookerAction`（规则 4.2/9.1，清理按一次操作计 0.3s action_delay）
+3. SimEnv 观测路径统一走 1s 新单隐藏（规则 3.4.2，与 `detection_delay` 取 max）
+4. serve 禁令窗口（slot 位移 1.5s）与新单可见性窗口（1s）拆分；提交后场上无单立即刷新（规则 3.4.1）
+
+50 局配对 benchmark（seeds 0-49，`python -m playground bench --strategies gastronome --games 50`）：
+
+| 口径 | Avg Reward | Std | Max | Min | Expired/局 | SrvGap | Actions/局 |
+|------|-----------|-----|-----|-----|-----------|--------|-----------|
+| v1（修复前） | 3703.3 | 862.2 | 5934 | 1823 | 1.6 | 5.1s | 119.4 |
+| **v2（修复后，当前）** | 3936.9 | 963.3 | 6868 | 1968 | 1.0 | 4.7s | 127.8 |
+
+解读（v2 相对 v1）：
+- **+6.3%**：主要来自"提交后场上无单立即刷新"（旧口径等 1.5s serve 禁令窗口结束才刷单，SrvGap 5.1s→4.7s）
+- Expired 1.6→1.0：GastronomeStrategy 的 `_try_clear_expired` 真正生效（旧口径过期即免费自动释放，灶台不会被糊料卡死）
+- Actions +8.4/局：清理过期灶台成为真实操作成本（每清 0.3s）
+- 10 局抽查 192 次 serve、0 次被新校验拒绝——策略组装流程本身产出完整食材集合，serve 校验不损伤有效路径
+
 ### 3.2 策略切换
 
 ```bash
