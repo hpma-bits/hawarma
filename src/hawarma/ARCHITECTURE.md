@@ -53,8 +53,8 @@
 - **地位**: 数据层，定义 Action、State、Model、Reward
 - **文件**:
   - `actions.py`: 所有 Action 定义（按 station 分组）
-  - `models.py`: CookerState、AssemblyState、MixingBowlState、StockpileSlot、Order
-  - `state.py`: UnifiedState，env → strategy 的数据契约
+  - `models.py`: CookerState、AssemblyState、MixingBowlState、StockpileSlot、Order；每个类型提供 `snapshot()` 字段级深拷贝（嵌套 list/dict 换新容器，Order 冻结字段语义在快照上保持）
+  - `state.py`: UnifiedState，env → strategy 的数据契约。frozen=True 只冻结顶层字段；观测与内部状态的完全隔离由 Env 侧 `get_unified_state()` 以各模型 `snapshot()` 深拷贝保证（#16），recipes 为只读共享的静态配置
   - `reward.py`: RecipeRewardLookup、RecipeTimeoutLookup，精确分数和超时查表
   - `__init__.py`: 导出所有类型
 
@@ -75,7 +75,7 @@
 - **功能**: 扫描、状态追踪、UI 执行、生命周期管理
 - **文件**:
   - `runner.py`: Runner，三循环并行架构（scan + timeout + agent）
-  - `game_env.py`: GameEnv，独立类（不再继承 ABC），程序逻辑追踪状态
+  - `game_env.py`: GameEnv，独立类（不再继承 ABC），程序逻辑追踪状态；`get_unified_state()` 返回全量深快照（各模型 `snapshot()` 字段级拷贝，#16）
   - `scanner.py`: Scanner，图像检测订单（食材、rush 检测、冲突解决）
   - `operator.py`: Operator，swipe 坐标映射和执行
   - `verifier.py`: Verifier，组装站清空验证

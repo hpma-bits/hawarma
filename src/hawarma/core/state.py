@@ -1,8 +1,14 @@
 """
 UnifiedState: 环境对 Strategy 暴露的统一观测
 
-frozen=True 确保 Strategy 不会意外修改状态。
 Strategy 的唯一输入，由 Env 的 get_unified_state() 构造。
+
+不可变语义（#16）：
+- frozen=True 只冻结 UnifiedState 自身的顶层字段（不可重新绑定 time/orders 等）；
+- 元素级隔离由 Env 侧保证：orders/cookers/assembly/stockpile/mixing_bowl 均为
+  各自 snapshot() 的字段级深拷贝，与 Env 内部状态无共享可变对象，
+  Strategy 篡改嵌套对象也不会污染环境；
+- recipes 为静态配置数据，Recipe 对象只读共享，仅拷贝 dict 容器。
 """
 
 from __future__ import annotations
@@ -25,7 +31,8 @@ class UnifiedState:
     统一观测状态。
 
     包含 Strategy 做决策所需的全部信息。
-    frozen=True 保证 Strategy 无法修改环境状态。
+    frozen=True 冻结顶层字段不可重新绑定；嵌套子状态由 Env 的
+    get_unified_state() 以 snapshot() 深拷贝提供，观测与内部状态完全隔离。
     """
 
     time: float

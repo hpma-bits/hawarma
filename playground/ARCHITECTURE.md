@@ -35,6 +35,11 @@ Hawarma 项目的 RL 风格游戏模拟与策略验证环境。
 SimEnv 观测口径（#14）：新订单在 `max(detection_delay, GameSimulator.NEW_ORDER_ANIMATION=1s)`
 窗口内对 agent 不可见（规则 3.4.2 检测盲区），与 `GameSimulator.get_order` 单一口径。
 
+SimEnv 观测隔离（#16）：`get_unified_state()` 对 orders/cookers/assembly/stockpile
+做字段级深快照（各模型 `snapshot()`），无 `sim._state` 引用逃逸；与真实环境侧
+`GameEnv.get_unified_state()` 的"观测不可变"语义对齐（模拟器内部 `GameState.copy()`
+仍为 deepcopy，仅用于模拟器自身的回滚/分支场景）。
+
 ### `agents/` — Agent shell module
 
 | 文件 | 地位 | 输入 | 输出 |

@@ -24,6 +24,7 @@
 - **功能**:
   - 独立类（不继承 ABC），追踪灶台、组装站、搅拌盆、库存、订单、调料
   - 通过 `get_unified_state()` 产出 `UnifiedState` 供 Strategy 决策
+  - `get_unified_state()` 返回全量深快照（#16）：orders/cookers/assembly/stockpile/mixing_bowl 均为各模型 `snapshot()` 字段级拷贝，与内部状态无共享可变对象；recipes 只读共享
   - 异步环境：状态由 Scanner/Runner 外部更新，不实现 `step()`
 - **输入**: UI操作结果、订单检测结果
 - **输出**: `UnifiedState` 快照供 Strategy 决策

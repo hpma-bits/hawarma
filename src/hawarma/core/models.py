@@ -2,6 +2,8 @@
 core/models: 核心数据模型
 
 统一的状态类型，供真实环境和模拟器共享。
+每个状态类型提供 snapshot()：字段级深拷贝（嵌套 list/dict 换新容器），
+供 Env 构造 UnifiedState 时隔离内部状态，防止引用逃逸（#16）。
 """
 
 from __future__ import annotations
@@ -18,6 +20,17 @@ class CookerState:
     started_at: float | None = None
     done_at: float | None = None
     expired_at: float | None = None
+
+    def snapshot(self) -> "CookerState":
+        """字段级拷贝（全标量字段，直接复制）"""
+        return CookerState(
+            busy=self.busy,
+            item_name=self.item_name,
+            cooker_type=self.cooker_type,
+            started_at=self.started_at,
+            done_at=self.done_at,
+            expired_at=self.expired_at,
+        )
 
     def reset(self) -> None:
         """重置灶台状态"""
@@ -49,6 +62,15 @@ class AssemblyState:
     target_recipe_slug: str | None = None
     owner_order_id: int | None = None
     condiments: dict[str, int] = field(default_factory=dict)
+
+    def snapshot(self) -> "AssemblyState":
+        """字段级深拷贝：ingredients 列表与 condiments dict 均换新容器（内层 tuple 不可变）"""
+        return AssemblyState(
+            ingredients=list(self.ingredients),
+            target_recipe_slug=self.target_recipe_slug,
+            owner_order_id=self.owner_order_id,
+            condiments=dict(self.condiments),
+        )
 
     @property
     def ingredients_cookers(self) -> list[tuple[str, str]]:
@@ -91,6 +113,14 @@ class StockpileSlot:
     item_name: str | None = None
     cooker_type: str | None = None
     count: int = 0
+
+    def snapshot(self) -> "StockpileSlot":
+        """字段级拷贝（全标量字段，直接复制）"""
+        return StockpileSlot(
+            item_name=self.item_name,
+            cooker_type=self.cooker_type,
+            count=self.count,
+        )
 
     def can_add(self, ingredient: str, cooker: str) -> bool:
         """检查是否可以添加食材"""
@@ -137,6 +167,15 @@ class MixingBowlState:
     condiments: dict[str, int] = field(default_factory=dict)
     target_recipe_slug: str | None = None
     is_stirred: bool = False
+
+    def snapshot(self) -> "MixingBowlState":
+        """字段级深拷贝：ingredients 列表与 condiments dict 均换新容器"""
+        return MixingBowlState(
+            ingredients=list(self.ingredients),
+            condiments=dict(self.condiments),
+            target_recipe_slug=self.target_recipe_slug,
+            is_stirred=self.is_stirred,
+        )
 
     @property
     def is_empty(self) -> bool:
@@ -195,6 +234,23 @@ class Order:
                 f"(order_id={self.__dict__.get('order_id', '?')})"
             )
         super().__setattr__(name, value)
+
+    def snapshot(self) -> "Order":
+        """字段级拷贝（全标量字段）。
+
+        经 __init__ 重建，快照的 spawned_at_visibility 同样在构造时锁定，
+        冻结字段语义在快照上保持（创建后不可再改）。
+        """
+        return Order(
+            order_id=self.order_id,
+            recipe_slug=self.recipe_slug,
+            is_rush=self.is_rush,
+            created_at=self.created_at,
+            timeout_at=self.timeout_at,
+            spawned_at_visibility=self.spawned_at_visibility,
+            done=self.done,
+            served_at=self.served_at,
+        )
 
     @property
     def is_completed(self) -> bool:
