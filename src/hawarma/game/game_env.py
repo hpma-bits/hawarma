@@ -890,18 +890,28 @@ class GameEnv:
             else:
                 self._scan_miss_count[order.order_id] = misses
                 survivors.append(order)
-                stats["kept_pending_removal"] += 1
 
         # 本轮扫到的订单 miss 计数清零
         for order_id in reused_ids:
             self._scan_miss_count.pop(order_id, None)
 
-        # 存活单追加到尾部空位（左对齐，与 _shift_orders_left 布局一致）
+        # 存活单追加到尾部空位（左对齐，与 _shift_orders_left 布局一致）；
+        # 槽位放不下的存活单按删除处理（4 槽全被扫描条目占满的极端场景）
         for order in survivors:
+            placed = False
             for i in range(4):
                 if new_orders[i] is None:
                     new_orders[i] = order
+                    placed = True
+                    stats["kept_pending_removal"] += 1
                     break
+            if not placed:
+                self._scan_miss_count.pop(order.order_id, None)
+                stats["removed"] += 1
+                logger.warning(
+                    f"[t={self.time:.1f}s] Order {order.order_id} "
+                    f"({order.recipe_slug}) dropped: no free slot after scan sync"
+                )
 
         self._orders = new_orders
         self._log_orders_state("scan_sync")
