@@ -4,6 +4,9 @@
 地位：协调 Agent、环境、扫描器和 UI 执行器
       管理游戏生命周期，运行扫描和决策循环
       通过 DI 注入所有组件
+      设备 IO 已异步化（Issue #19）：多点 snapshot 与验证器的 snapshot+模板
+      匹配均经 asyncio.to_thread 执行，验证期间三循环节拍不被打断。
+      节拍收益待真机验证。
 
 输入：Env, Operator, Scanner, Verifier, Strategy
 输出：游戏统计结果
@@ -596,11 +599,16 @@ class Runner:
         多点 snapshot 验证 assembly 是否为空。
 
         流程：连续获取 4 张 snapshot（间隔 0.05s），用第 4 张验证
+
+        设备 IO 经 asyncio.to_thread 移出事件循环（Issue #19）：snapshot 与
+        验证器的 snapshot+模板匹配在 worker 线程执行，事件循环在此期间
+        照常推进（timeout/scan 循环不停摆）。Verifier 保持同步签名，
+        由本调用点负责线程化。
         """
         for _ in range(3):
-            G.DEVICE.snapshot()
+            await asyncio.to_thread(G.DEVICE.snapshot)
 
-        return self.verifier.is_assembly_empty()
+        return await asyncio.to_thread(self.verifier.is_assembly_empty)
 
     async def _exec_clear_cooker(self, action) -> None:
         """清理灶台"""

@@ -3,6 +3,9 @@
 
 地位：从屏幕截图中检测订单，识别配方和加急状态
       轻量级实现，只检测订单，其他状态通过程序追踪
+      设备 IO 已异步化（Issue #19）：订单截图、timer 检测截图与调试保存
+      （二次截图 + cv2.imwrite）均经 asyncio.to_thread 执行，不阻塞扫描
+      关键路径。节拍收益待真机验证。
 
 输入：屏幕截图、配方列表、配置对象
 输出：检测到的订单信息
@@ -164,8 +167,10 @@ class Scanner:
                 detected_orders.append(order)
 
         # 如果检测到新订单且开启了调试选项，保存截图
+        # （_save_screenshot 含二次设备截图 + cv2.imwrite 磁盘 IO，
+        #   经 asyncio.to_thread 放入 worker 线程，不阻塞扫描关键路径）
         if detected_orders and self._save_screenshots:
-            self._save_screenshot(detected_orders)
+            await asyncio.to_thread(self._save_screenshot, detected_orders)
 
         return results
 
