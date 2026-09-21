@@ -82,6 +82,14 @@
 1. 任何架构变更必须更新相关的 `ARCHITECTURE.md`
 2. 每个目录必须有 `ARCHITECTURE.md`
 3. 文件头必须声明：`一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md`
+4. 目录内容变化（新增/删除/重命名文件）必须同步更新所属目录 `ARCHITECTURE.md` 的文件清单（来源 Issue #10，已纳入下方核对项）
+
+### Code Review 核对项（来源 Issue #10）
+
+- [ ] `pytest tests` 全绿（统一跑器，同时收集 unittest 风格与纯 pytest 风格用例）
+- [ ] `ruff check src tests playground` 通过（风格门禁）
+- [ ] mypy 输出相对基线无新增错误（告警模式，不卡合入）
+- [ ] 若目录内容有变化（新增/删除/重命名文件），所属 `ARCHITECTURE.md` 的文件清单已同步更新
 
 ---
 
@@ -124,12 +132,27 @@ python -m playground bench --games 50 --strategies gastronome,dessert
 ```
 
 ### 运行测试
+
+统一跑器为 **pytest**（Issue #10）：一条命令同时收集 unittest 风格与纯 pytest 风格用例，pyproject 已配置 `testpaths`/`pythonpath`，在仓库根目录直接运行。
+
 ```bash
 .venv\Scripts\activate
-python -m unittest discover tests        # 全部测试
-python -m unittest tests.test_capture_speed  # 单个文件
-python -m unittest discover -v tests     # 详细输出
+pytest tests                        # 全部测试（统一跑器）
+pytest tests/test_sim_fidelity.py   # 单个文件
+pytest tests -v                     # 详细输出
+# 兼容备注：unittest 风格用例仍可用 `python -m unittest discover tests` 运行
+# （仅收集 TestCase 子类，不含纯 pytest 风格文件）
 ```
+
+### 风格门禁（Issue #10）
+
+```bash
+ruff check src tests playground     # 风格门禁：语法错误/未定义名等低级问题，合入前必须通过
+mypy                                # 类型检查：告警模式（输出现状报告，暂不卡合入）
+```
+
+- ruff 起步规则集为保守的 `E9/F63/F7/F82`（配置见 `pyproject.toml`），存量豁免已在 `per-file-ignores` 登记
+- mypy 检查范围 `src/hawarma`（配置见 `pyproject.toml`），输出仅作现状报告，退出码不作为门禁
 
 ### 运行模拟（Playground）
 ```bash

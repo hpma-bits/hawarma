@@ -29,5 +29,36 @@ where = ["src"]
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
+    "ruff>=0.16",
+    "mypy>=1.11",
 ]
+
+[tool.pytest.ini_options]
+# 统一测试跑器（Issue #10）：pytest 兼容 unittest.TestCase 风格与纯 pytest 风格用例
+# pythonpath 指向 src，使 `pytest tests` 在仓库根目录一条命令可跑（无需手动 PYTHONPATH）
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+# 风格门禁（Issue #10）：起步保守规则集（语法错误 E9 + 未定义名/循环流误用 F63/F7/F82）
+# 目标是"门禁能跑"而非全仓库清零；更宽规则集（E4/E7/E9/F、F401/I001 清理）待后续 ticket
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.ruff.lint.per-file-ignores]
+# 存量豁免（Issue #10 登记现状，均为注解引用未导入名/未收集的死测试，运行时不触发）：
+# - episode.py / game_env.py：TYPE_CHECKING 遗漏导入的注解名（运行时函数内延迟导入）
+# - playground/tests/test_runner.py：run_episode 未导入；该目录不在 pytest testpaths 内，不会被收集
+"playground/core/episode.py" = ["F821"]
+"playground/env/game_env.py" = ["F821"]
+"playground/tests/test_runner.py" = ["F821"]
+"src/hawarma/game/game_env.py" = ["F821"]
+
+[tool.mypy]
+# 类型检查告警模式（Issue #10 / #7 spec：先观察不卡合入，输出仅作现状报告）
+files = ["src/hawarma"]
+python_version = "3.10"
+ignore_missing_imports = true
 
