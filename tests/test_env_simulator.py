@@ -1,16 +1,16 @@
 """
 游戏环境模拟器 - 测试套件
 
-地位：基于TDD原则，先编写测试用例再实现功能
+地位：环境模拟器行为测试（基础结构、时间限制、订单生成、并行烹饪、错误处理）
 输入：测试用例、期望输出
 输出：测试通过/失败状态
+跑器：pytest（纯类风格）；2026-09-22 fixture 对齐统一 Recipe 模型（并行列表字段，
+      见 hawarma.recipe），语义不变（Refs #10）
 
-⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新
+⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
 """
 
 import pytest
-from pathlib import Path
-from typing import Dict, List, Optional
 
 # 导入待测试的模块
 from playground.env_simulator_types import (
@@ -22,7 +22,6 @@ from playground.env_simulator_types import (
     StockpileSlot,
     GameState,
     Recipe,
-    IngredientRequirement,
 )
 from playground.env_simulator import (
     GameSimulator,
@@ -35,15 +34,15 @@ from playground.env_simulator import (
 # ============================================================================
 
 def create_test_recipe() -> Recipe:
-    """创建一个测试配方"""
+    """创建一个测试配方（统一 Recipe 模型：并行列表字段，ingredients 为派生属性）"""
     return Recipe(
-        name="Test Burger",
         slug="test_burger",
-        ingredients=(
-            IngredientRequirement(name="beef", cooker_type="grill", duration=3.0),
-            IngredientRequirement(name="bun", cooker_type="oven", duration=2.0),
-        ),
-        condiments={"salt": 1, "pepper": 1}
+        name="Test Burger",
+        raw_ingredients=["beef", "bun"],
+        cookers=["grill", "oven"],
+        cookers_layout=["grill", "oven"],
+        cook_durations=[3.0, 2.0],
+        condiments={"salt": 1, "pepper": 1},
     )
 
 
@@ -401,10 +400,10 @@ class TestParallelCooking:
         """测试多个灶台可以同时烹饪"""
         sim = create_simple_simulator()
         
-        # 收集食材-灶台配对：食材的 cooker_type 必须在可用灶台中
+        # 收集食材-灶台配对：只从选中的菜谱收集（start_cooking 校验本局可用食材）
         ingredient_cooker_pairs = []
-        for r in sim._recipes.values():
-            for ing in r.ingredients:
+        for slug in sim.game_config.selected_recipes:
+            for ing in sim._recipes[slug].ingredients:
                 if ing.cooker_type in sim._state.cookers:
                     ingredient_cooker_pairs.append((ing.name, ing.cooker_type))
         
@@ -444,10 +443,10 @@ class TestParallelCooking:
         """测试不同灶台在不同时间完成烹饪"""
         sim = create_simple_simulator()
         
-        # 收集食材-灶台配对：食材的 cooker_type 必须在可用灶台中
+        # 收集食材-灶台配对：只从选中的菜谱收集（start_cooking 校验本局可用食材）
         ingredient_cooker_pairs = []
-        for r in sim._recipes.values():
-            for ing in r.ingredients:
+        for slug in sim.game_config.selected_recipes:
+            for ing in sim._recipes[slug].ingredients:
                 if ing.cooker_type in sim._state.cookers:
                     ingredient_cooker_pairs.append((ing, ing.cooker_type))
         
@@ -497,10 +496,10 @@ class TestParallelCooking:
         
         cooker = available_cookers[0]
         
-        # 从选中菜谱中选择该灶台的食材（使用所有匹配的，不只是第一个）
+        # 从选中菜谱中选择该灶台的食材（start_cooking 校验本局可用食材）
         available_ingredients = []
-        for r in sim._recipes.values():
-            for ing in r.ingredients:
+        for slug in sim.game_config.selected_recipes:
+            for ing in sim._recipes[slug].ingredients:
                 if ing.cooker_type == cooker:
                     available_ingredients.append(ing)
         
@@ -588,10 +587,10 @@ class TestErrorHandling:
         
         cooker = available_cookers[0]
         
-        # 从选中菜谱中选择该灶台的食材
+        # 从选中菜谱中选择该灶台的食材（start_cooking 校验本局可用食材）
         available_ingredients = []
-        for r in sim._recipes.values():
-            for ing in r.ingredients:
+        for slug in sim.game_config.selected_recipes:
+            for ing in sim._recipes[slug].ingredients:
                 if ing.cooker_type == cooker:
                     available_ingredients.append(ing)
                     break
