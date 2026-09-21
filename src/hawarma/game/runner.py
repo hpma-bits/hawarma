@@ -13,6 +13,14 @@
 - 真实耗时测量（ghost 窗口、扫描计时、serve 验证等待打点）统一走注入的
   clock（默认 time.monotonic）——「游戏内时间」与「真实耗时」两个概念分离
 
+订单生命周期（Issue #18）：
+- Runner 不再直捅 env 私有状态（_orders/_next_order_id/_scoring）：
+  扫描同步只收集扫描条目并调用 env.apply_scan_result（匹配/ghost 过滤/
+  新建/删除在 env 内原子完成）；订单创建/超时查表收敛到 env.create_order
+- serve 按 order_id 结算：_serve_with_verify 在每次尝试的 swipe 前锁定该槽
+  当前 order_id，验证成功后经 env.serve_order_by_id 结算——验证窗口内订单
+  被 timeout 移位/删除时绝不结算到错单（找不到则 warning + 不计分）
+
 输入：Env, Operator, Scanner, Verifier, Strategy
       serve_verify_wait 读 config.game.serve_verify_wait（默认 0.2，Issue #22 接线）
 输出：游戏统计结果
@@ -29,7 +37,6 @@ from collections.abc import Callable
 from airtest.core.api import G
 from loguru import logger
 
-from hawarma.core.models import Order
 from hawarma.core.actions import Action, schedule_actions
 from hawarma.agent.strategy import Strategy
 from hawarma.recipe import Recipe
@@ -231,15 +238,13 @@ class Runner:
 
     async def _sync_orders_from_scan(self) -> None:
         """
-        将 env.orders 与扫描结果增量同步。
+        将 env.orders 与扫描结果增量同步（Issue #18）。
 
-        策略：
-        1. 扫描当前订单
-        2. 收集扫描到的订单类型，按从左到右顺序（忽略扫描器报告的 slot gap）
-        3. 按 (recipe_slug, is_rush) 匹配现有活跃订单，保留 order_id/created_at/timeout_at
-        4. 未匹配的扫描结果创建新订单
-        5. 1.5s 内刚 serve 过的订单类型，若 env 中已无该类型活跃订单，则跳过（防幽灵）
-        6. 最终结果左对齐，保证 slot0 不为 None 时右侧有订单
+        Runner 只负责扫描与动画窗口防护；订单匹配/ghost 过滤/新建/删除的
+        变更决策整体收敛进 env.apply_scan_result（同步方法，无 await）——
+        单线程事件循环下与 serve/timeout 变更天然互斥，消除旧帧覆盖竞态：
+        - 已 serve/已超时删除的订单不被旧扫描帧复活（env 记忆窗口校验）
+        - 订单连续 2 次扫描未出现才删除（防单次漏检误删）
 
         动画窗口保护：若扫描过程中进入动画窗口（serve 后 1.5s），
         扫描可能捕获到动画前的旧帧，导致 ghost 防护失效。
@@ -266,77 +271,22 @@ class Runner:
         for d in sorted(scanned, key=lambda x: x.slot_idx):
             scanned_types.append((d.recipe_slug, d.is_rush))
 
-        # 订单时间戳：局内相对秒数（与 env.time 同基，#17）
-        now = self.env.time
-        # ghost 窗口判定：真实耗时（墙钟，monotonic）
-        now_wall = self._clock()
-        new_orders: list[Order | None] = [None] * 4
-        reused_ids: set[int] = set()
-
-        for i, (recipe_slug, is_rush) in enumerate(scanned_types):
-            if i >= 4:
-                break
-
-            # 幽灵订单保护：1.5s 内刚 serve 过该类型，且 env 中已无活跃同类型订单
-            last_served_at = self._last_served.get((recipe_slug, is_rush), 0)
-            if now_wall - last_served_at < 1.5:
-                has_active = any(
-                    o and not o.done and o.recipe_slug == recipe_slug and o.is_rush == is_rush
-                    for o in self.env._orders
-                )
-                if not has_active:
-                    continue  # 跳过幽灵
-
-            # 尝试匹配现有活跃订单（优先同位置，再其他位置）
-            matched = None
-            # 1) 优先同位置
-            existing = self.env._orders[i] if i < len(self.env._orders) else None
-            if (
-                existing
-                and not existing.done
-                and existing.recipe_slug == recipe_slug
-                and existing.is_rush == is_rush
-                and id(existing) not in reused_ids
-            ):
-                matched = existing
-            else:
-                # 2) 匹配其他位置的活跃订单（订单位移）
-                for other in self.env._orders:
-                    if (
-                        other
-                        and not other.done
-                        and other.recipe_slug == recipe_slug
-                        and other.is_rush == is_rush
-                        and id(other) not in reused_ids
-                    ):
-                        matched = other
-                        break
-
-            if matched:
-                new_orders[i] = matched
-                reused_ids.add(id(matched))
-                continue
-
-            # 创建新订单：生成瞬间锁定当前总 visibility（与 add_order 同语义）
-            timeout = 40.0 if is_rush else 70.0
-            order = Order(
-                order_id=self.env._next_order_id,
-                recipe_slug=recipe_slug,
-                is_rush=is_rush,
-                created_at=now,
-                timeout_at=now + timeout,
-                spawned_at_visibility=self.env._scoring.total_visibility,
-                done=False,
-            )
-            self.env._next_order_id += 1
-            new_orders[i] = order
-
-        self.env._orders = new_orders
-        self.env._log_orders_state("sync")
+        # 增量同步在 env 内原子完成（无 await）：匹配/ghost 过滤/新建/删除。
+        # _last_served 提供 serve 图像延迟的幽灵窗口（墙钟），与 env 的
+        # 防复活记忆互补。
+        stats = self.env.apply_scan_result(
+            scanned_types,
+            recently_served=self._last_served,
+            now_wall=self._clock(),
+        )
         logger.debug(
-            f"[t={self.env.time:.1f}s] Scan completed: {len(scanned)} detected, "
-            f"duration={scan_duration * 1000:.1f}ms, reused={len(reused_ids)}, "
-            f"ghost_protected={len(scanned_types) - len([o for o in new_orders if o])}"
+            f"[t={self.env.time:.1f}s] Scan completed: duration="
+            f"{scan_duration * 1000:.1f}ms, detected={stats['detected']}, "
+            f"reused={stats['reused']}, created={stats['created']}, "
+            f"ghost_skipped={stats['ghost_skipped']}, "
+            f"resurrection_blocked={stats['resurrection_blocked']}, "
+            f"kept_pending_removal={stats['kept_pending_removal']}, "
+            f"removed={stats['removed']}"
         )
 
     # ========================================================================
@@ -528,46 +478,65 @@ class Runner:
         logger.info(f"[t={self.env.time:.1f}s] Added condiment {action.condiment}")
 
     async def _exec_serve_order(self, action) -> None:
-        """送餐（带验证和重试）"""
-        success_slot = await self._serve_with_verify(action.slot_idx)
+        """送餐（带验证和重试）；验证成功后按 serve 前锁定的 order_id 结算（Issue #18）。
 
-        if success_slot is not None:
-            order = self.env.orders[success_slot] if success_slot < len(self.env.orders) else None
-            if order is not None:
-                # 必须在 env.serve_order 之前读取 condiments（serve_order 会清空 assembly）
-                has_condiments = bool(self.env.assembly.condiments)
-                self.env.on_order_served(order, has_condiments)
-            if self.env.serve_order(success_slot):
-                if order:
-                    # 记录刚 serve 的订单类型（墙钟时刻），用于扫描时识别幽灵订单
-                    self._last_served[(order.recipe_slug, order.is_rush)] = self._clock()
-            else:
-                logger.warning(
-                    f"[t={self.env.time:.1f}s] env.serve_order({success_slot}) failed, "
-                    f"order may have timed out"
-                )
-        else:
+        _serve_with_verify 总耗时 ≥0.25s，期间 timeout 循环可能删除目标订单并使
+        槽位左移——按 slot 结算会打错单。结算改经 env.serve_order_by_id：
+        找不到（已被 timeout 删）则 warning + 不计分。
+        """
+        result = await self._serve_with_verify(action.slot_idx)
+
+        if result is None:
             logger.warning(
                 f"[t={self.env.time:.1f}s] Serve verification failed, assembly discarded."
             )
             # 不再自动清空 assembly，让 agent 的 _try_clear_assembly 决策是否清理
+            return
 
-    async def _serve_with_verify(self, slot_idx: int) -> int | None:
+        success_slot, target_order_id = result
+
+        if target_order_id is None:
+            logger.warning(
+                f"[t={self.env.time:.1f}s] Serve verified at slot {success_slot} but "
+                f"no active order was there when the swipe started "
+                f"(timed out during verification?); no settlement"
+            )
+            return
+
+        # 必须在结算清空 assembly 之前读取 condiments（serve_order_by_id 会 reset）
+        has_condiments = bool(self.env.assembly.condiments)
+        order = self.env.serve_order_by_id(target_order_id)
+        if order is not None:
+            self.env.on_order_served(order, has_condiments)
+            # 记录刚 serve 的订单类型（墙钟时刻），用于扫描时识别幽灵订单
+            self._last_served[(order.recipe_slug, order.is_rush)] = self._clock()
+        else:
+            logger.warning(
+                f"[t={self.env.time:.1f}s] Order {target_order_id} disappeared before "
+                f"settlement (timed out during serve verification); not scored"
+            )
+
+    async def _serve_with_verify(self, slot_idx: int) -> tuple[int, int | None] | None:
         """
         执行送餐并验证是否成功。
 
-        1. 执行 serve swipe 到目标 slot
-        2. 等待动画 + 多点 snapshot 验证
-        3. 失败后重试相邻左侧 slot（slot_idx - 1）
-        4. 两次都失败则丢弃菜品，清空 assembly
+        1. 锁定本次尝试目标槽位上的 order_id（serve 验证窗口内 timeout 移位的
+           安全锚点，Issue #18）
+        2. 执行 serve swipe 到目标 slot
+        3. 等待动画 + 多点 snapshot 验证
+        4. 失败后重试相邻左侧 slot（slot_idx - 1），重试前重新锁定该槽 order_id
+        5. 两次都失败则丢弃菜品，清空 assembly
 
         只观测不改行为：沿途对「验证等待 / 截图验证 / 重试 / 清理」
         分别埋耗时打点（swipe 自身由 Operator 观测）。
 
         Returns:
-            成功的 slot_idx，如果失败返回 None
+            (成功槽位, 该次尝试 swipe 前锁定的 order_id)——order_id 可能为 None
+            （swipe 开始时该槽无活跃订单）；两次尝试都失败返回 None
         """
-        # 第一次尝试：原始 slot
+        # 第一次尝试：原始 slot（先锁定目标 order_id 再 swipe）
+        target = self.env.orders[slot_idx] if slot_idx < len(self.env.orders) else None
+        target_order_id = target.order_id if target is not None else None
         await self.ui.serve_order(slot_idx)
 
         wait_timer = Timer(self._timing.serve_verify_wait)
@@ -578,7 +547,7 @@ class Runner:
         verified = await self._verify_with_multi_snapshot()
         snapshot_timer.record()
         if verified:
-            return slot_idx
+            return slot_idx, target_order_id
 
         logger.warning(
             f"[t={self.env.time:.1f}s] Serve verification failed. "
@@ -589,6 +558,13 @@ class Runner:
         retry_slot = slot_idx - 1
         if retry_slot >= 0:
             retry_timer = Timer(self._timing.serve_retry)
+            # 重试前重新锁定该槽当前 order_id（槽位可能已位移）
+            retry_target = (
+                self.env.orders[retry_slot]
+                if retry_slot < len(self.env.orders)
+                else None
+            )
+            retry_order_id = retry_target.order_id if retry_target is not None else None
             await asyncio.sleep(0.05)
             await self.ui.serve_order(retry_slot)
             await asyncio.sleep(self._serve_verify_wait)  # 等待动画渲染
@@ -598,7 +574,7 @@ class Runner:
                 logger.info(
                     f"[t={self.env.time:.1f}s] Serve succeeded at slot {retry_slot}"
                 )
-                return retry_slot
+                return retry_slot, retry_order_id
 
         # 两次都失败，丢弃菜品（清理段计时）
         cleanup_timer = Timer(self._timing.serve_cleanup)
