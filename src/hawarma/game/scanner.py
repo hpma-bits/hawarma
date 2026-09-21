@@ -60,9 +60,6 @@ class Scanner:
         self.recipes = recipes
         self.image_dir = resolve_path(config.image_directory)
 
-        # 配方 slug -> Recipe 映射
-        self._recipe_by_slug = {r.slug: r for r in recipes}
-
         # 首个食材 -> 菜谱列表映射（用于冲突检测）
         self._recipes_by_first_ingredient: dict[str, list[Recipe]] = {}
         for r in recipes:
@@ -399,10 +396,6 @@ class Scanner:
             return red_value < threshold
 
         return False
-
-    def get_recipe_by_slug(self, slug: str) -> Optional[Recipe]:
-        """根据 slug 获取配方"""
-        return self._recipe_by_slug.get(slug)
 
     def _save_screenshot(self, orders: list[DetectedOrder]) -> None:
         """保存调试截图"""

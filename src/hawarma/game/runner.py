@@ -403,8 +403,6 @@ class Runner:
             )
             return
 
-        if not hasattr(self, '_is_game_over'):
-            self._is_game_over = self.env.is_game_over
         if self.env.is_game_over():
             logger.info(
                 f"[t={self.env.time:.1f}s] Game over, skipping action: {type(action).__name__}"

@@ -197,7 +197,7 @@ order_score = (base_points + visibility) * multiplier(spawned_at_visibility, is_
 
 1. **`Order.spawned_at_visibility`** (`core/models.py:Order`)：新增字段，`immutable since creation` —— 通过 `__setattr__` 重写阻止二次赋值，确保域语义「生成瞬间快照」不被破坏。
 2. **`GameEnv.add_order()`**：每次新增订单时，把当前 `_scoring.total_visibility` 写入 `order.spawned_at_visibility`。
-3. **`ScoringContext`** (`core/scoring.py`，S1 抽离)：统计查询、总分、终局结算的唯一持有者。`GameEnv` 只转发（`_orders_served/_total_score/_total_visibility` 为兼容属性），改计分只碰此处。
+3. **`ScoringContext`** (`core/scoring.py`，S1 抽离)：统计查询、总分、终局结算的唯一持有者。`GameEnv` 直接读写 `_scoring`（Issue #22 已删除过渡期兼容 property），改计分只碰此处。
 4. **`GameEnv.on_order_served(order, has_condiments)`**：
    - `score = RecipeRewardLookup.get_score(order.recipe_slug, has_condiments, order.is_rush, total_visibility=order.spawned_at_visibility)`
    - `_scoring.record_serve(score, get_visibility(...))`

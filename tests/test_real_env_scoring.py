@@ -105,7 +105,7 @@ class TestAddOrderLocksSpawnedAtVisibility:
 
     def test_subsequent_orders_lock_current_total(self, env: GameEnv):
         """后续订单锁定当前 total_visibility"""
-        env._total_visibility = 100.0
+        env._scoring.total_visibility = 100.0
         env.add_order(RECIPE, is_rush=False)
         order = env.orders[0]
         assert order is not None
@@ -132,7 +132,7 @@ class TestOnOrderServedScoring:
         expected = float((BASE_WITHOUT + VIS_WITHOUT) * 1.0)
         assert env.get_stats()["total_score"] == expected
         assert env.get_stats()["orders_served"] == 1
-        assert env._total_visibility == VIS_WITHOUT
+        assert env._scoring.total_visibility == VIS_WITHOUT
 
     def test_with_condiments_no_rush_base_multiplier(
         self, env: GameEnv, lookup: RecipeRewardLookup
@@ -147,7 +147,7 @@ class TestOnOrderServedScoring:
 
         expected = float((BASE_WITH + VIS_WITH) * 1.0)
         assert env.get_stats()["total_score"] == expected
-        assert env._total_visibility == VIS_WITH
+        assert env._scoring.total_visibility == VIS_WITH
 
     def test_rush_applies_rush_multiplier(self, env: GameEnv):
         """rush 订单在 spawned_at_vis=0 时使用 1.6× 倍率"""
@@ -174,7 +174,7 @@ class TestOnOrderServedScoring:
             spawned_at_visibility=200.0,
         )
         env._orders[0] = order
-        env._total_visibility = 200.0
+        env._scoring.total_visibility = 200.0
 
         env.on_order_served(order, has_condiments=True)
 
@@ -194,7 +194,7 @@ class TestOnOrderServedScoring:
             env.on_order_served(order, has_condiments=False)
 
         # 3 × 14 = 42
-        assert env._total_visibility == 3 * VIS_WITHOUT
+        assert env._scoring.total_visibility == 3 * VIS_WITHOUT
         assert env.get_stats()["orders_served"] == 3
 
     def test_subsequent_orders_see_accumulated_visibility(self, env: GameEnv):
@@ -204,7 +204,7 @@ class TestOnOrderServedScoring:
         assert order_1 is not None
         env.on_order_served(order_1, has_condiments=True)
         # 累加后 total_visibility = 28
-        assert env._total_visibility == VIS_WITH
+        assert env._scoring.total_visibility == VIS_WITH
 
         env.add_order(RECIPE, is_rush=False)
         order_2 = env.orders[1]

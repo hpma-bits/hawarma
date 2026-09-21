@@ -80,53 +80,6 @@ class GameEnv:
         )
 
     # ========================================================================
-    # 度量兼容访问（S1 抽离过渡期：读写转发到 ScoringContext）
-    # ========================================================================
-
-    @property
-    def _orders_served(self) -> int:
-        return self._scoring.orders_served
-
-    @_orders_served.setter
-    def _orders_served(self, value: int) -> None:
-        self._scoring.orders_served = value
-        self._scoring.invalidate()
-
-    @property
-    def _total_score(self) -> float:
-        return self._scoring.total_score
-
-    @_total_score.setter
-    def _total_score(self, value: float) -> None:
-        self._scoring.total_score = value
-        self._scoring.invalidate()
-
-    @property
-    def _total_visibility(self) -> float:
-        return self._scoring.total_visibility
-
-    @_total_visibility.setter
-    def _total_visibility(self, value: float) -> None:
-        self._scoring.total_visibility = value
-        self._scoring.invalidate()
-
-    @property
-    def _orders_timeout(self) -> int:
-        return self._scoring.orders_timeout
-
-    @_orders_timeout.setter
-    def _orders_timeout(self, value: int) -> None:
-        self._scoring.orders_timeout = value
-
-    @property
-    def _actions_taken(self) -> int:
-        return self._scoring.actions_taken
-
-    @_actions_taken.setter
-    def _actions_taken(self, value: int) -> None:
-        self._scoring.actions_taken = value
-
-    # ========================================================================
     # Env 接口实现
     # ========================================================================
 
@@ -574,7 +527,7 @@ class GameEnv:
             f"{'RUSH' if order.is_rush else 'normal'}, cond={has_condiments}): "
             f"+{score:.0f} score, +{visibility} visibility "
             f"(spawned_at={order.spawned_at_visibility:.0f}, "
-            f"total_vis={self._total_visibility:.0f})"
+            f"total_vis={self._scoring.total_visibility:.0f})"
         )
 
     def on_order_timeout(self, order_id: int) -> None:
@@ -711,7 +664,7 @@ class GameEnv:
             is_rush=is_rush,
             created_at=now,
             timeout_at=now + timeout,
-            spawned_at_visibility=self._total_visibility,
+            spawned_at_visibility=self._scoring.total_visibility,
         )
 
         logger.info(
