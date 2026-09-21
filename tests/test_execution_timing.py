@@ -93,7 +93,8 @@ class TestAnimationWindowRemaining:
 
     def test_zero_outside_window(self):
         env = GameEnv(cooker_names=["fryer"], stockpile_slots=3)
-        env._animation_until = time.time() - 1.0
+        # 动画窗口时基为注入 clock（#17 默认 monotonic），置为 clock 过去时刻即"已过期"
+        env._animation_until = time.monotonic() - 1.0
         assert env.animation_window_remaining() == 0.0
         assert env.is_in_animation_window() is False
 

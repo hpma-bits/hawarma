@@ -4,6 +4,13 @@ core/models: 核心数据模型
 统一的状态类型，供真实环境和模拟器共享。
 每个状态类型提供 snapshot()：字段级深拷贝（嵌套 list/dict 换新容器），
 供 Env 构造 UnifiedState 时隔离内部状态，防止引用逃逸（#16）。
+
+时基约定（#17）：所有游戏内时间字段（Order.created_at/timeout_at/served_at、
+CookerState.started_at/done_at/expired_at）均为**局内相对秒数**——
+与 UnifiedState.time 同基（env 起点 0.0），真实端（GameEnv，基于注入
+monotonic clock 的 env.time）与模拟器端（state.time tick）构造点一致。
+禁止写入 epoch 墙钟（time.time()）到这些字段；墙钟测量（动画窗口等
+真实耗时）由 env 内部用 monotonic clock 处理，不落模型字段。
 """
 
 from __future__ import annotations
@@ -211,6 +218,11 @@ class Order:
     共享订单数据结构，只包含真实环境和模拟器都需要的字段。
     模拟器专有数据（recipe 对象、调料追踪）由模拟器内部维护。
 
+    时基（#17）：created_at/timeout_at/served_at 均为局内相对秒数，
+    与 UnifiedState.time 同基（游戏开始时刻 = 0.0）。
+    is_expired/time_remaining 的 current_time 参数即 state.time，
+    不得传 epoch 墙钟。
+
     不可变字段（immutable since creation）：
         - spawned_at_visibility: 订单生成瞬间锁定的局内总 visibility，
           用于事后计算 serve 得分倍率。set 一次后禁止修改。
@@ -258,11 +270,11 @@ class Order:
         return self.done or self.served_at is not None
 
     def is_expired(self, current_time: float) -> bool:
-        """订单是否已超时"""
+        """订单是否已超时（current_time 为局内相对秒数，即 state.time）"""
         return current_time >= self.timeout_at and not self.is_completed
 
     def time_remaining(self, current_time: float) -> float:
-        """订单剩余时间（秒）"""
+        """订单剩余时间（秒，current_time 为局内相对秒数，即 state.time）"""
         if self.is_completed:
             return 0.0
         return max(0.0, self.timeout_at - current_time)

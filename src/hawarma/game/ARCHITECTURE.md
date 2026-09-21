@@ -23,6 +23,7 @@
 - **地位**: 真实游戏状态追踪器
 - **功能**:
   - 独立类（不继承 ABC），追踪灶台、组装站、搅拌盆、库存、订单、调料
+  - 时钟注入（#17）：构造函数接受 `clock: Callable[[], float]`（默认 `time.monotonic`）；env.time/订单时间戳为局内相对秒数，动画窗口等墙钟测量同走此 clock，不再使用 epoch `time.time()`
   - 通过 `get_unified_state()` 产出 `UnifiedState` 供 Strategy 决策
   - `get_unified_state()` 返回全量深快照（#16）：orders/cookers/assembly/stockpile/mixing_bowl 均为各模型 `snapshot()` 字段级拷贝，与内部状态无共享可变对象；recipes 只读共享
   - 异步环境：状态由 Scanner/Runner 外部更新，不实现 `step()`
@@ -103,6 +104,7 @@ Operator根据菜谱选择顺序动态确定各元素坐标：
   - **验证路径设备 IO 异步化（Issue #19）**：`_verify_with_multi_snapshot()` 的预热 snapshot ×3 与 `verifier.is_assembly_empty()`（snapshot+模板匹配）均经 `asyncio.to_thread` 执行，验证期间三循环照常推进。节拍收益待真机验证
   - **Action 调度**：`dispatch_batch()` 经共享 `schedule_actions` 排序/过滤后逐个 `_execute_action()`；
     已取消动作直接跳过（Ticket #11 / Spec #7 S3），与 SimEnv 回放语义一致
+  - **时基（#17）**：构造函数接受 `clock`（默认 `time.monotonic`）透传墙钟测量；扫描同步新建订单的时间戳取 `env.time`（局内相对秒数），ghost 窗口/扫描计时走 monotonic clock，`asyncio.get_event_loop().time()` 已移除
   - **异步扫描**：`_sync_orders_from_scan()` 为 async 方法，await scanner 的异步截图
 - **输入**: 配置对象、配方列表
 - **输出**: 游戏统计结果（含 scoring 统计与 execution timing）
@@ -394,25 +396,43 @@ IO 期间照常推进，节拍假设恢复成立：
 
 ## ⏱️ 时间推进机制
 
+### 统一时基（Issue #17）
+
+GameEnv 构造函数支持注入 `clock: Callable[[], float]`（默认 `time.monotonic`），
+Runner 同样接受 `clock` 参数用于自身墙钟测量。两个时间概念严格分离：
+
+| 概念 | 时基 | 载体 |
+|------|------|------|
+| **游戏内时间** | 局内相对秒数（游戏开始 = 0.0，`clock() - game_start`） | `env.time`、`Order.created_at/timeout_at/served_at`、`CookerState.started_at/done_at/expired_at`、`UnifiedState.time` |
+| **真实耗时测量**（墙钟） | monotonic 绝对时刻 / 差值 | 动画窗口（`_animation_until`）、Runner ghost 窗口（`_last_served`）、扫描计时（scan_duration）、timing.py 打点（perf_counter） |
+
+设计动机：
+- epoch 墙钟（time.time()）受 NTP 校时/系统睡眠影响，会让订单集体误判超时；
+  monotonic 单调递增，不受校时回拨影响
+- 真实端订单时间戳此前用 epoch，与 `env.time`（相对）两种时基并存，
+  dessert 策略 `timeout_at - state.time` 混减出无意义的巨大值；统一为
+  相对秒数后与模拟器端（`state.time` tick）同基，双端 Order 构造点语义一致
+- 测试可注入假时钟（`tests/test_time_base.py`）确定性驱动订单超时/动画窗口
+
 ### 实时时间计算
 
-GameEnv 使用 **系统时钟** 计算游戏时间，而非模拟 tick：
+GameEnv 使用 **注入时钟（默认 monotonic）** 计算游戏时间，而非模拟 tick：
 
 ```python
 @property
 def time(self) -> float:
-    """当前游戏时间（秒）"""
+    """当前游戏时间（秒，局内相对：clock() - game_start 起点时刻）"""
     if self._game_start_time is None:
         return 0.0
-    return time.time() - self._game_start_time
+    return self._clock() - self._game_start_time
 ```
 
 ### 游戏生命周期
 
 ```python
 def start_game(self) -> None:
-    """开始游戏计时"""
-    self._game_start_time = time.time()
+    """开始游戏计时（记录 clock 起点，env.time 从 0 起算）"""
+    self._game_start_time = self._clock()
     logger.info("Game started!")
 
 def is_game_over(self) -> bool:
@@ -422,22 +442,21 @@ def is_game_over(self) -> bool:
     return self.time >= self._game_duration  # 默认90秒
 ```
 
+订单生命周期同基：`add_order` 用 `now = self.time` 写 `created_at/timeout_at`；
+`check_and_remove_timed_out_orders` 用 `now = self.time` 判超时；
+Runner `_sync_orders_from_scan` 新建订单同样取 `env.time`（相对秒数），
+ghost 窗口与扫描计时则走注入的墙钟 clock。
+
 ### 与模拟器 tick 的对比
 
 | 方面 | 真实环境 (GameEnv) | 模拟器 (GameSimulator) |
 |------|---------------------------|------------------------|
-| 时间源 | `time.time()` 系统时钟 | `self._state.time` 模拟时间 |
+| 时间源 | 注入 clock（默认 `time.monotonic`） | `self._state.time` 模拟时间 |
 | 推进方式 | 自动流逝 | 显式调用 `tick(dt)` |
 | 精度 | 毫秒级 | 取决于 tick 间隔 |
-| 确定性 | 非确定性（受系统影响） | 完全确定性 |
+| 确定性 | 非确定性（真实时钟）/ 确定性（注入假时钟） | 完全确定性 |
+| 订单时间戳 | 局内相对秒数（env.time） | 局内相对秒数（state.time） |
 | 适用场景 | 真实游戏 | 测试和算法优化 |
-
-### 为什么选择实时时间？
-
-1. **简化设计**：不需要手动推进时间，系统自动处理
-2. **真实同步**：与游戏实际时间保持同步
-3. **减少错误**：避免 tick 间隔设置不当导致的时间跳跃
-4. **自然超时**：订单超时、烹饪完成等事件自然触发
 
 ---
 
@@ -455,12 +474,15 @@ def is_game_over(self) -> bool:
 ```python
 def is_in_animation_window(self) -> bool:
     """是否在动画窗口期间"""
-    return time.time() < self._animation_until
+    return self._clock() < self._animation_until
 
 def set_animation_window(self, duration: float = 1.5) -> None:
     """设置动画窗口"""
-    self._animation_until = time.time() + duration
+    self._animation_until = self._clock() + duration
 ```
+
+动画窗口是**真实耗时测量**（墙钟语义），走注入 clock（默认 monotonic），
+不与局内相对时间混算。
 
 ### 触发时机
 
