@@ -14,6 +14,8 @@ SimEnv: RL 风格的游戏环境实现
 - detection_delay: 新订单被扫描感知的滞后时间（对应真实模板匹配耗时，默认 400ms）
 - 新订单可见性：观测路径统一叠加 1s 新单出现动画（GameSimulator.NEW_ORDER_ANIMATION，
   规则 3.4.2 检测盲区），与 detection_delay 取 max，消除 get_order / get_unified_state 双口径（#14）
+- 观测隔离：get_unified_state() 对 orders/cookers/assembly/stockpile 做字段级深快照，
+  返回值与 sim._state 无共享可变对象，篡改观测不污染模拟器（#16）
 
 ⚠️ 一旦文件内容有更新，务必对开头注释进行相应的必要更新，同时更新所属目录的md
 """
@@ -224,7 +226,11 @@ class SimEnv(GameEnv):
         return [self.step(action) for action in schedule_actions(list(actions))]
 
     def get_unified_state(self) -> UnifiedState:
-        """从 simulator 内部状态构造 UnifiedState"""
+        """从 simulator 内部状态构造 UnifiedState（字段级深快照，#16）。
+
+        cookers/assembly/stockpile/orders 均经 snapshot() 拷贝，
+        无 sim._state 引用逃逸，agent 篡改观测不会污染模拟器状态。
+        """
         if self._sim is None:
             raise RuntimeError("Environment not initialized. Call reset() first.")
 
@@ -240,9 +246,9 @@ class SimEnv(GameEnv):
         return UnifiedState(
             time=sim_state.time,
             orders=orders,
-            cookers=sim_state.cookers,
-            assembly=sim_state.assembly,
-            stockpile=sim_state.stockpile,
+            cookers={name: c.snapshot() for name, c in sim_state.cookers.items()},
+            assembly=sim_state.assembly.snapshot(),
+            stockpile={name: s.snapshot() for name, s in sim_state.stockpile.items()},
             recipes=dict(self._recipes),
             game_duration=self._sim._game_duration,
             is_in_animation_window=self._sim.is_in_animation_window(),
@@ -339,5 +345,7 @@ class SimEnv(GameEnv):
     def _convert_orders(
         self, orders: list[Order | None]
     ) -> tuple[Order | None, ...]:
-        """将 simulator 订单列表转为 tuple（类型已统一，无需转换）"""
-        return tuple(orders)
+        """将 simulator 订单列表转为 tuple（元素经 snapshot() 拷贝，防引用逃逸）"""
+        return tuple(
+            order.snapshot() if order is not None else None for order in orders
+        )

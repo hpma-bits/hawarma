@@ -30,6 +30,7 @@
 | `test_rush_detection.py` | ✅ | unittest | 加急订单像素检测测试（基于红色通道阈值检测 rush 状态） |
 | `test_rush_tiebreaker.py` | ✅ | unittest | Rush/visibility 跨越对订单排序影响的测试 |
 | `test_sim_fidelity.py` | ✅ | unittest | 模拟器保真度测试（Issue #14：serve 食材集合校验、过期占灶、1s 新单可见性、serve 禁令/立即刷新双窗口） |
+| `test_state_snapshot.py` | ✅ | unittest | 状态快照回归测试（Issue #16：各模型 snapshot() 字段拷贝与冻结字段语义、GameEnv/SimEnv get_unified_state() 深快照篡改不污染 env、性能粗测探针） |
 | `test_timer_detection.py` | ✅ | unittest | Timer 图标模板匹配测试（验证 icon-timer.jpg 在截图中的检测） |
 | `test_tui.py` | ✅ | unittest | TUI 测试 |
 | `test_tui_order_input.py` | ✅ | unittest | TUI 订单输入测试 |
@@ -56,6 +57,7 @@
 11. **金决策快照回归** — Gastronome 给定状态决策与快照相等（#12）
 12. **模拟器保真度测试**（#14）— serve 食材集合校验、过期食材占灶直到显式清理、新单 1s 可见性（与 detection_delay 取 max）、serve 禁令窗口与立即刷新独立
 13. **基准统计测试**（#15）— t 分布分位数对照 t 表、配对 p/效应量/CI、零方差退化、统一分数口径
+14. **状态快照回归**（#16）— UnifiedState 观测不可变：模型 snapshot() 深拷贝、双端 env 篡改观测不污染内部状态、快照耗时量级探针（< 0.5ms/次，实测约 0.03-0.05ms）
 
 ## 运行测试
 

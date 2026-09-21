@@ -3,6 +3,8 @@
 
 GameEnv 追踪真实游戏的状态，通过程序逻辑维护灶台、组装站、库存状态。
 不继承 ABC — 真实环境和模拟环境本质不同（同步 vs 异步），通过 UnifiedState + Action 共享数据契约。
+get_unified_state() 返回全量深快照（各模型 snapshot() 字段级拷贝），
+观测与内部状态无共享可变对象（#16）。
 
 输入：UI操作结果、订单检测结果
 输出：游戏状态供Agent决策
@@ -501,27 +503,29 @@ class GameEnv:
     # ========================================================================
 
     def get_unified_state(self) -> "UnifiedState":
-        """构建 UnifiedState 快照"""
+        """构建 UnifiedState 快照（字段级深拷贝，#16）。
+
+        所有可变子状态（orders/cookers/assembly/stockpile/mixing_bowl）
+        经各自 snapshot() 拷贝，与 env 内部状态完全隔离，
+        Strategy 篡改返回值不会污染环境。
+        recipes 为静态配置数据，仅拷贝容器（Recipe 对象只读共享）。
+        """
         from hawarma.core.state import UnifiedState
 
-        assembly = self._assembly
-        orders = []
-        for order in self._orders:
-            if order is None:
-                orders.append(None)
-            else:
-                orders.append(order)
+        orders = tuple(
+            order.snapshot() if order is not None else None for order in self._orders
+        )
 
         return UnifiedState(
             time=self.time,
-            orders=tuple(orders),
-            cookers=dict(self._cookers),
-            assembly=assembly,
-            stockpile=dict(self._stockpile),
+            orders=orders,
+            cookers={name: c.snapshot() for name, c in self._cookers.items()},
+            assembly=self._assembly.snapshot(),
+            stockpile={name: s.snapshot() for name, s in self._stockpile.items()},
             recipes=dict(self._recipes),
             game_duration=self._game_duration,
             is_in_animation_window=self.is_in_animation_window(),
-            mixing_bowl=self._mixing_bowl,
+            mixing_bowl=self._mixing_bowl.snapshot(),
         )
 
     def get_stats(self) -> dict:
