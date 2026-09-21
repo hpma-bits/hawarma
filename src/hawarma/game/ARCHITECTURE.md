@@ -38,6 +38,7 @@
   - 识别配方和加急状态
   - 检测游戏开始（timer图标）
   - **异步截图**：`detect_timer()`, `scan_orders()`, `scan_new_orders()` 均为 async 方法，使用 `asyncio.to_thread()` 避免阻塞事件循环
+  - **调试保存异步化（Issue #19）**：`_save_screenshot`（二次截图 + `cv2.imwrite` 磁盘 IO）由 `scan_orders` 经 `asyncio.to_thread` 放入 worker 线程，不阻塞扫描关键路径；方法本身保持同步签名
 - **输入**: 屏幕截图、配置对象
 - **输出**: 检测到的订单信息
 - **关键类**: `Scanner`, `DetectedOrder`
@@ -48,6 +49,7 @@
 - **功能**:
   - 通过模板匹配检测组装站区域是否为空
   - 验证送餐操作是否成功提交菜品
+  - **保持同步签名（Issue #19）**：`is_assembly_empty()` 内部的 snapshot+模板匹配由调用方（Runner `_verify_with_multi_snapshot`）经 `asyncio.to_thread` 线程化，函数签名不泄漏 async
   - ROI: `(1150, 720, 1600, 1030)`
   - 模板: `static/img/empty_assembly.jpg`
 - **输入**: 配置对象
@@ -57,11 +59,12 @@
 
 ### `operator.py`
 - **地位**: UI操作执行器
-- **状态**: ✅ 完成
+- **状态**: ✅ 完成（设备 IO 已异步化，Issue #19）
 - **功能**:
   - 封装所有swipe操作
   - 从config.yaml读取坐标配置
   - 提供异步执行接口
+  - **设备 IO 异步化（Issue #19）**：`swipe()` 内部 airtest 调用经 `asyncio.to_thread` 在 worker 线程执行，事件循环在设备往返期间不停摆；串行化语义由协程层 `asyncio.Lock` 保证（`async with lock` → `await to_thread(...)`）；`timing.swipe` 打点仍覆盖真实设备往返耗时。节拍收益待真机验证
   - **动态坐标映射**：根据菜谱选择顺序确定元素位置
   - 使用 Airtest 内置的 minitouch 触摸方法
   - **垃圾桶坐标配置化**：`clear_cooker()` 和 `clear_assembly()` 使用 `config.screen.trash_position`
@@ -97,6 +100,7 @@ Operator根据菜谱选择顺序动态确定各元素坐标：
   - 运行三个并行循环（scan / timeout / agent）并执行 Agent 动作
   - **事件驱动决策**：`_agent_loop()` 由 `_agent_wakeup` 事件唤醒，空闲时 0.5s 兜底
   - **送餐验证重试**：`_serve_with_verify()` 带分段耗时打点（验证等待 / 截图 / 重试 / 清理）
+  - **验证路径设备 IO 异步化（Issue #19）**：`_verify_with_multi_snapshot()` 的预热 snapshot ×3 与 `verifier.is_assembly_empty()`（snapshot+模板匹配）均经 `asyncio.to_thread` 执行，验证期间三循环照常推进。节拍收益待真机验证
   - **Action 调度**：`dispatch_batch()` 经共享 `schedule_actions` 排序/过滤后逐个 `_execute_action()`；
     已取消动作直接跳过（Ticket #11 / Spec #7 S3），与 SimEnv 回放语义一致
   - **异步扫描**：`_sync_orders_from_scan()` 为 async 方法，await scanner 的异步截图
@@ -362,6 +366,30 @@ async def _agent_loop(self) -> None:
 | 异步并发 | 避免 I/O 阻塞，最大化利用等待时间 |
 | 动画窗口检查 | 扫描与决策各自检查动画窗口，双重保护防止冲突 |
 
+### 设备 IO 已移出事件循环（Issue #19）
+
+三循环的节拍假设（timeout 0.3s / agent 兜底 0.5s / 扫描 0.4-0.5s）此前会被
+同步设备 IO 整段打断：每次 swipe（0.1-0.4s，叠加 maxtouch patch 的两个
+0.1s SleepEvent）、验证 snapshot、调试写盘期间事件循环停摆，三个循环全部停顿。
+
+现在所有设备 IO 均经 `asyncio.to_thread` 在 worker 线程执行，事件循环在
+IO 期间照常推进，节拍假设恢复成立：
+
+| 阻塞点 | 异步化方式 |
+|--------|-----------|
+| `Operator.swipe` 的 airtest swipe | `asyncio.to_thread(swipe, ...)`，锁在协程层持有 |
+| Runner `_verify_with_multi_snapshot` 的预热 snapshot ×3 | `asyncio.to_thread(G.DEVICE.snapshot)` 逐次 |
+| Verifier `is_assembly_empty`（snapshot+模板匹配） | 调用方（Runner）`await asyncio.to_thread(...)`，同步签名不变 |
+| Scanner `_save_screenshot`（二次截图+`cv2.imwrite`） | 调用方（`scan_orders`）`asyncio.to_thread(...)`，同步签名不变 |
+
+设计约束：
+- **锁语义**：`asyncio.Lock` 在协程层持有（`async with lock` → `await to_thread(...)`），
+  不在线程内抢 asyncio 锁，UI 操作串行化语义不变
+- **计时不受影响**：`ExecutionTiming` 打点仍覆盖 to_thread 内的真实设备耗时
+  （`t0` → `await to_thread(...)` → record）
+- **节拍收益待真机验证**：模拟器/单测只能证明事件循环不停摆，真实设备上
+  swipe/snapshot 时长分布与三循环节拍稳定性需 30 局以上真机测试确认
+
 ---
 
 ## ⏱️ 时间推进机制
@@ -566,7 +594,9 @@ await asyncio.gather(
 
 ### 锁机制
 
-Operator 使用异步锁确保 UI 操作的原子性：
+Operator 使用异步锁确保 UI 操作的原子性。锁在**协程层**持有，设备调用在
+锁内经 `asyncio.to_thread` 进入 worker 线程（Issue #19 落地后的实际实现；
+不在线程内抢 asyncio 锁）：
 
 ```python
 class Operator:
@@ -575,14 +605,15 @@ class Operator:
     
     async def swipe(self, start, end, duration=0.1) -> None:
         async with self._lock:
-            # 执行 swipe 操作
-            await asyncio.to_thread(swipe, start, end, duration)
-            await asyncio.sleep(0.05)  # 操作间隔
+            # 执行 swipe 操作（worker 线程，事件循环不停摆）
+            await asyncio.to_thread(swipe, start, end, duration=duration)
+            await asyncio.sleep(0.01)  # 操作间隔
 ```
 
 **作用**：
 - 防止多个 swipe 操作同时执行
 - 避免 UI 冲突和混乱
+- swipe 期间 timeout/scan/agent 循环照常推进（锁只串行化 swipe，不冻结循环）
 
 ### 频率选择依据
 

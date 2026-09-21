@@ -4,6 +4,9 @@ UI 操作执行器
 地位：封装所有 swipe 操作，提供坐标映射和异步执行
       从 config.yaml 读取坐标配置
       根据菜谱选择顺序动态确定元素坐标
+      设备 IO 已异步化（Issue #19）：airtest swipe 经 asyncio.to_thread 执行，
+      事件循环在设备往返期间不停摆（三循环节拍不被打断）；串行化语义由
+      协程层 asyncio.Lock 保证。节拍收益待真机验证。
 
 输入：符号化操作（食材名、灶台名等）
 输出：swipe 操作执行结果
@@ -161,7 +164,10 @@ class Operator:
         
         直接使用 Airtest 的 swipe API。
         注意：设备使用的是 Maxtouch（Android 10+），实际 duration 会比设置值略长。
-        
+        设备调用经 asyncio.to_thread 移出事件循环（Issue #19）：swipe 期间
+        timeout/scan/agent 三循环照常推进；锁在协程层持有（async with lock
+        → await to_thread），串行化语义不变；耗时打点仍覆盖真实设备往返耗时。
+
         Args:
             start: 起始坐标
             end: 结束坐标
@@ -171,7 +177,7 @@ class Operator:
         async with self._lock:
             from airtest.core.api import swipe
             t0 = time.perf_counter()
-            swipe(start, end, duration=duration, steps=steps)
+            await asyncio.to_thread(swipe, start, end, duration=duration, steps=steps)
             await asyncio.sleep(0.01)
             dt = time.perf_counter() - t0
             self.timing.swipe.record(dt)

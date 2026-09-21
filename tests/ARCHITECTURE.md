@@ -17,6 +17,7 @@
 | `test_bench_stats.py` | ✅ | unittest | 基准统计单测（Issue #15：t 分布 CDF/分位数对照 t 表、配对检验 p/Cohen's d/CI、零方差退化、final_score 统一口径、MetricsCollector 首帧空闲） |
 | `test_dessert_detection.py` | ✅ | unittest | 甜点订单检测测试 |
 | `test_dessert_strategy.py` | ✅ | unittest | Dessert 策略测试（决策优先级） |
+| `test_device_io_async.py` | ✅ | unittest | 设备 IO 异步化并发性测试（Issue #19：慢 swipe/慢 snapshot 假设备 + 心跳协程并发，断言 IO 窗口内心跳 ≥2 次；含锁串行化与计时覆盖断言） |
 | `test_env_simulator.py` | ⚠️ | pytest | 环境模拟器测试（基础结构、时间限制、订单生成、并行烹饪、积分系统；pytest-only，与当前 Recipe 字段有漂移，修复归 #10） |
 | `test_execution_timing.py` | ✅ | pytest | 执行耗时观测 + SrvGap/Idle 分布直方图测试（Ticket #9） |
 | `test_execution_timing_baseline.py` | ✅ | unittest | 送餐与滑动耗时基线回归（Ticket #12） |
@@ -58,6 +59,7 @@
 12. **模拟器保真度测试**（#14）— serve 食材集合校验、过期食材占灶直到显式清理、新单 1s 可见性（与 detection_delay 取 max）、serve 禁令窗口与立即刷新独立
 13. **基准统计测试**（#15）— t 分布分位数对照 t 表、配对 p/效应量/CI、零方差退化、统一分数口径
 14. **状态快照回归**（#16）— UnifiedState 观测不可变：模型 snapshot() 深拷贝、双端 env 篡改观测不污染内部状态、快照耗时量级探针（< 0.5ms/次，实测约 0.03-0.05ms）
+15. **设备 IO 并发性测试**（#19）— Operator.swipe / Runner 验证路径 / Scanner 调试保存移出事件循环后，IO 期间心跳协程照常推进（含同步阻塞反例对照）
 
 ## 运行测试
 
