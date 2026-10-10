@@ -13,7 +13,7 @@ resolution-markers = [
 [[package]]
 name = "airtest"
 version = "1.3.6"
-source = { git = "https://github.com/ChanningWang2018/Airtest.git?rev=f1cf57bca8ccde388c4f112036ad1176dd175027#f1cf57bca8ccde388c4f112036ad1176dd175027" }
+source = { git = "https://github.com/ChanningWang2018/Airtest.git?rev=481a346052369a68e846d9f60bc63e1c167a7e14#481a346052369a68e846d9f60bc63e1c167a7e14" }
 dependencies = [
     { name = "facebook-wda" },
     { name = "ffmpeg-python" },
@@ -436,7 +436,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "airtest", git = "https://github.com/ChanningWang2018/Airtest.git?rev=f1cf57bca8ccde388c4f112036ad1176dd175027" },
+    { name = "airtest", git = "https://github.com/ChanningWang2018/Airtest.git?rev=481a346052369a68e846d9f60bc63e1c167a7e14" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "pydantic", specifier = ">=2.11.5" },
     { name = "pyyaml", specifier = ">=6.0.2" },

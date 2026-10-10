@@ -8,9 +8,8 @@ license = "MIT"
 keywords = ["game-automation", "airtest", "agent"]
 dependencies = [
     # fork 依赖钉 commit：master 浮动会导致"重装即隐式升级"。
-    # f1cf57bc 为已实机验证版本；候选 481a3460（2026-10-09 MINICAP_APK 重构）
-    # 待实机测试通过后再晋级切换
-    "airtest @ git+https://github.com/ChanningWang2018/Airtest.git@f1cf57bca8ccde388c4f112036ad1176dd175027",
+    # 481a3460（2026-10-09 MINICAP_APK 截图链路重构）已于 2026-10-10 实机验证通过
+    "airtest @ git+https://github.com/ChanningWang2018/Airtest.git@481a346052369a68e846d9f60bc63e1c167a7e14",
     "loguru>=0.7.3",
     "pydantic>=2.11.5",
     "pyyaml>=6.0.2",
