@@ -45,8 +45,7 @@ echo "[OK] Dependencies installed"
 # Check config
 echo "[4/4] Checking config..."
 if [ ! -f "configs/config.yaml" ]; then
-    echo "[WARN] Config file not found: configs/config.yaml"
-    echo "Make sure you run this script from the project root directory"
+    echo "[INFO] configs/config.yaml not found - a default config will be generated on first run"
 else
     echo "[OK] Config file ready"
 fi

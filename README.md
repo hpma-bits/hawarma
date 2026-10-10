@@ -60,13 +60,13 @@ chmod +x setup.sh
 
 ### 5. 启动
 
-**方式一：双击脚本**
+**方式一：双击脚本（推荐）**
 - Windows: `run.bat`
 - Mac/Linux: `./run.sh`
 
 **方式二：命令行**
 ```bash
-# TUI 图形界面（推荐）
+# TUI 图形界面（与 run.bat 相同）
 python -m hawarma.tui
 
 # CLI 命令行界面
@@ -78,8 +78,23 @@ python -m hawarma
 - **Python 3.10+**
 - **Git**
 - **Android 模拟器**（如 MuMu、雷电、夜神）
-- 模拟器需开启 ADB 调试，默认连接地址 `127.0.0.1:16384`
+- 模拟器分辨率必须设为 **1920×1080**
+- 模拟器需开启 ADB 调试
 - 游戏已安装在模拟器中
+
+> ⚠️ **分辨率是硬性要求**：模板图片和所有屏幕坐标都按 1920×1080 校准。其他分辨率不会报错，但识别会静默失败、点击位置错乱。
+
+### ADB 连接地址
+
+程序启动时会自动 `adb connect` 配置的地址（`configs/config.yaml` 中的 `adb_address`）。常见模拟器的默认端口：
+
+| 模拟器 | 默认 ADB 地址 |
+|--------|---------------|
+| MuMu 12 | `127.0.0.1:16384`（默认值） |
+| 雷电 | `127.0.0.1:5555` |
+| 夜神 | `127.0.0.1:62001` |
+
+> 以模拟器设置中"ADB 调试"页面显示的端口为准，不同的端口号请修改配置文件中的 `adb_address`。
 
 ## 使用方式
 
@@ -98,33 +113,47 @@ python -m hawarma.tui
 ### CLI 命令行
 
 ```bash
-python -m hawarma                    # 默认策略
-python -m hawarma --strategy cpm     # 指定策略
-python -m hawarma --station dessert  # 甜点站
+python -m hawarma                     # 默认策略 gastronome
+python -m hawarma --strategy planner  # 指定策略
+python -m hawarma --station dessert   # 甜点站
 ```
 
 ### 策略列表
 
 | 策略名 | 说明 |
 |--------|------|
-| `gastronome` | CPM 增强瀑布策略（推荐） |
-| `dessert` | 甜点站策略 |
-| `default` | 默认策略 |
+| `gastronome` | 美食站 CPM 增强瀑布策略（默认，推荐） |
+| `planner` | 美食站 deadline 感知滚动时域调度（实验性） |
+| `dessert` | 甜点站策略（需配合 `--station dessert`） |
 
-### 模拟器基准测试（无需设备）
+## 配置
 
-```bash
-python -m playground run --seed 42
-python -m playground bench --games 50 --strategies gastronome,dessert
-```
+`configs/config.yaml` **不需要手动创建**：首次运行时会自动生成一份默认配置。之后编辑它可修改：
+
+- `adb_address` — ADB 连接地址（大多数用户唯一需要确认的项）
+- 匹配阈值、策略参数等（默认已按 1920×1080 校准，除非更改分辨率否则无需调整）
+
+> 请始终从项目根目录启动程序，配置和数据文件都按项目根目录解析。
+
+## 常见问题
+
+**启动时报 "no device online" / 连接不上模拟器**
+- 检查模拟器设置中 ADB 调试是否已开启
+- 检查 `configs/config.yaml` 的 `adb_address` 是否与模拟器端口一致（见上方端口表）
+
+**游戏识别全部失败 / 角色乱点**
+- 检查模拟器分辨率是否为 **1920×1080**（最常见的失败原因，且不会报错）
+
+**提示找不到 configs/config.yaml**
+- 属正常现象：首次运行会自动生成。请确认是在项目根目录下启动。
 
 ## 项目结构
 
 ```
 hawarma/
-├── configs/config.yaml    # 配置文件（屏幕坐标、策略参数等）
+├── configs/               # 配置目录（config.yaml 首次运行自动生成）
 ├── data/                  # 游戏数据（配方、分数表）
-├── static/img/            # 模板图片
+├── static/img/            # 模板图片（按 1920×1080 校准）
 ├── src/hawarma/           # 核心代码
 │   ├── cli.py             # CLI 入口
 │   ├── tui.py             # TUI 入口
@@ -139,19 +168,26 @@ hawarma/
 └── setup.bat / setup.sh   # 一键安装脚本
 ```
 
-## 配置
+## 开发与测试（可选）
 
-编辑 `configs/config.yaml` 修改：
-- ADB 连接地址
-- 屏幕分辨率和坐标
-- 匹配阈值
-- 策略参数
-
-## 运行测试
+日常使用无需本节内容，仅修改代码时需要。
 
 ```bash
-python -m unittest discover tests
+# 激活虚拟环境后安装开发依赖（pytest、ruff、mypy）
+uv pip install -e . --group dev
+
+pytest tests                        # 全部测试（统一跑器）
+ruff check src tests playground     # 风格门禁
 ```
+
+无设备模拟基准测试：
+
+```bash
+python -m playground run --seed 42
+python -m playground bench --games 50 --strategies gastronome,dessert
+```
+
+开发规范与架构文档见 [`AGENTS.md`](AGENTS.md) 及各级 `ARCHITECTURE.md`。
 
 ## 许可证
 

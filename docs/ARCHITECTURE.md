@@ -27,16 +27,6 @@
   - 策略切换方式
   - 核心优化总结
 
-### `architecture_redesign.md`
-- **地位**: 架构重构设计方案
-- **状态**: ✅ 当前有效
-- **功能**:
-  - 重构前的架构问题诊断
-  - 目标架构设计原则和层次图
-  - Phase 1-3 的分步实施计划
-  - 甜点平台扩展预留方案
-  - 命名规范和文件变更清单
-
 ### `real_game_implementation.md`
 - **地位**: 真实游戏交互实现文档
 - **状态**: ✅ 当前有效
@@ -65,13 +55,38 @@
   - 统一概念理解
   - 包含游戏领域、架构、策略、操作、配置等术语
 
+### `tui_guide.md`
+- **地位**: TUI 使用指南
+- **状态**: ✅ 当前有效
+- **功能**:
+  - TUI 仪表板的使用说明（配方选择、配置面板、游戏控制、日志）
+
+### `tui_summary.md`
+- **地位**: TUI 改造总结（实现记录）
+- **状态**: ✅ 历史记录
+- **功能**:
+  - 记录 TUI 从 cli.py 改造过程中的实现决策
+
+### `code_review.md`
+- **地位**: 外部视角代码评审记录
+- **状态**: ✅ 历史记录
+- **功能**:
+  - 对仓库架构意图（模拟、策略隔离、桥接抽象）的外部评审观察
+
+### `adr/`
+- **地位**: 架构决策记录（ADR）
+- **状态**: ✅ 当前有效
+- **功能**:
+  - `0001-scoring-metrics-split-and-action-increment.md` — 度量抽离与 Action 三增量决策
+
 ## 📝 已归档文档
 
-以下文档已被清理，内容已整合到 `agent_strategy.md` 和 `architecture_redesign.md`：
+以下文档已被清理，内容已整合到 `agent_strategy.md`（架构现状见 `src/hawarma/ARCHITECTURE.md`）：
 
 | 文档名 | 原因 |
 |--------|------|
-| `agent_architecture.md` | 旧架构设计（Runner 时代），已由 architecture_redesign.md 替代 |
+| `agent_architecture.md` | 旧架构设计（Runner 时代），内容已由 agent_strategy.md 收录，架构现状见 `src/hawarma/ARCHITECTURE.md` |
+| `architecture_redesign.md` | 重构计划已全部执行完毕，架构现状见 `src/hawarma/ARCHITECTURE.md` |
 | `playground_plan.md` | Playground 已建成，计划已执行完毕 |
 | `assembly_deadlock_analysis.md` | 事件分析已收录到旧版 agent_strategy.md，修复方案已实施 |
 
@@ -81,7 +96,6 @@
 game_rules.md (基础)
     ↑
     ├── agent_strategy.md (策略+基准)
-    ├── architecture_redesign.md (架构设计)
     ├── real_game_implementation.md (实现)
     ├── dessert_station.md (甜点站点设计)
     └── glossary.md (术语表)

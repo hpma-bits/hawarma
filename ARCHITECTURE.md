@@ -48,7 +48,7 @@ hawarma/
 - **关键文件**:
   - `game_rules.md` — 游戏规则（唯一依据）
   - `agent_strategy.md` — Agent 策略和实验结果
-  - `agent_architecture.md` — Agent 架构设计
+  - `real_game_implementation.md` — 真实游戏实现
 - **深入阅读**: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 ### `tests/` — 测试代码
@@ -68,8 +68,7 @@ hawarma/
 - `recipes.json` — 配方数据
 
 ### `static/` — 静态资源
-- `img/` — 模板图片（`ingredient-{name}.jpg`、`icon-{name}.jpg`）
-- `apk/` — APK 文件
+- `img/` — 模板图片（`ingredient-{name}.jpg`、`icon-{name}.jpg`），按 1920×1080 校准
 
 ## ⚠️ 重要原则
 

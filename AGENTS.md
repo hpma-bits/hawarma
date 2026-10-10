@@ -97,7 +97,9 @@
 
 ### 运行应用（真实游戏）
 
-默认使用 **`gastronome`** 策略（10 级贪心瀑布 + CPM + visibility 阈值跨越 + 单食材优先 + 延迟感知）：
+默认使用 **`gastronome`** 策略（10 级贪心瀑布 + CPM + visibility 阈值跨越 + 单食材优先 + 延迟感知）。
+
+> ⚠️ 模拟器分辨率必须为 **1920×1080**（模板图片与屏幕坐标均按此校准，其他分辨率会静默失败不报错）。程序启动时自动 `adb connect` 配置的 `adb_address`（默认 MuMu 12 端口 16384，其他模拟器端口不同需改配置）。
 
 #### 命令行界面 (CLI)
 ```bash
@@ -123,7 +125,7 @@ TUI 提供完整的仪表板界面，包括：
 
 ```bash
 # 配置文件: configs/config.yaml
-strategy: "gastronome"      # CPM enhanced cascade (默认) 或 "dessert"
+strategy: "gastronome"      # CPM enhanced cascade (默认)；可选 "planner"（实验性）或 "dessert"
 language: "zh-CN"           # 界面语言: zh-CN (默认) 或 en-US；TUI 主菜单可按 L 键运行时切换
 
 # 命令行覆盖
@@ -164,11 +166,17 @@ python -m playground replay replay.json               # 回放记录
 ```
 
 ### 环境设置
+
+先创建 venv 再装依赖；pytest/ruff/mypy 在 dev 依赖组中，跑测试前需要安装：
+
 ```bash
-uv pip install -e .
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\activate             # Mac/Linux: source .venv/bin/activate
+uv pip install -e .                # 运行时依赖（用户部署只需这一步）
+uv pip install -e . --group dev    # 开发/测试依赖（pytest、ruff、mypy）
 ```
+
+> `configs/config.yaml` 不入库（已 gitignore），首次运行时自动生成默认配置；请从项目根目录运行程序。
 
 ---
 

@@ -60,13 +60,13 @@ chmod +x setup.sh
 
 ### 5. Launch
 
-**Option 1: Double-click the script**
+**Option 1: Double-click the script (recommended)**
 - Windows: `run.bat`
 - Mac/Linux: `./run.sh`
 
-**Option 2: Command Line**
+**Option 2: Command line**
 ```bash
-# TUI Dashboard (Recommended)
+# TUI dashboard (same as run.bat)
 python -m hawarma.tui
 
 # CLI
@@ -78,8 +78,23 @@ python -m hawarma
 - **Python 3.10+**
 - **Git**
 - **Android Emulator** (e.g., MuMu, LDPlayer, Nox)
-- Enable ADB debugging on the emulator (default address `127.0.0.1:16384`)
+- Emulator resolution must be set to **1920×1080**
+- ADB debugging enabled on the emulator
 - Game must be installed on the emulator
+
+> ⚠️ **Resolution is a hard requirement**: template images and all screen coordinates are calibrated for 1920×1080. Other resolutions do not raise errors — recognition silently fails and taps land in wrong places.
+
+### ADB Connection Address
+
+On startup the program runs `adb connect` automatically against the address configured in `configs/config.yaml` (`adb_address`). Common emulator default ports:
+
+| Emulator | Default ADB address |
+|----------|---------------------|
+| MuMu 12 | `127.0.0.1:16384` (default) |
+| LDPlayer | `127.0.0.1:5555` |
+| Nox | `127.0.0.1:62001` |
+
+> Always trust the port shown in your emulator's "ADB debugging" settings page; if it differs, update `adb_address` in the config file.
 
 ## Usage
 
@@ -98,33 +113,47 @@ Full graphical interface:
 ### CLI
 
 ```bash
-python -m hawarma                      # Default strategy
-python -m hawarma --strategy cpm       # Specify strategy
-python -m hawarma --station dessert    # Dessert station
+python -m hawarma                     # Default strategy: gastronome
+python -m hawarma --strategy planner  # Specify strategy
+python -m hawarma --station dessert   # Dessert station
 ```
 
 ### Strategies
 
 | Strategy | Description |
 |----------|-------------|
-| `gastronome` | CPM Enhanced Cascade (Recommended) |
-| `dessert` | Dessert Station |
-| `default` | Default |
+| `gastronome` | Gourmet station CPM enhanced cascade (default, recommended) |
+| `planner` | Gourmet station deadline-aware rolling-horizon scheduling (experimental) |
+| `dessert` | Dessert station strategy (use with `--station dessert`) |
 
-### Simulator Benchmark (No Device Needed)
+## Configuration
 
-```bash
-python -m playground run --seed 42
-python -m playground bench --games 50 --strategies gastronome,dessert
-```
+You do **not** need to create `configs/config.yaml` manually: a default config is generated automatically on first run. Afterwards you can edit it to change:
+
+- `adb_address` — ADB connection address (the only item most users need to check)
+- Matching thresholds, strategy parameters, etc. (defaults are calibrated for 1920×1080 — no changes needed unless you use a different resolution)
+
+> Always launch the program from the project root directory; config and data files are resolved relative to the project root.
+
+## Troubleshooting
+
+**"no device online" on startup / cannot connect to the emulator**
+- Check that ADB debugging is enabled in the emulator settings
+- Check that `adb_address` in `configs/config.yaml` matches your emulator's port (see the table above)
+
+**Recognition fails completely / character taps wrong places**
+- Check that the emulator resolution is **1920×1080** (the most common failure cause, and it raises no error)
+
+**"configs/config.yaml not found" message**
+- This is normal: it is generated automatically on first run. Make sure you launch from the project root directory.
 
 ## Project Structure
 
 ```
 hawarma/
-├── configs/config.yaml    # Config (screen coords, strategy params, etc.)
+├── configs/               # Config directory (config.yaml auto-generated on first run)
 ├── data/                  # Game data (recipes, score tables)
-├── static/img/            # Template images
+├── static/img/            # Template images (calibrated for 1920×1080)
 ├── src/hawarma/           # Core code
 │   ├── cli.py             # CLI entry
 │   ├── tui.py             # TUI entry
@@ -139,19 +168,26 @@ hawarma/
 └── setup.bat / setup.sh   # One-click setup
 ```
 
-## Configuration
+## Development & Testing (Optional)
 
-Edit `configs/config.yaml` to modify:
-- ADB connection address
-- Screen resolution and coordinates
-- Matching thresholds
-- Strategy parameters
-
-## Running Tests
+Everyday usage does not require this section; it is only needed when modifying code.
 
 ```bash
-python -m unittest discover tests
+# Activate the virtual environment, then install dev dependencies (pytest, ruff, mypy)
+uv pip install -e . --group dev
+
+pytest tests                        # All tests (unified runner)
+ruff check src tests playground     # Style gate
 ```
+
+Device-free simulated benchmarks:
+
+```bash
+python -m playground run --seed 42
+python -m playground bench --games 50 --strategies gastronome,dessert
+```
+
+See [`AGENTS.md`](AGENTS.md) and the per-directory `ARCHITECTURE.md` files for development conventions and architecture docs.
 
 ## License
 

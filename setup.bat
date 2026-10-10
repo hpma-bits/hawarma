@@ -61,8 +61,7 @@ echo [OK] 依赖安装完成
 :: 检查配置
 echo [4/4] 检查配置文件...
 if not exist "configs\config.yaml" (
-    echo [警告] 未找到配置文件 configs\config.yaml
-    echo 请确保在项目根目录运行此脚本
+    echo [提示] 未找到 configs\config.yaml，首次运行程序时会自动生成默认配置
 ) else (
     echo [OK] 配置文件就绪
 )

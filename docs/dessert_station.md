@@ -517,7 +517,7 @@ class DetectedOrder:
 
 运行：
 ```bash
-.venv\Scripts\python -m unittest discover tests
+.venv\Scripts\python -m pytest tests
 .venv\Scripts\python -m playground run --seed 42  # 模拟器单局
 .venv\Scripts\python -m playground bench --games 50  # 基准测试
 ```
